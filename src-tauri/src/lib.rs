@@ -1,4 +1,5 @@
 mod crypto;
+pub mod storage;
 pub mod vault;
 
 pub fn run() {
