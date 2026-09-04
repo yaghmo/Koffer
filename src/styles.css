@@ -1,289 +1,909 @@
+/* =================================================================
+ * PASSWORD MANAGER — DARKROOM + CRACKTRO
+ * -----------------------------------------------------------------
+ * 5 void depths, 1 warm signal (amber), 1 cool signal (teal).
+ * No borders, no boxes, no shadows. Depth = brightness step.
+ * Letterspacing widens on the back, tightens on the front.
+ * One shared drift rate for the back layers.
+ * =================================================================
+ */
+
 :root {
-  --bg: #1a1a1a;
-  --fg: #e0e0e0;
-  --accent: #4a9eff;
-  --danger: #ff5555;
-  --border: #333;
+  /* 5 depth steps — used as inline alpha multipliers via color-mix */
+  --void:   #050507;   /* the ground */
+  --void-1: #0a0b0e;   /* first lift (panels / modals) */
+  --void-2: #111217;   /* input wells */
+  --void-3: #1a1c22;   /* hover surface */
+  --void-4: #24262d;   /* active surface */
+
+  /* Warm signal — the safelight */
+  --amber-100: #f3c87a;  /* the safelight itself */
+  --amber-200: #d8a85a;  /* readable text on void */
+  --amber-300: #8a6a3a;  /* dim amber (labels) */
+  --amber-400: #3a2d18;  /* amber shadow on void (faint glow) */
+
+  /* Cool signal — the only place teal appears */
+  --teal-100: #6ee0d0;   /* active / focused / copied */
+  --teal-200: #4a9a90;   /* teal in dim contexts */
+
+  /* Text — warm off-white that reads as "the room's reflected light" */
+  --text:      #d6d2c4;
+  --text-dim:  #8a8778;
+  --text-faint:#555349;
+
+  /* Danger — only place red appears: the reset flow */
+  --danger-100: #d06868;
+  --danger-200: #6a2828;
+
+  /* Type */
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* Shared drift (only used by ambient layers) */
+  --drift: 24s;
+
+  color-scheme: dark;
 }
 
-* {
-  box-sizing: border-box;
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  font-feature-settings: "ss01", "ss02";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
 }
+
+::selection {
+  background: color-mix(in oklab, var(--amber-100) 28%, var(--void));
+  color: var(--text);
+}
+
+/* Custom focus ring — 1px teal, never the browser default */
+*:focus { outline: none; }
+*:focus-visible {
+  outline: 1px solid var(--teal-100);
+  outline-offset: 3px;
+  transition: outline-offset 120ms ease-out;
+}
+
+/* Custom scrollbar — thin, amber-on-void */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--amber-400) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--amber-400);
+  border-radius: 0;
+}
+
+/* =================================================================
+ * APP SHELL
+ * =================================================================
+ */
 
 .app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr;
   height: 100vh;
+  background: var(--void);
+  position: relative;
 }
 
-header {
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border);
+/* faint horizontal scan band, drifts left → right, the only ambient motion */
+.app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(120% 60% at 50% -20%, color-mix(in oklab, var(--amber-100) 6%, transparent), transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0 3px, color-mix(in oklab, var(--void) 92%, transparent) 3px 4px);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  animation: drift var(--drift) linear infinite;
+}
+
+@keyframes drift {
+  0%   { background-position: 0% 0%, 0 0; }
+  100% { background-position: 200% 0%, 0 0; }
+}
+
+.app > * { position: relative; z-index: 1; }
+
+/* Header — single line, mono caps, hairline below */
+.app-header {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
+  padding: 14px 28px 12px;
+  border-bottom: 1px solid var(--void-2);
+}
+
+.app-header .mark {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--amber-200);
+  font-weight: 500;
+}
+
+.app-header .meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.app-header .actions {
+  display: flex;
+  gap: 18px;
   align-items: center;
 }
 
-header h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
-main {
-  flex: 1;
-  padding: 1.5rem;
+.app-main {
   overflow-y: auto;
+  padding: 40px 28px 80px;
+  scroll-behavior: smooth;
 }
 
-button {
-  background: var(--accent);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
+@media (prefers-reduced-motion: reduce) {
+  .app::before { animation: none; opacity: 0.4; }
+  * { transition: none !important; animation: none !important; }
 }
 
-button:hover {
-  opacity: 0.9;
+/* =================================================================
+ * SCREEN HEADINGS
+ * =================================================================
+ */
+
+.screen-eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--amber-300);
+  margin: 0 0 6px;
 }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.screen-title {
+  margin: 0 0 32px;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
-input,
-textarea {
-  background: #252525;
-  color: var(--fg);
-  border: 1px solid var(--border);
-  padding: 0.5rem;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  font-family: inherit;
+/* =================================================================
+ * LOCK / SETUP — single centered field, safelight line above
+ * =================================================================
+ */
+
+.stage {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 60px 20px;
+}
+
+.stage-frame {
   width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: relative;
 }
 
-input:focus,
-textarea:focus {
+/* the safelight — 1px amber line, breathes */
+.safelight {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--amber-100), transparent);
+  position: relative;
+  margin: 0 0 4px;
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--amber-100) 30%, transparent));
+  animation: safelight 8s ease-in-out infinite;
+}
+
+.safelight::after {
+  content: "";
+  position: absolute;
+  inset: -2px -20% -8px;
+  background: radial-gradient(60% 100% at 50% 0%, color-mix(in oklab, var(--amber-100) 18%, transparent), transparent 70%);
+  pointer-events: none;
+  animation: safelight 8s ease-in-out infinite;
+}
+
+@keyframes safelight {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .safelight, .safelight::after { animation: none; opacity: 0.85; }
+}
+
+.stage-frame .label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.stage-frame .hint {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 0;
+}
+
+.stage-frame .hint-strong {
+  color: var(--text-dim);
+}
+
+/* =================================================================
+ * FORM PRIMITIVES — the password slot
+ * =================================================================
+ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--void-3);
+  transition: border-color 150ms ease-out;
+}
+
+.field-row:focus-within {
+  border-bottom-color: var(--teal-100);
+}
+
+.field-row input,
+.field-row textarea {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  padding: 10px 0;
+  caret-color: var(--amber-100);
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.field-row input::placeholder,
+.field-row textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.field-row textarea {
+  resize: vertical;
+  min-height: 80px;
+  font-family: var(--sans);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+/* Range slider — amber fill, dark track */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: var(--void-3);
   outline: none;
-  border-color: var(--accent);
+  margin: 14px 0 8px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--amber-100);
+  cursor: pointer;
+  border-radius: 0;
+  box-shadow: 0 0 8px color-mix(in oklab, var(--amber-100) 50%, transparent);
+  transition: transform 120ms ease-out;
+}
+input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--amber-100);
+  cursor: pointer;
+  border: 0;
+  border-radius: 0;
 }
 
-/* Forms (Setup, Lock) */
-form.setup,
-form.lock,
-form.item-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  max-width: 28rem;
-  margin: 2rem auto;
+/* The reveal button — hairline icon, no box */
+.reveal {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  padding: 0 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: color 150ms ease-out;
+}
+.reveal:hover { color: var(--amber-100); }
+.reveal[aria-pressed="true"] { color: var(--teal-100); }
+
+/* =================================================================
+ * BUTTONS — thin outline system, no fills
+ * =================================================================
+ */
+
+.btn {
+  background: transparent;
+  border: 1px solid var(--void-3);
+  color: var(--text);
+  padding: 10px 18px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease-out,
+    color 150ms ease-out,
+    background-color 150ms ease-out;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
 }
 
-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.9rem;
+.btn:hover { border-color: var(--amber-100); color: var(--amber-100); }
+.btn:active { background: color-mix(in oklab, var(--amber-100) 8%, transparent); }
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: var(--void-2);
+  color: var(--text-faint);
 }
 
-.muted {
-  color: #888;
-  font-size: 0.85rem;
+/* Primary — amber outline. This is the safelight's "press me" */
+.btn-primary {
+  border-color: var(--amber-100);
+  color: var(--amber-100);
+  background: color-mix(in oklab, var(--amber-100) 4%, transparent);
 }
+.btn-primary:hover {
+  background: color-mix(in oklab, var(--amber-100) 10%, transparent);
+  box-shadow: 0 0 16px color-mix(in oklab, var(--amber-100) 20%, transparent);
+}
+.btn-primary:disabled {
+  border-color: var(--amber-300);
+  color: var(--amber-300);
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Cool — teal outline. Selection / copy / focus confirmation */
+.btn-cool {
+  border-color: var(--teal-200);
+  color: var(--teal-100);
+}
+.btn-cool:hover {
+  border-color: var(--teal-100);
+  color: var(--teal-100);
+  background: color-mix(in oklab, var(--teal-100) 6%, transparent);
+}
+
+/* Danger — reset vault */
+.btn-danger {
+  border-color: var(--danger-200);
+  color: var(--danger-100);
+}
+.btn-danger:hover {
+  border-color: var(--danger-100);
+  color: var(--danger-100);
+  background: color-mix(in oklab, var(--danger-100) 6%, transparent);
+}
+
+/* Ghost — no border at all, just text */
+.btn-ghost {
+  border: 0;
+  padding: 8px 6px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background: transparent;
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+.btn-ghost:hover { color: var(--text); }
+
+/* Active filter — teal text + underline, no box */
+.btn-active {
+  color: var(--teal-100);
+  border-bottom: 1px solid var(--teal-100);
+}
+
+/* Hairline link — for "forgot password" */
+.link {
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+  align-self: center;
+  margin-top: 10px;
+  transition: color 150ms ease-out;
+}
+.link:hover { color: var(--amber-200); }
+
+/* =================================================================
+ * MESSAGES
+ * =================================================================
+ */
+
+.muted { color: var(--text-dim); font-size: 13px; margin: 0; line-height: 1.55; }
 
 .error {
-  color: var(--danger);
-  font-size: 0.85rem;
+  color: var(--danger-100);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  margin: 0;
+  padding: 6px 0 0;
+}
+
+.notice {
+  color: var(--amber-200);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   margin: 0;
 }
 
-button.danger {
-  background: var(--danger);
+.empty {
+  text-align: left;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 60px 0;
 }
 
-button.active {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
+/* =================================================================
+ * VAULT — list, search, filters
+ * =================================================================
+ */
 
-/* Vault list */
 .vault {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 22px;
+  max-width: 820px;
+  margin: 0 auto;
 }
 
 .toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 22px 24px;
+  align-items: end;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--void-2);
+}
+
+.toolbar-row {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
+  gap: 22px;
   flex-wrap: wrap;
 }
 
-.toolbar .search {
-  flex: 1;
-  min-width: 12rem;
+.search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--void-3);
+  padding-bottom: 6px;
+  transition: border-color 150ms ease-out;
 }
+.search:focus-within { border-bottom-color: var(--teal-100); }
+.search input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  padding: 4px 0;
+  caret-color: var(--amber-100);
+}
+.search input::placeholder { color: var(--text-faint); }
+.search svg { color: var(--text-faint); }
 
 .filters {
   display: flex;
-  gap: 0.25rem;
+  gap: 16px;
+  align-items: center;
 }
-
 .filters button {
-  background: #252525;
-  color: var(--fg);
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  padding: 4px 0;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color 150ms ease-out, border-color 150ms ease-out;
+}
+.filters button:hover { color: var(--text); }
+.filters button.active {
+  color: var(--teal-100);
+  border-bottom-color: var(--teal-100);
 }
 
+/* Item list — rows on baselines, hairline between */
 .item-list {
   list-style: none;
   padding: 0;
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
 }
-
 .item-list li {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  gap: 18px;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--void-2);
+  transition: background-color 150ms ease-out;
+}
+.item-list li:hover {
+  background: color-mix(in oklab, var(--amber-100) 4%, transparent);
+}
+.item-list .row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  letter-spacing: -0.005em;
+}
+.item-list .row:focus-visible {
+  outline-offset: -2px;
+}
+.item-list .kind {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--amber-300);
+  min-width: 56px;
+}
+.item-list .title { color: var(--text); }
+.item-list .row .meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.item-list .delete {
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 4px 6px;
+  transition: color 150ms ease-out;
+}
+.item-list .delete:hover { color: var(--danger-100); }
+
+/* =================================================================
+ * ITEM EDITOR
+ * =================================================================
+ */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 620px;
+  margin: 0 auto;
 }
 
-.item-list .select {
-  flex: 1;
-  text-align: left;
-  background: none;
-  color: var(--fg);
+.editor .toolbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--void-2);
+  padding-bottom: 14px;
+}
+
+.editor .toolbar h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 20px;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.editor .toolbar .actions { display: flex; gap: 10px; }
+
+.editor .kind-tabs {
+  display: flex;
+  gap: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--void-2);
+}
+.editor .kind-tabs button {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  padding: 4px 0;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color 150ms ease-out, border-color 150ms ease-out;
+}
+.editor .kind-tabs button:hover { color: var(--text); }
+.editor .kind-tabs button.active {
+  color: var(--amber-200);
+  border-bottom-color: var(--amber-100);
+}
+
+.editor .fields {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.editor .field-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.copy-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0;
+  gap: 12px;
 }
-
-.kind-badge {
-  font-size: 0.7rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
+.copy-row .field-row { flex: 1; }
+.copy-row .copy-inline {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  background: #333;
+  color: var(--teal-100);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 150ms ease-out;
 }
+.copy-row .copy-inline:hover { color: var(--teal-200); }
+.copy-row .copy-inline.copied { color: var(--amber-200); }
 
-.kind-login { background: #2a4a6a; }
-.kind-note { background: #4a4a2a; }
-.kind-card { background: #4a2a4a; }
+/* =================================================================
+ * MODAL — same grammar as the rest, no shadow, no box
+ * =================================================================
+ */
 
-.item-list .title {
-  font-weight: 500;
-}
-
-.empty {
-  text-align: center;
-  color: #888;
-  padding: 2rem;
-}
-
-/* Generator modal */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: color-mix(in oklab, var(--void) 78%, transparent);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  animation: fade-in 200ms ease-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop { animation: none; }
 }
 
 .modal {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
+  background: var(--void-1);
+  border: 1px solid var(--void-3);
+  padding: 32px 30px 26px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  min-width: 24rem;
-  max-width: 32rem;
+  gap: 18px;
+  width: min(440px, calc(100% - 40px));
+  position: relative;
+}
+
+.modal::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--amber-100), transparent);
+  opacity: 0.7;
 }
 
 .modal h2 {
   margin: 0;
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
-.modal .output {
-  background: #252525;
-  padding: 0.75rem;
-  border-radius: 4px;
-  font-family: monospace;
-  word-break: break-all;
-  user-select: all;
-}
-
-.modal .row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.modal .row label {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.modal p {
+  margin: 0;
+  color: var(--text-dim);
+  line-height: 1.6;
+  font-size: 13px;
 }
 
 .modal .actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 10px;
   justify-content: flex-end;
+  margin-top: 4px;
 }
 
-/* Password input with reveal toggle */
-.password-row {
+/* Generator — the same modal, more density */
+.modal .row {
   display: flex;
-  gap: 0.25rem;
-  align-items: stretch;
+  align-items: center;
+  gap: 12px;
 }
 
-.password-row input {
+.modal .generated {
   flex: 1;
+  background: var(--void-2);
+  border: 0;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 12px 14px;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+}
+.modal .generated::placeholder { color: var(--text-faint); }
+
+.modal .checkboxes {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.modal .checkboxes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+.modal .checkboxes label:hover { color: var(--text); }
+.modal .checkboxes input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--text-faint);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  margin: 0;
+  transition: border-color 150ms ease-out;
+}
+.modal .checkboxes input[type="checkbox"]:checked {
+  border-color: var(--amber-100);
+  background: var(--amber-100);
+}
+.modal .checkboxes input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  background: var(--void);
+  clip-path: polygon(20% 50%, 45% 75%, 80% 25%, 75% 20%, 45% 60%, 25% 45%);
 }
 
-button.reveal {
-  background: #252525;
-  color: var(--fg);
-  padding: 0.5rem 0.6rem;
-  font-size: 1rem;
-  line-height: 1;
+.modal .meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--amber-300);
 }
 
-button.reveal:hover {
-  background: #333;
+/* Reset modal — danger treatment */
+.modal.modal-danger::before {
+  background: linear-gradient(90deg, transparent, var(--danger-100), transparent);
+  opacity: 0.6;
+}
+.modal.modal-danger h2 { color: var(--danger-100); }
+
+/* Lock screen uses stage-frame */
+.lock, .setup {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+}
+.lock .stage-frame, .setup .stage-frame { width: 100%; max-width: 360px; }
+
+/* Confirm-pw field in reset uses the same field-row */
+.modal .field-row input {
+  font-family: var(--mono);
+  font-size: 15px;
 }
 
-button.link {
-  background: none;
-  color: var(--accent);
-  padding: 0.25rem 0;
-  text-decoration: underline;
-  font-size: 0.85rem;
-  align-self: center;
-}
-
-button.link:hover {
-  opacity: 0.8;
-}
+/* utility */
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

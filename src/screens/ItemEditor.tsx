@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Item, ItemKind, LoginFields, NoteFields, CardFields } from "../lib/types";
+import { CopyIcon, CheckIcon, XIcon } from "../components/Icon";
 
 interface Props {
   id: string | null;
@@ -20,6 +21,7 @@ export default function ItemEditor({ id, onClose }: Props) {
   const [card, setCard] = useState<CardFields>(emptyCard());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   useEffect(() => {
     if (id === null) return;
@@ -42,9 +44,12 @@ export default function ItemEditor({ id, onClose }: Props) {
     });
   }, [id]);
 
-  async function copy(text: string) {
+  async function copy(label: string, text: string) {
+    if (!text) return;
     try {
       await api.copyToClipboard(text, 30);
+      setCopied(label);
+      window.setTimeout(() => setCopied((c) => (c === label ? null : c)), 1400);
     } catch {
       // ignore
     }
@@ -93,16 +98,21 @@ export default function ItemEditor({ id, onClose }: Props) {
       }}
     >
       <div className="toolbar">
-        <h2>{id === null ? "New item" : "Edit item"}</h2>
-        <button type="button" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="submit" disabled={busy}>
-          {busy ? "Saving…" : "Save"}
-        </button>
+        <div>
+          <p className="screen-eyebrow">Item · {id === null ? "New" : "Edit"}</p>
+          <h2>{title.trim() || (id === null ? "New item" : "Untitled")}</h2>
+        </div>
+        <div className="actions">
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            <XIcon /> Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
       </div>
 
-      <div className="filters">
+      <div className="kind-tabs" aria-label="Item kind">
         {(["login", "note", "card"] as ItemKind[]).map((k) => (
           <button
             key={k}
@@ -115,112 +125,174 @@ export default function ItemEditor({ id, onClose }: Props) {
         ))}
       </div>
 
-      <label>
-        Title
-        <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" />
-      </label>
+      <div className="fields">
+        <div className="field">
+          <p className="field-label">Title</p>
+          <div className="field-row">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              aria-label="Title"
+              autoFocus={id === null}
+            />
+          </div>
+        </div>
 
-      {kind === "login" && (
-        <>
-          <label>
-            URL
-            <input
-              value={login.url}
-              onChange={(e) => setLogin({ ...login, url: e.target.value })}
-              aria-label="URL"
-            />
-          </label>
-          <label>
-            Username
-            <input
-              value={login.username}
-              onChange={(e) => setLogin({ ...login, username: e.target.value })}
-              aria-label="Username"
-            />
-          </label>
-          <label>
-            Password
-            <div className="row">
-              <input
-                type="text"
-                value={login.password}
-                onChange={(e) => setLogin({ ...login, password: e.target.value })}
-                aria-label="Password"
-              />
-              <button type="button" onClick={() => copy(login.password)}>
-                Copy
-              </button>
+        {kind === "login" && (
+          <>
+            <div className="field">
+              <p className="field-label">URL</p>
+              <div className="field-row">
+                <input
+                  value={login.url}
+                  onChange={(e) => setLogin({ ...login, url: e.target.value })}
+                  aria-label="URL"
+                  spellCheck={false}
+                />
+              </div>
             </div>
-          </label>
-        </>
-      )}
-
-      {kind === "note" && (
-        <label>
-          Body
-          <textarea
-            rows={8}
-            value={note.body}
-            onChange={(e) => setNote({ body: e.target.value })}
-            aria-label="Note body"
-          />
-        </label>
-      )}
-
-      {kind === "card" && (
-        <>
-          <label>
-            Cardholder
-            <input
-              value={card.cardholder}
-              onChange={(e) => setCard({ ...card, cardholder: e.target.value })}
-              aria-label="Cardholder"
-            />
-          </label>
-          <label>
-            Number
-            <input
-              value={card.number}
-              onChange={(e) => setCard({ ...card, number: e.target.value })}
-              aria-label="Card number"
-            />
-          </label>
-          <label>
-            Exp
-            <input
-              value={card.exp}
-              onChange={(e) => setCard({ ...card, exp: e.target.value })}
-              aria-label="Card expiration"
-            />
-          </label>
-          <label>
-            CVV
-            <div className="row">
-              <input
-                type="text"
-                value={card.cvv}
-                onChange={(e) => setCard({ ...card, cvv: e.target.value })}
-                aria-label="CVV"
-              />
-              <button type="button" onClick={() => copy(card.cvv)}>
-                Copy
-              </button>
+            <div className="field">
+              <p className="field-label">Username</p>
+              <div className="field-row">
+                <input
+                  value={login.username}
+                  onChange={(e) => setLogin({ ...login, username: e.target.value })}
+                  aria-label="Username"
+                  spellCheck={false}
+                />
+              </div>
             </div>
-          </label>
-        </>
-      )}
+            <div className="field">
+              <p className="field-label">Password</p>
+              <div className="copy-row">
+                <div className="field-row">
+                  <input
+                    type="text"
+                    value={login.password}
+                    onChange={(e) => setLogin({ ...login, password: e.target.value })}
+                    aria-label="Password"
+                    spellCheck={false}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={`copy-inline ${copied === "password" ? "copied" : ""}`}
+                  onClick={() => copy("password", login.password)}
+                  disabled={!login.password}
+                >
+                  {copied === "password" ? <CheckIcon /> : <CopyIcon />}
+                  {copied === "password" ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
-      <label>
-        Notes
-        <textarea
-          rows={3}
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          aria-label="Notes"
-        />
-      </label>
+        {kind === "note" && (
+          <div className="field">
+            <p className="field-label">Body</p>
+            <div className="field-row">
+              <textarea
+                rows={8}
+                value={note.body}
+                onChange={(e) => setNote({ body: e.target.value })}
+                aria-label="Note body"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+        )}
 
-      {error && <p className="error">{error}</p>}
+        {kind === "card" && (
+          <>
+            <div className="field">
+              <p className="field-label">Cardholder</p>
+              <div className="field-row">
+                <input
+                  value={card.cardholder}
+                  onChange={(e) => setCard({ ...card, cardholder: e.target.value })}
+                  aria-label="Cardholder"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <p className="field-label">Number</p>
+              <div className="copy-row">
+                <div className="field-row">
+                  <input
+                    type="text"
+                    value={card.number}
+                    onChange={(e) => setCard({ ...card, number: e.target.value })}
+                    aria-label="Card number"
+                    spellCheck={false}
+                    inputMode="numeric"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={`copy-inline ${copied === "number" ? "copied" : ""}`}
+                  onClick={() => copy("number", card.number)}
+                  disabled={!card.number}
+                >
+                  {copied === "number" ? <CheckIcon /> : <CopyIcon />}
+                  {copied === "number" ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+            <div className="field">
+              <p className="field-label">Exp</p>
+              <div className="field-row">
+                <input
+                  value={card.exp}
+                  onChange={(e) => setCard({ ...card, exp: e.target.value })}
+                  aria-label="Card expiration"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <p className="field-label">CVV</p>
+              <div className="copy-row">
+                <div className="field-row">
+                  <input
+                    type="text"
+                    value={card.cvv}
+                    onChange={(e) => setCard({ ...card, cvv: e.target.value })}
+                    aria-label="CVV"
+                    spellCheck={false}
+                    inputMode="numeric"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={`copy-inline ${copied === "cvv" ? "copied" : ""}`}
+                  onClick={() => copy("cvv", card.cvv)}
+                  disabled={!card.cvv}
+                >
+                  {copied === "cvv" ? <CheckIcon /> : <CopyIcon />}
+                  {copied === "cvv" ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="field">
+          <p className="field-label">Notes</p>
+          <div className="field-row">
+            <textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              aria-label="Notes"
+              spellCheck={false}
+            />
+          </div>
+        </div>
+      </div>
+
+      {error && <p className="error" role="alert">{error}</p>}
     </form>
   );
 }

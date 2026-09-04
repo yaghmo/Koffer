@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import type { GenOpts } from "../lib/types";
+import { CopyIcon, CheckIcon, XIcon } from "./Icon";
 
 interface Props {
   onClose: () => void;
@@ -14,10 +15,18 @@ const defaults: GenOpts = {
   symbols: true,
 };
 
+const CLASSES: { key: keyof Omit<GenOpts, "length">; label: string }[] = [
+  { key: "lower", label: "a-z" },
+  { key: "upper", label: "A-Z" },
+  { key: "digits", label: "0-9" },
+  { key: "symbols", label: "!@#" },
+];
+
 export default function Generator({ onClose }: Props) {
   const [opts, setOpts] = useState<GenOpts>(defaults);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function generate() {
     try {
@@ -31,34 +40,46 @@ export default function Generator({ onClose }: Props) {
 
   async function copy() {
     if (!value) return;
-    await api.copyToClipboard(value, 30);
+    try {
+      await api.copyToClipboard(value, 30);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch (e: any) {
+      setError(String(e));
+    }
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Generate password</h2>
+        <p className="meta">Generate</p>
+        <h2>New password</h2>
 
-        <label>
-          Length: {opts.length}
+        <div>
+          <p className="field-label" style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Length</span>
+            <span style={{ color: "var(--amber-200)" }}>{opts.length}</span>
+          </p>
           <input
             type="range"
             min={4}
             max={64}
             value={opts.length}
             onChange={(e) => setOpts({ ...opts, length: Number(e.target.value) })}
+            aria-label="Password length"
           />
-        </label>
+        </div>
 
-        <div className="checkboxes">
-          {(["lower", "upper", "digits", "symbols"] as const).map((k) => (
-            <label key={k} className="check">
+        <div className="checkboxes" role="group" aria-label="Character classes">
+          {CLASSES.map(({ key, label }) => (
+            <label key={key}>
               <input
                 type="checkbox"
-                checked={opts[k]}
-                onChange={(e) => setOpts({ ...opts, [k]: e.target.checked })}
+                checked={opts[key]}
+                onChange={(e) => setOpts({ ...opts, [key]: e.target.checked })}
+                aria-label={key}
               />
-              {k}
+              {label}
             </label>
           ))}
         </div>
@@ -71,19 +92,25 @@ export default function Generator({ onClose }: Props) {
             placeholder="Click Generate"
             className="generated"
           />
-          <button type="button" onClick={generate}>
+          <button type="button" className="btn" onClick={generate}>
             Generate
           </button>
-          <button type="button" onClick={copy} disabled={!value}>
-            Copy
+          <button
+            type="button"
+            className="btn btn-cool"
+            onClick={copy}
+            disabled={!value}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+            {copied ? "Copied" : "Copy"}
           </button>
         </div>
 
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" role="alert">{error}</p>}
 
-        <div className="row right">
-          <button type="button" onClick={onClose}>
-            Close
+        <div className="actions">
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            <XIcon /> Close
           </button>
         </div>
       </div>

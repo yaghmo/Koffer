@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { ItemKind, ItemMeta } from "../lib/types";
+import { PlusIcon } from "../components/Icon";
 import ItemList from "../components/ItemList";
 import SearchBar from "../components/SearchBar";
 import ItemEditor from "./ItemEditor";
@@ -42,29 +43,56 @@ export default function Vault() {
 
   return (
     <div className="vault">
+      <div>
+        <p className="screen-eyebrow">Vault · Unlocked</p>
+        <h1 className="screen-title">
+          {items.length === 0
+            ? "An empty room"
+            : `${items.length} item${items.length === 1 ? "" : "s"} on the shelf`}
+        </h1>
+      </div>
+
       <div className="toolbar">
         <SearchBar value={query} onChange={setQuery} />
-        <div className="filters">
-          <button
-            className={kind === null ? "active" : ""}
-            onClick={() => setKind(null)}
-          >
-            All
-          </button>
-          {(["login", "note", "card"] as ItemKind[]).map((k) => (
+        <div className="toolbar-row">
+          <div className="filters" aria-label="Filter by kind">
             <button
-              key={k}
-              className={kind === k ? "active" : ""}
-              onClick={() => setKind(k)}
+              type="button"
+              className={kind === null ? "active" : ""}
+              onClick={() => setKind(null)}
             >
-              {k}
+              All
             </button>
-          ))}
+            {(["login", "note", "card"] as ItemKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={kind === k ? "active" : ""}
+                onClick={() => setKind(k)}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setShowGenerator(true)}
+          >
+            Generate
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setEditing("new")}
+          >
+            <PlusIcon /> Add
+          </button>
         </div>
-        <button onClick={() => setShowGenerator(true)}>Generate</button>
-        <button onClick={() => setEditing("new")}>+ Add</button>
       </div>
+
       <ItemList items={items} onSelect={(it) => setEditing(it.id)} onDelete={handleDelete} />
+
       {showGenerator && <Generator onClose={() => setShowGenerator(false)} />}
     </div>
   );

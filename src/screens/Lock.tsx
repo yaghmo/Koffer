@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api";
+import { EyeIcon, EyeOffIcon, UnlockIcon, XIcon } from "../components/Icon";
 
 interface Props {
   onUnlocked: () => void;
@@ -41,7 +42,7 @@ export default function Lock({ onUnlocked, onReset }: Props) {
     try {
       await api.unlockVault(pw);
       onUnlocked();
-    } catch (e: any) {
+    } catch {
       setError("Wrong password. Try again.");
       setPw("");
     } finally {
@@ -67,58 +68,73 @@ export default function Lock({ onUnlocked, onReset }: Props) {
 
   return (
     <>
-      <form onSubmit={submit} className="lock">
-        <h2>Unlock your vault</h2>
-        <label>
-          Master password
-          <div className="password-row">
-            <input
-              type={show ? "text" : "password"}
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              autoFocus
-              aria-label="Master password"
-            />
+      <div className="stage">
+        <div className="screen-eyebrow">Vault · Locked</div>
+        <form onSubmit={submit} className="lock">
+          <div className="stage-frame">
+            <div className="safelight" aria-hidden />
+            <p className="label">Master password</p>
+            <div className="field-row">
+              <input
+                type={show ? "text" : "password"}
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                autoFocus
+                aria-label="Master password"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="reveal"
+                onClick={() => setShow((s) => !s)}
+                aria-label={show ? "Hide password" : "Show password"}
+                aria-pressed={show}
+                title={show ? "Hide password" : "Show password"}
+              >
+                {show ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
+            {error && <p className="error" role="alert">{error}</p>}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={busy || !pw}
+            >
+              <UnlockIcon />
+              {busy ? "Unlocking…" : "Unlock"}
+            </button>
             <button
               type="button"
-              className="reveal"
-              onClick={() => setShow((s) => !s)}
-              aria-label={show ? "Hide password" : "Show password"}
-              aria-pressed={show}
-              title={show ? "Hide password" : "Show password"}
+              className="link"
+              onClick={openReset}
+              disabled={busy}
             >
-              {show ? "🙈" : "👁"}
+              Forgot password / reset vault
             </button>
           </div>
-        </label>
-        {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={busy}>
-          {busy ? "Unlocking…" : "Unlock"}
-        </button>
-        <button
-          type="button"
-          className="link"
-          onClick={openReset}
-          disabled={busy}
-        >
-          Forgot password / reset vault
-        </button>
-      </form>
+        </form>
+      </div>
 
       {step === "warn1" && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="modal">
-            <h2>Reset your vault?</h2>
+          <div className="modal modal-danger">
+            <p className="meta">Reset · Warning 1 of 2</p>
+            <h2>Permanently delete the vault?</h2>
             <p>
               This will permanently delete the encrypted vault on disk. There
               is no recovery. Make sure you have no other way to recover your
               master password.
             </p>
             <div className="actions">
-              <button type="button" onClick={cancelReset}>
-                Cancel
+              <button type="button" className="btn-ghost" onClick={cancelReset}>
+                <XIcon /> Cancel
               </button>
-              <button type="button" onClick={() => setStep("warn2")}>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => setStep("warn2")}
+              >
                 Continue
               </button>
             </div>
@@ -128,17 +144,22 @@ export default function Lock({ onUnlocked, onReset }: Props) {
 
       {step === "warn2" && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="modal">
+          <div className="modal modal-danger">
+            <p className="meta">Reset · Warning 2 of 2</p>
             <h2>Last warning</h2>
             <p>
               All your items will be lost. After this, the app returns to a
               fresh state and you will set a new master password.
             </p>
             <div className="actions">
-              <button type="button" onClick={cancelReset}>
-                Cancel
+              <button type="button" className="btn-ghost" onClick={cancelReset}>
+                <XIcon /> Cancel
               </button>
-              <button type="button" onClick={() => setStep("confirm")}>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => setStep("confirm")}
+              >
                 Continue
               </button>
             </div>
@@ -148,21 +169,24 @@ export default function Lock({ onUnlocked, onReset }: Props) {
 
       {step === "confirm" && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <form onSubmit={submitReset} className="modal">
+          <form onSubmit={submitReset} className="modal modal-danger">
+            <p className="meta">Reset · Confirm</p>
             <h2>Confirm reset</h2>
-            <p className="muted">
+            <p>
               Re-enter your current master password to confirm. Wrong password
               aborts.
             </p>
-            <label>
-              Confirm master password
-              <div className="password-row">
+            <div className="field">
+              <p className="label">Confirm master password</p>
+              <div className="field-row">
                 <input
                   type={confirmShow ? "text" : "password"}
                   value={confirmPw}
                   onChange={(e) => setConfirmPw(e.target.value)}
                   autoFocus
                   aria-label="Confirm master password"
+                  spellCheck={false}
+                  autoComplete="off"
                 />
                 <button
                   type="button"
@@ -172,16 +196,25 @@ export default function Lock({ onUnlocked, onReset }: Props) {
                   aria-pressed={confirmShow}
                   title={confirmShow ? "Hide password" : "Show password"}
                 >
-                  {confirmShow ? "🙈" : "👁"}
+                  {confirmShow ? <EyeOffIcon /> : <EyeIcon />}
                 </button>
               </div>
-            </label>
-            {confirmError && <p className="error">{confirmError}</p>}
+            </div>
+            {confirmError && <p className="error" role="alert">{confirmError}</p>}
             <div className="actions">
-              <button type="button" onClick={cancelReset} disabled={confirmBusy}>
-                Cancel
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={cancelReset}
+                disabled={confirmBusy}
+              >
+                <XIcon /> Cancel
               </button>
-              <button type="submit" className="danger" disabled={confirmBusy || !confirmPw}>
+              <button
+                type="submit"
+                className="btn btn-danger"
+                disabled={confirmBusy || !confirmPw}
+              >
                 {confirmBusy ? "Resetting…" : "Reset vault"}
               </button>
             </div>
