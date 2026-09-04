@@ -1,7 +1,14 @@
 //! Vault data model and in-memory operations.
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use uuid::Uuid;
+
+#[derive(Debug, Error)]
+pub enum VaultError {
+    #[error("serialization failed: {0}")]
+    Serde(#[from] serde_json::Error),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ItemBase {
@@ -119,6 +126,23 @@ pub fn list_items(vault: &Vault) -> Vec<&Item> {
     vault.items.iter().collect()
 }
 
+pub fn serialize_vault(v: &Vault) -> Result<Vec<u8>, VaultError> {
+    Ok(serde_json::to_vec(v)?)
+}
+
+pub fn deserialize_vault(bytes: &[u8]) -> Result<Vault, VaultError> {
+    let v: Vault = serde_json::from_slice(bytes)?;
+    if v.version != 1 {
+        return Err(VaultError::Serde(serde_json::Error::io(
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unsupported vault version: {}", v.version),
+            ),
+        )));
+    }
+    Ok(v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,5 +208,37 @@ mod tests {
         add_item(&mut v, sample_login());
         add_item(&mut v, sample_login());
         assert_eq!(list_items(&v).len(), 2);
+    }
+
+    #[test]
+    fn vault_json_roundtrip_preserves_items() {
+        let mut v = new_vault(vec![1, 2, 3, 4]);
+        add_item(&mut v, sample_login());
+        add_item(
+            &mut v,
+            Item::Note {
+                base: ItemBase {
+                    id: Uuid::new_v4(),
+                    title: "wifi".to_string(),
+                    notes: "router pw".to_string(),
+                    created_at: 0,
+                    updated_at: 0,
+                },
+                fields: NoteFields {
+                    body: "abc123".to_string(),
+                },
+            },
+        );
+        let bytes = serialize_vault(&v).unwrap();
+        let v2 = deserialize_vault(&bytes).unwrap();
+        assert_eq!(v2.version, 1);
+        assert_eq!(v2.kdf_salt, vec![1, 2, 3, 4]);
+        assert_eq!(v2.items.len(), 2);
+    }
+
+    #[test]
+    fn deserialize_vault_rejects_garbage() {
+        assert!(deserialize_vault(b"not json").is_err());
+        assert!(deserialize_vault(b"").is_err());
     }
 }
