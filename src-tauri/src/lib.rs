@@ -1,5 +1,6 @@
 mod crypto;
 pub mod autolock;
+pub mod config;
 pub mod storage;
 pub mod vault;
 
