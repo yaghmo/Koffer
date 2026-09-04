@@ -14,7 +14,8 @@
     "allowSyntheticDefaultImports": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals"],
+    "noEmit": true
   },
   "include": ["src"]
 }

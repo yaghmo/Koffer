@@ -25,6 +25,11 @@ pub enum StorageError {
 }
 
 fn data_dir() -> PathBuf {
+    // Honor APPDATA env override (used by tests; on Windows the dirs crate
+    // uses Shell-known-folder API and ignores APPDATA, so we check first).
+    if let Some(p) = std::env::var_os("APPDATA") {
+        return PathBuf::from(p).join(APP_DIR);
+    }
     dirs::data_dir()
         .expect("platform data dir must exist")
         .join(APP_DIR)
@@ -119,22 +124,27 @@ pub fn load_vault(key: &[u8; 32]) -> Result<Vault, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Hold every tempdir we create so the path stays valid for the whole test.
+    static TEMPDIRS: Mutex<Vec<tempfile::TempDir>> = Mutex::new(Vec::new());
+    // Serialize tests that mutate env vars; APPDATA changes are process-wide.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn override_data_dir_to_tmp() {
         let tmp = tempfile::tempdir().unwrap();
-        // SAFETY: tests are single-threaded for this module; in production this is set in main()
+        // SAFETY: tests hold ENV_LOCK while mutating env
         unsafe {
             std::env::set_var("APPDATA", tmp.path());
             std::env::set_var("XDG_DATA_HOME", tmp.path());
-        }
-        // also override HOME for macOS-style fallback
-        unsafe {
             std::env::set_var("HOME", tmp.path());
         }
+        TEMPDIRS.lock().unwrap().push(tmp);
     }
 
     #[test]
     fn save_then_load_roundtrips() {
+        let _g = ENV_LOCK.lock().unwrap();
         override_data_dir_to_tmp();
         let salt = crate::crypto::random_bytes(16);
         let key = derive_key("master", &salt);
@@ -159,6 +169,7 @@ mod tests {
 
     #[test]
     fn load_with_wrong_key_fails() {
+        let _g = ENV_LOCK.lock().unwrap();
         override_data_dir_to_tmp();
         let salt = crate::crypto::random_bytes(16);
         let key = derive_key("master", &salt);
@@ -170,6 +181,7 @@ mod tests {
 
     #[test]
     fn load_corrupt_file_fails() {
+        let _g = ENV_LOCK.lock().unwrap();
         override_data_dir_to_tmp();
         fs::create_dir_all(data_dir()).unwrap();
         fs::write(vault_path(), b"corrupt data here").unwrap();
@@ -179,12 +191,14 @@ mod tests {
 
     #[test]
     fn vault_exists_false_when_no_file() {
+        let _g = ENV_LOCK.lock().unwrap();
         override_data_dir_to_tmp();
         assert!(!vault_exists());
     }
 
     #[test]
     fn load_rejects_wrong_magic() {
+        let _g = ENV_LOCK.lock().unwrap();
         override_data_dir_to_tmp();
         fs::create_dir_all(data_dir()).unwrap();
         // craft a file with wrong magic
