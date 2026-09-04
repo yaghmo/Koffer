@@ -1,3 +1,4 @@
+mod clipboard;
 mod crypto;
 pub mod autolock;
 pub mod config;
