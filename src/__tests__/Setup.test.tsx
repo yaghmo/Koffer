@@ -1,0 +1,45 @@
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import Setup from "../screens/Setup";
+
+vi.mock("../lib/api", () => ({
+  api: {
+    setupVault: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+describe("Setup", () => {
+  it("renders two password fields and a create button", () => {
+    render(<Setup onCreated={() => {}} />);
+    expect(screen.getByLabelText("Master password")).toBeTruthy();
+    expect(screen.getByLabelText("Confirm master password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /create/i })).toBeTruthy();
+  });
+
+  it("calls setupVault and onCreated when passwords match and meet min length", async () => {
+    const onCreated = vi.fn();
+    const { api } = await import("../lib/api");
+    render(<Setup onCreated={onCreated} />);
+    fireEvent.change(screen.getByLabelText("Master password"), {
+      target: { value: "correcthorse" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm master password"), {
+      target: { value: "correcthorse" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create/i }));
+    await waitFor(() => expect(api.setupVault).toHaveBeenCalledWith("correcthorse"));
+    expect(onCreated).toHaveBeenCalled();
+  });
+
+  it("shows an error when passwords do not match", async () => {
+    render(<Setup onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Master password"), {
+      target: { value: "abcdefgh" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm master password"), {
+      target: { value: "xxxxxx" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create/i }));
+    expect(await screen.findByText(/do not match/i)).toBeTruthy();
+  });
+});
