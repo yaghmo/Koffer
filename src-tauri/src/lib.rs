@@ -2,6 +2,7 @@ mod clipboard;
 mod crypto;
 pub mod autolock;
 pub mod config;
+pub mod password;
 pub mod storage;
 pub mod vault;
 
