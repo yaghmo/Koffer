@@ -46,7 +46,10 @@ export default function App() {
           <Setup onCreated={() => setStatus("unlocked")} />
         )}
         {status === "locked" && (
-          <Lock onUnlocked={() => setStatus("unlocked")} />
+          <Lock
+            onUnlocked={() => setStatus("unlocked")}
+            onReset={() => setStatus("no-vault")}
+          />
         )}
         {status === "unlocked" && (
           <Vault />

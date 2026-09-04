@@ -274,3 +274,16 @@ button.reveal {
 button.reveal:hover {
   background: #333;
 }
+
+button.link {
+  background: none;
+  color: var(--accent);
+  padding: 0.25rem 0;
+  text-decoration: underline;
+  font-size: 0.85rem;
+  align-self: center;
+}
+
+button.link:hover {
+  opacity: 0.8;
+}

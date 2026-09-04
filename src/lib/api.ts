@@ -24,4 +24,5 @@ export const api = {
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
 
   resetActivity: () => invoke<void>("reset_activity"),
+  resetVault: (password: string) => invoke<void>("reset_vault", { password }),
 };

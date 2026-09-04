@@ -29,6 +29,7 @@ pub fn run() {
             commands::get_config,
             commands::set_autolock_mins,
             commands::reset_activity,
+            commands::reset_vault,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

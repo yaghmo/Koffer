@@ -238,3 +238,21 @@ pub fn set_autolock_mins(mins: u8, state: State<'_, AppState>) -> Result<(), Str
 pub fn reset_activity(state: State<'_, AppState>) {
     state.autolock.lock().unwrap().reset();
 }
+
+/// Wipe the vault and config from disk after verifying the user can re-enter
+/// the current master password. Used by the Lock-screen "forgot password" flow
+/// to escape a forgotten password. Returns Err("invalid password") on bad pw.
+#[tauri::command]
+pub fn reset_vault(password: String, state: State<'_, AppState>) -> Result<(), String> {
+    // Verify by attempting a full unlock cycle against the existing vault.
+    // load_vault_with_key will only succeed for the correct password.
+    let vault_on_disk = storage::load_vault_unverified()
+        .map_err(|_| "invalid password".to_string())?;
+    let key = derive_key(&password, &vault_on_disk.kdf_salt);
+    storage::load_vault_with_key(&key).map_err(|_| "invalid password".to_string())?;
+
+    // Wipe the in-memory key first, then delete the files.
+    state.lock_and_clear();
+    storage::delete_vault_and_config().map_err(|e| e.to_string())?;
+    Ok(())
+}

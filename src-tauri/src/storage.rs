@@ -47,6 +47,23 @@ pub fn vault_exists() -> bool {
     vault_path().exists()
 }
 
+/// Delete the vault file and the config file. Missing files are not an error.
+/// Also removes the data dir itself if it becomes empty (e.g. first-run reset).
+pub fn delete_vault_and_config() -> Result<(), StorageError> {
+    let vp = vault_path();
+    if vp.exists() {
+        fs::remove_file(&vp)?;
+    }
+    let cp = config_path();
+    if cp.exists() {
+        fs::remove_file(&cp)?;
+    }
+    // Best-effort cleanup of the now-empty app dir; ignore if it fails or
+    // contains other files the user put there.
+    let _ = fs::remove_dir(data_dir());
+    Ok(())
+}
+
 pub fn save_vault(vault: &Vault, key: &[u8; 32]) -> Result<(), StorageError> {
     fs::create_dir_all(data_dir())?;
     let plaintext = serialize_vault(vault)?;
@@ -210,5 +227,29 @@ mod tests {
         bytes[0] = b'X';
         fs::write(vault_path(), &bytes).unwrap();
         assert!(load_vault(&key).is_err());
+    }
+
+    #[test]
+    fn delete_vault_and_config_removes_both_files() {
+        let _g = ENV_LOCK.lock().unwrap();
+        override_data_dir_to_tmp();
+        let salt = crate::crypto::random_bytes(16);
+        let key = derive_key("master", &salt);
+        let v = new_vault(salt);
+        save_vault(&v, &key).unwrap();
+        crate::config::save(&crate::config::Config::default()).unwrap();
+        assert!(vault_exists());
+        assert!(config_path().exists());
+        delete_vault_and_config().unwrap();
+        assert!(!vault_exists());
+        assert!(!config_path().exists());
+    }
+
+    #[test]
+    fn delete_when_nothing_to_delete_succeeds() {
+        let _g = ENV_LOCK.lock().unwrap();
+        override_data_dir_to_tmp();
+        // No files created — delete should still be Ok.
+        delete_vault_and_config().unwrap();
     }
 }
