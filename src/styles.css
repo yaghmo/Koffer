@@ -251,3 +251,26 @@ button.active {
   gap: 0.5rem;
   justify-content: flex-end;
 }
+
+/* Password input with reveal toggle */
+.password-row {
+  display: flex;
+  gap: 0.25rem;
+  align-items: stretch;
+}
+
+.password-row input {
+  flex: 1;
+}
+
+button.reveal {
+  background: #252525;
+  color: var(--fg);
+  padding: 0.5rem 0.6rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+button.reveal:hover {
+  background: #333;
+}

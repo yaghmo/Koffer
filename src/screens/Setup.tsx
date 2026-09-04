@@ -8,6 +8,7 @@ interface Props {
 export default function Setup({ onCreated }: Props) {
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -41,22 +42,36 @@ export default function Setup({ onCreated }: Props) {
       </p>
       <label>
         Master password
-        <input
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          autoFocus
-          aria-label="Master password"
-        />
+        <div className="password-row">
+          <input
+            type={show ? "text" : "password"}
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            autoFocus
+            aria-label="Master password"
+          />
+        </div>
       </label>
       <label>
         Confirm
-        <input
-          type="password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          aria-label="Confirm master password"
-        />
+        <div className="password-row">
+          <input
+            type={show ? "text" : "password"}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            aria-label="Confirm master password"
+          />
+          <button
+            type="button"
+            className="reveal"
+            onClick={() => setShow((s) => !s)}
+            aria-label={show ? "Hide passwords" : "Show passwords"}
+            aria-pressed={show}
+            title={show ? "Hide passwords" : "Show passwords"}
+          >
+            {show ? "🙈" : "👁"}
+          </button>
+        </div>
       </label>
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={busy}>

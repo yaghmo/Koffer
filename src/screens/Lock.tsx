@@ -7,6 +7,7 @@ interface Props {
 
 export default function Lock({ onUnlocked }: Props) {
   const [pw, setPw] = useState("");
+  const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -19,6 +20,7 @@ export default function Lock({ onUnlocked }: Props) {
       onUnlocked();
     } catch (e: any) {
       setError("Wrong password. Try again.");
+      setPw("");
     } finally {
       setBusy(false);
     }
@@ -29,13 +31,25 @@ export default function Lock({ onUnlocked }: Props) {
       <h2>Unlock your vault</h2>
       <label>
         Master password
-        <input
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          autoFocus
-          aria-label="Master password"
-        />
+        <div className="password-row">
+          <input
+            type={show ? "text" : "password"}
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            autoFocus
+            aria-label="Master password"
+          />
+          <button
+            type="button"
+            className="reveal"
+            onClick={() => setShow((s) => !s)}
+            aria-label={show ? "Hide password" : "Show password"}
+            aria-pressed={show}
+            title={show ? "Hide password" : "Show password"}
+          >
+            {show ? "🙈" : "👁"}
+          </button>
+        </div>
       </label>
       {error && <p className="error">{error}</p>}
       <button type="submit" disabled={busy}>
