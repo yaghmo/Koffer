@@ -2,6 +2,18 @@
 
 use getrandom::getrandom;
 
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum CryptoError {
+    #[error("encryption/decryption failed")]
+    Aead,
+}
+
 /// Cryptographically secure random bytes.
 pub fn random_bytes(len: usize) -> Vec<u8> {
     let mut buf = vec![0u8; len];
@@ -22,6 +34,26 @@ pub fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
         .hash_password_into(password.as_bytes(), salt, &mut out)
         .expect("Argon2id hashing failed");
     out
+}
+
+/// Encrypt with AES-256-GCM. Returns (nonce, ciphertext_with_appended_tag).
+pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let cipher = Aes256Gcm::new(key.into());
+    let nonce_bytes = random_bytes(12);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    let ct = cipher
+        .encrypt(nonce, plaintext)
+        .expect("AES-GCM encrypt should not fail with random nonce");
+    (nonce_bytes, ct)
+}
+
+/// Decrypt with AES-256-GCM.
+pub fn decrypt(key: &[u8; 32], nonce: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    let cipher = Aes256Gcm::new(key.into());
+    let nonce = Nonce::from_slice(nonce);
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| CryptoError::Aead)
 }
 
 #[cfg(test)]
@@ -71,5 +103,39 @@ mod tests {
         let k1 = derive_key("hunter2", &salt);
         let k2 = derive_key("hunter3", &salt);
         assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn encrypt_decrypt_roundtrip() {
+        let key = derive_key("password", &random_bytes(16));
+        let pt = b"hello world";
+        let (nonce, ct) = encrypt(&key, pt);
+        let out = decrypt(&key, &nonce, &ct).unwrap();
+        assert_eq!(out, pt);
+    }
+
+    #[test]
+    fn decrypt_with_wrong_key_fails() {
+        let k1 = derive_key("password", &random_bytes(16));
+        let k2 = derive_key("different", &random_bytes(16));
+        let (nonce, ct) = encrypt(&k1, b"secret");
+        assert!(decrypt(&k2, &nonce, &ct).is_err());
+    }
+
+    #[test]
+    fn decrypt_tampered_ciphertext_fails() {
+        let key = derive_key("password", &random_bytes(16));
+        let (nonce, mut ct) = encrypt(&key, b"secret");
+        let last = ct.len() - 1;
+        ct[last] ^= 0x01;
+        assert!(decrypt(&key, &nonce, &ct).is_err());
+    }
+
+    #[test]
+    fn encrypt_uses_fresh_nonce_each_time() {
+        let key = derive_key("password", &random_bytes(16));
+        let (_, n1) = encrypt(&key, b"x");
+        let (_, n2) = encrypt(&key, b"x");
+        assert_ne!(n1, n2);
     }
 }
