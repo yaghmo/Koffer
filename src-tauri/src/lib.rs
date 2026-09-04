@@ -33,3 +33,15 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+pub use autolock::AutoLock;
+pub use config::{Config, ConfigError};
+pub use crypto::{derive_key, encrypt, decrypt, random_bytes, CryptoError};
+pub use password::{generate, GenError, GenOpts};
+pub use storage::{
+    load_vault, load_vault_unverified, load_vault_with_key, save_vault, vault_exists,
+};
+pub use vault::{
+    add_item, delete_item, deserialize_vault, get_item, list_items, new_vault, serialize_vault,
+    update_item, Item, ItemBase, LoginFields, NoteFields, CardFields, Vault, VaultError,
+};
