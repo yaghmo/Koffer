@@ -65,6 +65,33 @@ pub fn save_vault(vault: &Vault, key: &[u8; 32]) -> Result<(), StorageError> {
     Ok(())
 }
 
+/// Read the salt from the vault file without verifying the key.
+pub fn load_vault_unverified() -> Result<Vault, StorageError> {
+    let bytes = fs::read(vault_path())?;
+    if bytes.len() < 4 + 4 + 16 + 12 {
+        return Err(StorageError::Invalid);
+    }
+    if &bytes[0..4] != MAGIC {
+        return Err(StorageError::Invalid);
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    if version != VERSION {
+        return Err(StorageError::Invalid);
+    }
+    let salt = bytes[8..24].to_vec();
+    // Build a placeholder Vault with just the salt populated for key derivation.
+    Ok(Vault {
+        version: 1,
+        kdf_salt: salt,
+        items: Vec::new(),
+    })
+}
+
+/// Load and decrypt the vault with the given key.
+pub fn load_vault_with_key(key: &[u8; 32]) -> Result<Vault, StorageError> {
+    load_vault(key)
+}
+
 pub fn load_vault(key: &[u8; 32]) -> Result<Vault, StorageError> {
     let bytes = fs::read(vault_path())?;
     if bytes.len() < 4 + 4 + 16 + 12 {

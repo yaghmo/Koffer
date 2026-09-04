@@ -1,14 +1,35 @@
-mod clipboard;
-mod crypto;
 pub mod autolock;
+pub mod clipboard;
+pub mod commands;
 pub mod config;
+pub mod crypto;
 pub mod password;
 pub mod storage;
 pub mod vault;
 
+use commands::AppState;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(AppState::new())
+        .invoke_handler(tauri::generate_handler![
+            commands::vault_exists,
+            commands::setup_vault,
+            commands::unlock_vault,
+            commands::lock_vault,
+            commands::is_unlocked,
+            commands::list_items,
+            commands::get_item,
+            commands::save_item,
+            commands::delete_item,
+            commands::generate_password,
+            commands::copy_to_clipboard,
+            commands::get_config,
+            commands::set_autolock_mins,
+            commands::reset_activity,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

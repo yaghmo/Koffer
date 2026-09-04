@@ -1,9 +1,10 @@
 //! Password generator. Always runs in Rust so the RNG is cryptographically secure.
 
 use crate::crypto::random_bytes;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenOpts {
     pub length: usize,
     pub lower: bool,
