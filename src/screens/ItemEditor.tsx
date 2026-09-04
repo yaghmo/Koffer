@@ -41,6 +41,8 @@ export default function ItemEditor({ id, onClose }: Props) {
           cvv: item.cvv,
         });
       }
+    }).catch((err) => {
+      setError(`Failed to load item: ${err}`);
     });
   }, [id]);
 
