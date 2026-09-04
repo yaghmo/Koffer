@@ -155,4 +155,19 @@ mod tests {
         override_data_dir_to_tmp();
         assert!(!vault_exists());
     }
+
+    #[test]
+    fn load_rejects_wrong_magic() {
+        override_data_dir_to_tmp();
+        fs::create_dir_all(data_dir()).unwrap();
+        // craft a file with wrong magic
+        let salt = crate::crypto::random_bytes(16);
+        let key = derive_key("master", &salt);
+        let v = new_vault(salt);
+        save_vault(&v, &key).unwrap();
+        let mut bytes = fs::read(vault_path()).unwrap();
+        bytes[0] = b'X';
+        fs::write(vault_path(), &bytes).unwrap();
+        assert!(load_vault(&key).is_err());
+    }
 }
