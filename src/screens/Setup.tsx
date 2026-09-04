@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api";
-import { EyeIcon, EyeOffIcon, LockIcon } from "../components/Icon";
+import { EyeIcon, EyeOffIcon, PlusIcon } from "../components/Icon";
 
 interface Props {
   onCreated: () => void;
@@ -59,6 +59,16 @@ export default function Setup({ onCreated }: Props) {
                 spellCheck={false}
                 autoComplete="new-password"
               />
+              <button
+                type="button"
+                className="reveal"
+                onClick={() => setShow((s) => !s)}
+                aria-label={show ? "Hide password" : "Show password"}
+                aria-pressed={show}
+                title={show ? "Hide password" : "Show password"}
+              >
+                {show ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
             </div>
           </div>
           <div className="field">
@@ -72,16 +82,6 @@ export default function Setup({ onCreated }: Props) {
                 spellCheck={false}
                 autoComplete="new-password"
               />
-              <button
-                type="button"
-                className="reveal"
-                onClick={() => setShow((s) => !s)}
-                aria-label={show ? "Hide passwords" : "Show passwords"}
-                aria-pressed={show}
-                title={show ? "Hide passwords" : "Show passwords"}
-              >
-                {show ? <EyeOffIcon /> : <EyeIcon />}
-              </button>
             </div>
           </div>
           {error && <p className="error" role="alert">{error}</p>}
@@ -90,7 +90,7 @@ export default function Setup({ onCreated }: Props) {
             className="btn btn-primary"
             disabled={busy || !pw || !confirm}
           >
-            <LockIcon />
+            <PlusIcon />
             {busy ? "Creating…" : "Create vault"}
           </button>
         </div>

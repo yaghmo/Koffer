@@ -1,7 +1,7 @@
 //! Encrypted on-disk storage for the vault.
 
-use crate::crypto::{derive_key, encrypt};
-use crate::vault::{deserialize_vault, new_vault, serialize_vault, Vault, VaultError};
+use crate::crypto::encrypt;
+use crate::vault::{deserialize_vault, serialize_vault, Vault, VaultError};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -141,6 +141,8 @@ pub fn load_vault(key: &[u8; 32]) -> Result<Vault, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::derive_key;
+    use crate::vault::new_vault;
     use std::sync::Mutex;
 
     // Hold every tempdir we create so the path stays valid for the whole test.

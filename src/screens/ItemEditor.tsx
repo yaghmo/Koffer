@@ -167,6 +167,7 @@ export default function ItemEditor({ id, onClose }: Props) {
               <div className="copy-row">
                 <div className="field-row">
                   <input
+                    className="mono"
                     type="text"
                     value={login.password}
                     onChange={(e) => setLogin({ ...login, password: e.target.value })}
@@ -221,6 +222,7 @@ export default function ItemEditor({ id, onClose }: Props) {
               <div className="copy-row">
                 <div className="field-row">
                   <input
+                    className="mono"
                     type="text"
                     value={card.number}
                     onChange={(e) => setCard({ ...card, number: e.target.value })}
@@ -244,6 +246,7 @@ export default function ItemEditor({ id, onClose }: Props) {
               <p className="field-label">Exp</p>
               <div className="field-row">
                 <input
+                  className="mono"
                   value={card.exp}
                   onChange={(e) => setCard({ ...card, exp: e.target.value })}
                   aria-label="Card expiration"
@@ -256,6 +259,7 @@ export default function ItemEditor({ id, onClose }: Props) {
               <div className="copy-row">
                 <div className="field-row">
                   <input
+                    className="mono"
                     type="text"
                     value={card.cvv}
                     onChange={(e) => setCard({ ...card, cvv: e.target.value })}
