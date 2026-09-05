@@ -21,6 +21,7 @@ interface Props {
   onEditNew: (kind: ItemKind) => void;
   onEditorClose: () => void;
   onViewerClose: () => void;
+  onItemSaved: () => void;
 }
 
 export default function Vault({
@@ -31,6 +32,7 @@ export default function Vault({
   onEditItem,
   onEditNew,
   onEditorClose,
+  onItemSaved,
 }: Props) {
   const [items, setItems] = useState<ItemMeta[]>([]);
   const [query, setQuery] = useState("");
@@ -106,6 +108,7 @@ export default function Vault({
           id={editing.kind === "existing" ? editing.id : null}
           initialKind={editing.kind === "new" ? editing.itemKind : undefined}
           onClose={onEditorClose}
+          onSaved={onItemSaved}
         />
       )}
     </div>

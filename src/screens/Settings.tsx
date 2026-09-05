@@ -1,38 +1,21 @@
 import { useState, useEffect } from "react";
 import { api } from "../lib/api";
-import type { ItemMeta, ItemKind } from "../lib/types";
-import SearchBar from "../components/SearchBar";
-import ItemList from "../components/ItemList";
 
 interface Props {
   accountId: string;
   onLock: () => void;
-  onViewItem: (id: string) => void;
 }
 
-type KindFilter = "all" | ItemKind;
-
-export default function Settings({ accountId, onLock, onViewItem }: Props) {
+export default function Settings({ accountId, onLock }: Props) {
   const [autolockMins, setAutolockMins] = useState(15);
   const [busy, setBusy] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPassword, setResetPassword] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
 
-  // Items section: same kind filter + search as the Vault so the user can
-  // pivot between settings and browsing without losing their place.
-  const [items, setItems] = useState<ItemMeta[]>([]);
-  const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<KindFilter>("all");
-
   useEffect(() => {
     api.getConfig().then((cfg) => setAutolockMins(cfg.autolock_mins));
   }, []);
-
-  useEffect(() => {
-    const k = kind === "all" ? undefined : kind;
-    api.listItems(query || undefined, k).then(setItems).catch(() => {});
-  }, [query, kind]);
 
   async function saveAutolock() {
     setBusy(true);
@@ -57,8 +40,6 @@ export default function Settings({ accountId, onLock, onViewItem }: Props) {
     }
   }
 
-  const kinds: KindFilter[] = ["all", "login", "note", "card"];
-
   return (
     <div className="settings">
       <div className="settings-header">
@@ -66,36 +47,6 @@ export default function Settings({ accountId, onLock, onViewItem }: Props) {
           <p className="screen-eyebrow">Settings</p>
           <h1 className="screen-title">Vault preferences</h1>
         </div>
-      </div>
-
-      <div className="settings-section">
-        <h2 className="settings-heading">Items</h2>
-        <p className="settings-description">
-          Browse every item in this vault. Click one to view.
-        </p>
-        <div className="toolbar">
-          <SearchBar value={query} onChange={setQuery} />
-        </div>
-        <div className="filter-tabs" role="tablist" aria-label="Item kind">
-          {kinds.map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={kind === k}
-              className={kind === k ? "active" : ""}
-              onClick={() => setKind(k)}
-            >
-              {k === "all" ? "All" : k}
-            </button>
-          ))}
-        </div>
-        <ItemList items={items} onView={(it) => onViewItem(it.id)} onDelete={async (id) => {
-          await api.deleteItem(id);
-          const k = kind === "all" ? undefined : kind;
-          const list = await api.listItems(query || undefined, k);
-          setItems(list);
-        }} />
       </div>
 
       <div className="settings-section">
@@ -142,8 +93,8 @@ export default function Settings({ accountId, onLock, onViewItem }: Props) {
             <p className="modal-meta">Reset · Confirm</p>
             <h2>Reset vault?</h2>
             <p>
-              This will permanently delete all {" "}
-              items. Enter your current master password to confirm.
+              This will permanently delete all items. Enter your current master
+              password to confirm.
             </p>
             <form onSubmit={handleReset}>
               <div className="field">

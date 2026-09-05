@@ -166,13 +166,13 @@ export default function App() {
             }}
             onEditorClose={() => setEditing(null)}
             onViewerClose={() => setViewingId(null)}
+            onItemSaved={() => setVaultRefresh((n) => n + 1)}
           />
         )}
         {view === "settings" && currentAccount && (
           <Settings
             accountId={currentAccount.id}
             onLock={handleLock}
-            onViewItem={(id) => setViewingId(id)}
           />
         )}
         {/* Viewer overlays both views so the user can pop in from anywhere */}

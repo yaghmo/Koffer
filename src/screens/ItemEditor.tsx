@@ -1,19 +1,37 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Item, ItemKind, LoginFields, NoteFields, CardFields } from "../lib/types";
-import { CopyIcon, CheckIcon, XIcon } from "../components/Icon";
+import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, XIcon } from "../components/Icon";
 
 interface Props {
   id: string | null;
   initialKind?: ItemKind;
   onClose: () => void;
+  onSaved?: () => void;
 }
 
 const emptyLogin = (): LoginFields => ({ url: "", username: "", password: "" });
 const emptyNote = (): NoteFields => ({ body: "" });
 const emptyCard = (): CardFields => ({ cardholder: "", number: "", exp: "", cvv: "" });
 
-export default function ItemEditor({ id, initialKind, onClose }: Props) {
+// Accept http(s) URLs only, with a host. Empty is allowed (URL is optional).
+function isValidUrl(s: string): boolean {
+  if (!s.trim()) return true;
+  try {
+    const u = new URL(s);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+// Card expiration: YYYY-MM (HTML month input) or MM/YY. Empty allowed.
+function isValidExp(s: string): boolean {
+  if (!s.trim()) return true;
+  return /^(\d{4}-\d{2}|\d{2}\/\d{2})$/.test(s.trim());
+}
+
+export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props) {
   const [kind, setKind] = useState<ItemKind>(initialKind ?? "login");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -23,6 +41,9 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+
+  // Passwords are masked by default; the reveal toggle shows them in the clear.
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (id === null) return;
@@ -63,6 +84,14 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
       setError("Title is required.");
       return;
     }
+    if (kind === "login" && !isValidUrl(login.url)) {
+      setError("URL must be a valid http(s) link (e.g. https://example.com).");
+      return;
+    }
+    if (kind === "card" && !isValidExp(card.exp)) {
+      setError("Card expiration must be YYYY-MM or MM/YY.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -84,6 +113,7 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
         item = { type: "card", ...base, ...card };
       }
       await api.saveItem(item);
+      onSaved?.();
       onClose();
     } catch (e: any) {
       setError(String(e));
@@ -151,6 +181,9 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
                   onChange={(e) => setLogin({ ...login, url: e.target.value })}
                   aria-label="URL"
                   spellCheck={false}
+                  autoComplete="off"
+                  inputMode="url"
+                  placeholder="https://example.com"
                 />
               </div>
             </div>
@@ -162,6 +195,7 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
                   onChange={(e) => setLogin({ ...login, username: e.target.value })}
                   aria-label="Username"
                   spellCheck={false}
+                  autoComplete="off"
                 />
               </div>
             </div>
@@ -171,12 +205,23 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
                 <div className="field-row">
                   <input
                     className="mono"
-                    type="text"
+                    type={showPassword ? "text" : "password"}
                     value={login.password}
                     onChange={(e) => setLogin({ ...login, password: e.target.value })}
                     aria-label="Password"
                     spellCheck={false}
+                    autoComplete="new-password"
                   />
+                  <button
+                    type="button"
+                    className="reveal"
+                    onClick={() => setShowPassword((s) => !s)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
                 </div>
                 <button
                   type="button"
@@ -217,6 +262,7 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
                   onChange={(e) => setCard({ ...card, cardholder: e.target.value })}
                   aria-label="Cardholder"
                   spellCheck={false}
+                  autoComplete="off"
                 />
               </div>
             </div>
@@ -232,6 +278,7 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
                     aria-label="Card number"
                     spellCheck={false}
                     inputMode="numeric"
+                    autoComplete="off"
                   />
                 </div>
                 <button
@@ -254,6 +301,8 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
                   onChange={(e) => setCard({ ...card, exp: e.target.value })}
                   aria-label="Card expiration"
                   spellCheck={false}
+                  autoComplete="off"
+                  placeholder="YYYY-MM"
                 />
               </div>
             </div>
@@ -263,12 +312,13 @@ export default function ItemEditor({ id, initialKind, onClose }: Props) {
                 <div className="field-row">
                   <input
                     className="mono"
-                    type="text"
+                    type="password"
                     value={card.cvv}
                     onChange={(e) => setCard({ ...card, cvv: e.target.value })}
                     aria-label="CVV"
                     spellCheck={false}
                     inputMode="numeric"
+                    autoComplete="off"
                   />
                 </div>
                 <button

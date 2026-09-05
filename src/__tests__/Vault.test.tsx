@@ -25,6 +25,7 @@ const editorProps = {
   onEditNew: noop,
   onEditorClose: noop,
   onViewerClose: noop,
+  onItemSaved: noop,
 };
 
 describe("Vault", () => {
