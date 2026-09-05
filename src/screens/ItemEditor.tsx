@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Item, ItemKind, LoginFields, NoteFields, CardFields } from "../lib/types";
+import type { Item, ItemKind, LoginFields, LoginMethod, NoteFields, CardFields } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, XIcon } from "../components/Icon";
 
 interface Props {
@@ -10,7 +10,7 @@ interface Props {
   onSaved?: () => void;
 }
 
-const emptyLogin = (): LoginFields => ({ url: "", username: "", password: "" });
+const emptyLogin = (): LoginFields => ({ method: "credentials", url: "", username: "", password: "" });
 const emptyNote = (): NoteFields => ({ body: "" });
 const emptyCard = (): CardFields => ({ cardholder: "", number: "", exp: "", cvv: "" });
 
@@ -73,7 +73,12 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
       setTitle(item.title);
       setNotes(item.notes);
       if (item.type === "login") {
-        setLogin({ url: item.url, username: item.username, password: item.password });
+        setLogin({
+          method: item.method || "credentials",
+          url: item.url,
+          username: item.username,
+          password: item.password,
+        });
       } else if (item.type === "note") {
         setNote({ body: item.body });
       } else {
@@ -201,6 +206,23 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
         {kind === "login" && (
           <>
             <div className="field">
+              <p className="field-label">Login method</p>
+              <div className="field-row">
+                <select
+                  value={login.method}
+                  onChange={(e) => setLogin({ ...login, method: e.target.value as LoginMethod })}
+                  aria-label="Login method"
+                >
+                  <option value="credentials">Username & Password</option>
+                  <option value="google">Google Account</option>
+                  <option value="github">GitHub Account</option>
+                  <option value="microsoft">Microsoft Account</option>
+                  <option value="apple">Apple Account</option>
+                  <option value="facebook">Facebook Account</option>
+                </select>
+              </div>
+            </div>
+            <div className="field">
               <p className="field-label">URL</p>
               <div className="field-row">
                 <input
@@ -214,53 +236,57 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                 />
               </div>
             </div>
-            <div className="field">
-              <p className="field-label">Username</p>
-              <div className="field-row">
-                <input
-                  value={login.username}
-                  onChange={(e) => setLogin({ ...login, username: e.target.value })}
-                  aria-label="Username"
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-              </div>
-            </div>
-            <div className="field">
-              <p className="field-label">Password</p>
-              <div className="copy-row">
-                <div className="field-row">
-                  <input
-                    className="mono"
-                    type={showPassword ? "text" : "password"}
-                    value={login.password}
-                    onChange={(e) => setLogin({ ...login, password: e.target.value })}
-                    aria-label="Password"
-                    spellCheck={false}
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    className="reveal"
-                    onClick={() => setShowPassword((s) => !s)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    aria-pressed={showPassword}
-                    title={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-                  </button>
+            {login.method === "credentials" && (
+              <>
+                <div className="field">
+                  <p className="field-label">Username</p>
+                  <div className="field-row">
+                    <input
+                      value={login.username}
+                      onChange={(e) => setLogin({ ...login, username: e.target.value })}
+                      aria-label="Username"
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className={`copy-inline ${copied === "password" ? "copied" : ""}`}
-                  onClick={() => copy("password", login.password)}
-                  disabled={!login.password}
-                >
-                  {copied === "password" ? <CheckIcon /> : <CopyIcon />}
-                  {copied === "password" ? "Copied" : "Copy"}
-                </button>
-              </div>
-            </div>
+                <div className="field">
+                  <p className="field-label">Password</p>
+                  <div className="copy-row">
+                    <div className="field-row">
+                      <input
+                        className="mono"
+                        type={showPassword ? "text" : "password"}
+                        value={login.password}
+                        onChange={(e) => setLogin({ ...login, password: e.target.value })}
+                        aria-label="Password"
+                        spellCheck={false}
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        className="reveal"
+                        onClick={() => setShowPassword((s) => !s)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                        title={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className={`copy-inline ${copied === "password" ? "copied" : ""}`}
+                      onClick={() => copy("password", login.password)}
+                      disabled={!login.password}
+                    >
+                      {copied === "password" ? <CheckIcon /> : <CopyIcon />}
+                      {copied === "password" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </>
         )}
 

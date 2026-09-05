@@ -21,9 +21,15 @@ pub struct ItemBase {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LoginFields {
+    #[serde(default = "default_login_method")]
+    pub method: String,
     pub url: String,
     pub username: String,
     pub password: String,
+}
+
+fn default_login_method() -> String {
+    "credentials".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -158,6 +164,7 @@ mod tests {
                 updated_at: now,
             },
             fields: LoginFields {
+                method: "credentials".to_string(),
                 url: "https://github.com".to_string(),
                 username: "octocat".to_string(),
                 password: "s3cret".to_string(),

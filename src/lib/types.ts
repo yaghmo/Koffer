@@ -8,7 +8,10 @@ export interface ItemBase {
   updated_at: number;
 }
 
+export type LoginMethod = "credentials" | "google" | "github" | "microsoft" | "apple" | "facebook";
+
 export interface LoginFields {
+  method: LoginMethod;
   url: string;
   username: string;
   password: string;

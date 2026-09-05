@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Item } from "../lib/types";
+import type { Item, LoginMethod } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon } from "../components/Icon";
 
 interface Props {
@@ -106,6 +106,15 @@ function SecretField({
   );
 }
 
+const methodLabels: Record<LoginMethod, string> = {
+  credentials: "Username & Password",
+  google: "Google Account",
+  github: "GitHub Account",
+  microsoft: "Microsoft Account",
+  apple: "Apple Account",
+  facebook: "Facebook Account",
+};
+
 export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
   const [item, setItem] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +212,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
         <Field label="Title" value={item.title} />
         {item.type === "login" && (
           <>
+            <Field label="Login method" value={methodLabels[item.method || "credentials"]} />
             <Field
               label="URL"
               value={item.url}
@@ -210,18 +220,22 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
               onCopy={() => copy("url", item.url)}
               copied={copied === "url"}
             />
-            <Field
-              label="Username"
-              value={item.username}
-              onCopy={() => copy("username", item.username)}
-              copied={copied === "username"}
-            />
-            <SecretField
-              label="Password"
-              value={item.password}
-              onCopy={() => copy("password", item.password)}
-              copied={copied === "password"}
-            />
+            {item.method === "credentials" && (
+              <>
+                <Field
+                  label="Username"
+                  value={item.username}
+                  onCopy={() => copy("username", item.username)}
+                  copied={copied === "username"}
+                />
+                <SecretField
+                  label="Password"
+                  value={item.password}
+                  onCopy={() => copy("password", item.password)}
+                  copied={copied === "password"}
+                />
+              </>
+            )}
           </>
         )}
         {item.type === "note" && (

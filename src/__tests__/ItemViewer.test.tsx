@@ -11,6 +11,7 @@ vi.mock("../lib/api", () => ({
       notes: "",
       created_at: 0,
       updated_at: 0,
+      method: "credentials",
       url: "https://github.com",
       username: "octocat",
       password: "s3cret",
