@@ -7,12 +7,17 @@ import SearchBar from "../components/SearchBar";
 import ItemEditor from "./ItemEditor";
 import Generator from "../components/Generator";
 
-export default function Vault() {
+interface Props {
+  filter: "all" | "login" | "note" | "card";
+}
+
+export default function Vault({ filter }: Props) {
   const [items, setItems] = useState<ItemMeta[]>([]);
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<ItemKind | null>(null);
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [showGenerator, setShowGenerator] = useState(false);
+
+  const kind: ItemKind | null = filter === "all" ? null : (filter as ItemKind);
 
   async function refresh() {
     const list = await api.listItems(query || undefined, kind ?? undefined);
@@ -55,25 +60,6 @@ export default function Vault() {
       <div className="toolbar">
         <SearchBar value={query} onChange={setQuery} />
         <div className="toolbar-row">
-          <div className="filters" aria-label="Filter by kind">
-            <button
-              type="button"
-              className={kind === null ? "active" : ""}
-              onClick={() => setKind(null)}
-            >
-              All
-            </button>
-            {(["login", "note", "card"] as ItemKind[]).map((k) => (
-              <button
-                key={k}
-                type="button"
-                className={kind === k ? "active" : ""}
-                onClick={() => setKind(k)}
-              >
-                {k}
-              </button>
-            ))}
-          </div>
           <button
             type="button"
             className="btn btn-ghost"
