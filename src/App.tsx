@@ -77,6 +77,9 @@ export default function App() {
     setView("vault");
     setEditing(null);
     setViewingId(null);
+    // Always re-pull the account list so a vault deleted from Settings (or
+    // anywhere else) stops appearing on the lock screen immediately.
+    refreshAccounts().catch(() => {});
     api.lockVault().catch(() => {});
   }
 
@@ -121,13 +124,6 @@ export default function App() {
             onUnlocked={(acct) => {
               setCurrentAccount(acct);
               setStatus("unlocked");
-            }}
-            onReset={async (deletedId) => {
-              const list = await refreshAccounts();
-              if (list.length === 0) {
-                setStatus("no-accounts");
-              }
-              void deletedId;
             }}
             onAddNew={async () => {
               setStatus("no-accounts");

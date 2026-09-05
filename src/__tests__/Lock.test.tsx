@@ -8,7 +8,6 @@ const acct2 = { id: "a2", name: "user2" };
 vi.mock("../lib/api", () => ({
   api: {
     unlockVault: vi.fn().mockResolvedValue(undefined),
-    resetVault: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -18,7 +17,6 @@ describe("AccountLock", () => {
       <AccountLock
         accounts={[acct1]}
         onUnlocked={() => {}}
-        onReset={() => {}}
         onAddNew={() => {}}
       />
     );
@@ -33,7 +31,6 @@ describe("AccountLock", () => {
       <AccountLock
         accounts={[acct1]}
         onUnlocked={onUnlocked}
-        onReset={() => {}}
         onAddNew={() => {}}
       />
     );
@@ -54,7 +51,6 @@ describe("AccountLock", () => {
       <AccountLock
         accounts={[acct1]}
         onUnlocked={() => {}}
-        onReset={() => {}}
         onAddNew={() => {}}
       />
     );
@@ -70,7 +66,6 @@ describe("AccountLock", () => {
       <AccountLock
         accounts={[acct1, acct2]}
         onUnlocked={() => {}}
-        onReset={() => {}}
         onAddNew={() => {}}
       />
     );
@@ -84,7 +79,6 @@ describe("AccountLock", () => {
       <AccountLock
         accounts={[acct1, acct2]}
         onUnlocked={() => {}}
-        onReset={() => {}}
         onAddNew={() => {}}
       />
     );
@@ -104,7 +98,6 @@ describe("AccountLock", () => {
       <AccountLock
         accounts={[acct1]}
         onUnlocked={() => {}}
-        onReset={() => {}}
         onAddNew={onAddNew}
       />
     );
@@ -112,88 +105,37 @@ describe("AccountLock", () => {
     expect(onAddNew).toHaveBeenCalled();
   });
 
-  it("renders a 'forgot password' link", () => {
+  it("does not show a reset link on the lock screen", () => {
     render(
       <AccountLock
         accounts={[acct1]}
         onUnlocked={() => {}}
-        onReset={() => {}}
         onAddNew={() => {}}
       />
     );
-    expect(screen.getByRole("button", { name: /forgot password/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /forgot password/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /reset/i })).toBeNull();
   });
 
-  it("reset flow: two warnings then password confirm, calls api.resetVault and onReset", async () => {
-    const onReset = vi.fn();
-    const { api } = await import("../lib/api");
-    render(
+  it("removes a deleted account from the list immediately when the prop changes", () => {
+    const { rerender } = render(
       <AccountLock
-        accounts={[acct1]}
+        accounts={[acct1, acct2]}
         onUnlocked={() => {}}
-        onReset={onReset}
         onAddNew={() => {}}
       />
     );
-
-    fireEvent.click(screen.getByRole("button", { name: /forgot password/i }));
-    expect(
-      await screen.findByRole("heading", { name: /permanently delete/i })
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
-
-    expect(
-      await screen.findByRole("heading", { name: /last warning/i })
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
-
-    const confirmInput = await screen.findByLabelText(/confirm master password/i);
-    fireEvent.change(confirmInput, { target: { value: "secret-pw" } });
-    fireEvent.click(screen.getByRole("button", { name: /^reset vault$/i }));
-
-    await waitFor(() =>
-      expect(api.resetVault).toHaveBeenCalledWith("secret-pw", "a1")
-    );
-    expect(onReset).toHaveBeenCalledWith("a1");
-  });
-
-  it("reset flow: wrong password on confirm step shows error and aborts", async () => {
-    const onReset = vi.fn();
-    const { api } = await import("../lib/api");
-    (api.resetVault as any).mockRejectedValueOnce("invalid password");
-    render(
+    expect(screen.getByText("user1")).toBeTruthy();
+    expect(screen.getByText("user2")).toBeTruthy();
+    rerender(
       <AccountLock
         accounts={[acct1]}
         onUnlocked={() => {}}
-        onReset={onReset}
         onAddNew={() => {}}
       />
     );
-
-    fireEvent.click(screen.getByRole("button", { name: /forgot password/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /continue/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /continue/i }));
-
-    const confirmInput = await screen.findByLabelText(/confirm master password/i);
-    fireEvent.change(confirmInput, { target: { value: "wrong" } });
-    fireEvent.click(screen.getByRole("button", { name: /^reset vault$/i }));
-
-    expect(await screen.findByText(/wrong password/i)).toBeTruthy();
-    expect(onReset).not.toHaveBeenCalled();
-  });
-
-  it("reset flow: cancel returns to the lock screen", async () => {
-    render(
-      <AccountLock
-        accounts={[acct1]}
-        onUnlocked={() => {}}
-        onReset={() => {}}
-        onAddNew={() => {}}
-      />
-    );
-    fireEvent.click(screen.getByRole("button", { name: /forgot password/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
-    expect(screen.getByRole("button", { name: /unlock/i })).toBeTruthy();
+    expect(screen.getByText("user1")).toBeTruthy();
+    expect(screen.queryByText("user2")).toBeNull();
   });
 
   it("falls back to a 'create one' empty state with no accounts", () => {
@@ -202,7 +144,6 @@ describe("AccountLock", () => {
       <AccountLock
         accounts={[]}
         onUnlocked={() => {}}
-        onReset={() => {}}
         onAddNew={onAddNew}
       />
     );
