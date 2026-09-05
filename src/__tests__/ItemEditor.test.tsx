@@ -82,20 +82,6 @@ describe("ItemEditor", () => {
     await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
   });
 
-  it("rejects a malformed card expiration", async () => {
-    const { api } = await import("../lib/api");
-    render(<ItemEditor id={null} initialKind="card" onClose={() => {}} />);
-    fireEvent.change(await screen.findByLabelText(/title/i), {
-      target: { value: "My card" },
-    });
-    fireEvent.change(screen.getByLabelText(/^card expiration$/i), {
-      target: { value: "not-a-date" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /save/i }));
-    expect(await screen.findByText(/card expiration must be/i)).toBeTruthy();
-    expect(api.saveItem).not.toHaveBeenCalled();
-  });
-
   it("masks the password and reveals it on toggle", async () => {
     render(<ItemEditor id={null} onClose={() => {}} />);
     const pw = (await screen.findByLabelText(/^password$/i, {

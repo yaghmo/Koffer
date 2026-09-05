@@ -25,10 +25,31 @@ function isValidUrl(s: string): boolean {
   }
 }
 
-// Card expiration: YYYY-MM (HTML month input) or MM/YY. Empty allowed.
+// Card expiration: MM/YY only (2 digits slash 2 digits). Must be complete or empty.
 function isValidExp(s: string): boolean {
-  if (!s.trim()) return true;
-  return /^(\d{4}-\d{2}|\d{2}\/\d{2})$/.test(s.trim());
+  const t = s.trim();
+  if (!t) return true;
+  // MM/YY exactly, or incomplete (1-4 digits, possibly with slash) if not submitting
+  return /^\d{2}\/\d{2}$/.test(t);
+}
+
+// Format card number as user types: "1234567890123456" → "1234-5678-9012-3456".
+function formatCardNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 16);
+  const parts = [];
+  for (let i = 0; i < digits.length; i += 4) {
+    parts.push(digits.slice(i, i + 4));
+  }
+  return parts.join("-");
+}
+
+// Format exp as user types: "0125" → "01/25", "1" → "1", "12" → "12/".
+function formatCardExp(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  if (digits.length >= 3) {
+    return digits.slice(0, 2) + "/" + digits.slice(2, 4);
+  }
+  return digits;
 }
 
 export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props) {
@@ -88,9 +109,15 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
       setError("URL must be a valid http(s) link (e.g. https://example.com).");
       return;
     }
-    if (kind === "card" && !isValidExp(card.exp)) {
-      setError("Card expiration must be YYYY-MM or MM/YY.");
-      return;
+    if (kind === "card") {
+      if (!card.exp.trim()) {
+        setError("Card expiration is required.");
+        return;
+      }
+      if (!isValidExp(card.exp)) {
+        setError("Card expiration must be MM/YY.");
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -274,11 +301,16 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                     className="mono"
                     type="text"
                     value={card.number}
-                    onChange={(e) => setCard({ ...card, number: e.target.value })}
+                    onChange={(e) => {
+                      const formatted = formatCardNumber(e.target.value);
+                      setCard({ ...card, number: formatted });
+                    }}
                     aria-label="Card number"
                     spellCheck={false}
                     inputMode="numeric"
                     autoComplete="off"
+                    placeholder="1234-5678-9012-3456"
+                    maxLength={19}
                   />
                 </div>
                 <button
@@ -298,11 +330,15 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                 <input
                   className="mono"
                   value={card.exp}
-                  onChange={(e) => setCard({ ...card, exp: e.target.value })}
+                  onChange={(e) => {
+                    const formatted = formatCardExp(e.target.value);
+                    setCard({ ...card, exp: formatted });
+                  }}
                   aria-label="Card expiration"
                   spellCheck={false}
                   autoComplete="off"
-                  placeholder="YYYY-MM"
+                  placeholder="MM/YY"
+                  maxLength={5}
                 />
               </div>
             </div>
@@ -314,11 +350,15 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                     className="mono"
                     type="password"
                     value={card.cvv}
-                    onChange={(e) => setCard({ ...card, cvv: e.target.value })}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, "").slice(0, 4);
+                      setCard({ ...card, cvv: digits });
+                    }}
                     aria-label="CVV"
                     spellCheck={false}
                     inputMode="numeric"
                     autoComplete="off"
+                    maxLength={4}
                   />
                 </div>
                 <button

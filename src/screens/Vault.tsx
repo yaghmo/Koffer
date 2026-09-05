@@ -104,12 +104,14 @@ export default function Vault({
       {showGenerator && <Generator onClose={() => setShowGenerator(false)} />}
 
       {editing && (
-        <ItemEditor
-          id={editing.kind === "existing" ? editing.id : null}
-          initialKind={editing.kind === "new" ? editing.itemKind : undefined}
-          onClose={onEditorClose}
-          onSaved={onItemSaved}
-        />
+        <div className="overlay">
+          <ItemEditor
+            id={editing.kind === "existing" ? editing.id : null}
+            initialKind={editing.kind === "new" ? editing.itemKind : undefined}
+            onClose={onEditorClose}
+            onSaved={onItemSaved}
+          />
+        </div>
       )}
     </div>
   );
