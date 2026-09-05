@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
 import { EyeIcon, EyeOffIcon, PlusIcon, UnlockIcon, XIcon } from "../components/Icon";
@@ -16,7 +16,20 @@ export default function AccountLock({ accounts, onUnlocked, onReset, onAddNew }:
   const [selectedId, setSelectedId] = useState<string>(
     accounts[0]?.id ?? ""
   );
-  const selected = accounts.find((a) => a.id === selectedId) ?? accounts[0];
+
+  // After a delete (or any account list change), drop a selection that no
+  // longer exists and reset the form. Without this the deleted vault keeps
+  // showing as "selected" until the user picks another one.
+  useEffect(() => {
+    if (selectedId && !accounts.some((a) => a.id === selectedId)) {
+      setSelectedId(accounts[0]?.id ?? "");
+      setPw("");
+      setError(null);
+      cancelReset();
+    }
+  }, [accounts, selectedId]);
+
+  const selected = accounts.find((a) => a.id === selectedId);
 
   const [pw, setPw] = useState("");
   const [show, setShow] = useState(false);
@@ -108,72 +121,77 @@ export default function AccountLock({ accounts, onUnlocked, onReset, onAddNew }:
           <div className="stage-frame">
             <div className="safelight" aria-hidden />
 
-            {accounts.length > 1 && (
-              <div className="account-picker">
-                <p className="label">Vault</p>
-                <div className="account-list">
-                  {accounts.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      className={`account-row ${a.id === selectedId ? "active" : ""}`}
-                      onClick={() => pickAccount(a.id)}
-                    >
-                      <span className="account-name">{a.name}</span>
-                    </button>
-                  ))}
-                </div>
+            <div className="account-picker">
+              <p className="label">
+                {accounts.length > 1 ? "Choose a vault" : "Vault"}
+              </p>
+              <div className="account-list">
+                {accounts.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className={`account-row ${a.id === selectedId ? "active" : ""}`}
+                    onClick={() => pickAccount(a.id)}
+                  >
+                    <span className="account-name">{a.name}</span>
+                  </button>
+                ))}
               </div>
+            </div>
+
+            {selected ? (
+              <>
+                <p className="label">Master password · {selected.name}</p>
+                <div className="field-row">
+                  <input
+                    type={show ? "text" : "password"}
+                    value={pw}
+                    onChange={(e) => setPw(e.target.value)}
+                    autoFocus
+                    aria-label="Master password"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="reveal"
+                    onClick={() => setShow((s) => !s)}
+                    aria-label={show ? "Hide password" : "Show password"}
+                    aria-pressed={show}
+                    title={show ? "Hide password" : "Show password"}
+                  >
+                    {show ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                </div>
+                {error && <p className="error" role="alert">{error}</p>}
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={busy || !pw}
+                >
+                  <UnlockIcon />
+                  {busy ? "Unlocking…" : "Unlock"}
+                </button>
+                <button
+                  type="button"
+                  className="link"
+                  onClick={openReset}
+                  disabled={busy}
+                >
+                  Forgot password / reset this vault
+                </button>
+              </>
+            ) : (
+              <p className="hint">Pick a vault above to continue.</p>
             )}
 
-            <p className="label">
-              Master password{accounts.length > 1 ? ` · ${selected.name}` : ""}
-            </p>
-            <div className="field-row">
-              <input
-                type={show ? "text" : "password"}
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                autoFocus
-                aria-label="Master password"
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <button
-                type="button"
-                className="reveal"
-                onClick={() => setShow((s) => !s)}
-                aria-label={show ? "Hide password" : "Show password"}
-                aria-pressed={show}
-                title={show ? "Hide password" : "Show password"}
-              >
-                {show ? <EyeOffIcon /> : <EyeIcon />}
-              </button>
-            </div>
-            {error && <p className="error" role="alert">{error}</p>}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={busy || !pw}
-            >
-              <UnlockIcon />
-              {busy ? "Unlocking…" : "Unlock"}
-            </button>
-            <button
-              type="button"
-              className="link"
-              onClick={openReset}
-              disabled={busy}
-            >
-              Forgot password / reset this vault
-            </button>
             <button
               type="button"
               className="link"
               onClick={onAddNew}
               disabled={busy}
             >
-              + Add another vault
+              <PlusIcon /> Add another vault
             </button>
           </div>
         </form>
