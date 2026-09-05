@@ -6,6 +6,7 @@ export interface ItemBase {
   notes: string;
   created_at: number;
   updated_at: number;
+  favicon: string;
 }
 
 export type LoginMethod = "credentials" | "google" | "github" | "microsoft" | "apple" | "facebook";
@@ -38,6 +39,8 @@ export interface ItemMeta {
   kind: ItemKind;
   title: string;
   updated_at: number;
+  favicon: string;
+  method: LoginMethod | null;
 }
 
 export interface GenOpts {

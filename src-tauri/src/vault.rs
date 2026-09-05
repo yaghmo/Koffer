@@ -17,6 +17,8 @@ pub struct ItemBase {
     pub notes: String,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub favicon: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -162,6 +164,7 @@ mod tests {
                 notes: "".to_string(),
                 created_at: now,
                 updated_at: now,
+                favicon: String::new(),
             },
             fields: LoginFields {
                 method: "credentials".to_string(),
@@ -230,6 +233,7 @@ mod tests {
                     notes: "router pw".to_string(),
                     created_at: 0,
                     updated_at: 0,
+                    favicon: String::new(),
                 },
                 fields: NoteFields {
                     body: "abc123".to_string(),

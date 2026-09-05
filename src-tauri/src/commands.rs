@@ -57,6 +57,8 @@ pub struct ItemMeta {
     pub kind: String,
     pub title: String,
     pub updated_at: i64,
+    pub favicon: String,
+    pub method: Option<String>,
 }
 
 fn to_meta(item: &Item) -> ItemMeta {
@@ -70,6 +72,11 @@ fn to_meta(item: &Item) -> ItemMeta {
         .to_string(),
         title: item.base().title.clone(),
         updated_at: item.base().updated_at,
+        favicon: item.base().favicon.clone(),
+        method: match item {
+            Item::Login { fields, .. } => Some(fields.method.clone()),
+            _ => None,
+        },
     }
 }
 
@@ -316,4 +323,46 @@ pub async fn fetch_url_metadata(url: String) -> Result<UrlMetadata, String> {
     metadata::fetch_metadata(&url)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Open a login item's URL in the default browser.
+///
+/// For credential logins, the password is copied to the clipboard first
+/// (60s TTL). The desktop app cannot inject into an external browser, so
+/// copy-then-open is the pragmatic autofill. The password never crosses
+/// IPC — this runs entirely in Rust.
+#[tauri::command]
+#[allow(deprecated)] // shell().open works; tauri-plugin-opener not worth the dep yet
+pub fn open_login_url(
+    id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let vault = state.vault.lock().unwrap();
+    let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
+    let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    let item = vault::get_item(vault, uuid).ok_or_else(|| "not found".to_string())?;
+
+    let url = match &item {
+        Item::Login { fields, .. } => fields.url.clone(),
+        _ => return Err("not a login item".to_string()),
+    };
+    if url.is_empty() {
+        return Err("item has no URL".to_string());
+    }
+
+    if let Item::Login { fields, .. } = &item {
+        if fields.method == "credentials" && !fields.password.is_empty() {
+            crate::clipboard::copy_with_ttl(
+                &fields.password,
+                std::time::Duration::from_secs(60),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    use tauri_plugin_shell::ShellExt;
+    app.shell().open(&url, None).map_err(|e| e.to_string())?;
+    state.autolock.lock().unwrap().reset();
+    Ok(())
 }

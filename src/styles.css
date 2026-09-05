@@ -630,6 +630,30 @@ input::-webkit-textfield-decoration-container {
   color: var(--brass-300);
   min-width: 60px;
 }
+.item-list .favicon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.item-list .provider {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-faint);
+  background: var(--paper-2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+.item-list .edit.open {
+  color: var(--sage-100);
+}
+.item-list .edit.open:hover {
+  color: var(--sage-200);
+  background: color-mix(in oklab, var(--sage-100) 10%, var(--paper));
+}
 .item-list .title {
   color: var(--ink);
   font-weight: 500;
@@ -1245,6 +1269,91 @@ input::-webkit-textfield-decoration-container {
 
 .account-name {
   display: block;
+}
+
+/* =================================================================
+ * METHOD CHIPS + PICKER
+ * =================================================================
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+  user-select: none;
+}
+.chip-google {
+  background: #fff;
+  border: 1px solid #d2d2d2;
+  color: #4285f4;
+}
+.chip-github { background: #24292e; color: #fff; }
+.chip-microsoft {
+  border-radius: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 1px;
+  gap: 0;
+}
+.chip-microsoft i {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.chip-microsoft i:nth-child(1) { background: #f25022; }
+.chip-microsoft i:nth-child(2) { background: #7fba00; }
+.chip-microsoft i:nth-child(3) { background: #00a4ef; }
+.chip-microsoft i:nth-child(4) { background: #ffb900; }
+.chip-apple { background: #111; color: #fff; }
+.chip-facebook { background: #1877f2; color: #fff; }
+.chip-credentials {
+  background: var(--paper-2);
+  border: 1px solid var(--paper-3);
+  color: var(--brass-300);
+}
+
+.method-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.method-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: var(--paper-1);
+  border: 1px solid var(--paper-2);
+  border-radius: 8px;
+  color: var(--ink-dim);
+  font-family: var(--sans);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, background-color 150ms ease-out, color 150ms ease-out;
+}
+.method-option:hover {
+  background: var(--paper-2);
+  border-color: var(--paper-3);
+  color: var(--ink);
+}
+.method-option.active {
+  border-color: var(--brass-100);
+  background: color-mix(in oklab, var(--brass-100) 8%, var(--paper));
+  color: var(--ink);
+}
+.method-option.active .chip {
+  outline: 2px solid var(--brass-100);
+  outline-offset: 1px;
+}
+
+.method-static {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
 }
 
 /* =================================================================

@@ -99,6 +99,7 @@ export default function Vault({
         onView={(it) => onViewItem(it.id)}
         onEdit={(it) => onEditItem(it.id)}
         onDelete={handleDelete}
+        onOpen={(id) => api.openLoginItem(id).catch(() => {})}
       />
 
       {showGenerator && <Generator onClose={() => setShowGenerator(false)} />}

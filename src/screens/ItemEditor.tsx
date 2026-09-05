@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Item, ItemKind, LoginFields, LoginMethod, NoteFields, CardFields } from "../lib/types";
+import type { Item, ItemKind, LoginFields, NoteFields, CardFields } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, XIcon } from "../components/Icon";
+import { methods, MethodChip } from "../lib/methods";
 
 interface Props {
   id: string | null;
@@ -76,6 +77,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
       setKind(item.type);
       setTitle(item.title);
       setNotes(item.notes);
+      setFavicon(item.favicon || null);
       if (item.type === "login") {
         setLogin({
           method: item.method || "credentials",
@@ -172,6 +174,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
         notes,
         created_at: 0,
         updated_at: now,
+        favicon: favicon ?? "",
       };
       if (kind === "login") {
         item = { type: "login", ...base, ...login };
@@ -243,19 +246,20 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
           <>
             <div className="field">
               <p className="field-label">Login method</p>
-              <div className="field-row">
-                <select
-                  value={login.method}
-                  onChange={(e) => setLogin({ ...login, method: e.target.value as LoginMethod })}
-                  aria-label="Login method"
-                >
-                  <option value="credentials">Username & Password</option>
-                  <option value="google">Google Account</option>
-                  <option value="github">GitHub Account</option>
-                  <option value="microsoft">Microsoft Account</option>
-                  <option value="apple">Apple Account</option>
-                  <option value="facebook">Facebook Account</option>
-                </select>
+              <div className="method-grid" role="radiogroup" aria-label="Login method">
+                {methods.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={login.method === m.id}
+                    className={`method-option ${login.method === m.id ? "active" : ""}`}
+                    onClick={() => setLogin({ ...login, method: m.id })}
+                  >
+                    <MethodChip method={m.id} size={20} />
+                    <span>{m.label}</span>
+                  </button>
+                ))}
               </div>
             </div>
             <div className="field">

@@ -34,4 +34,6 @@ export const api = {
 
   fetchUrlMetadata: (url: string) =>
     invoke<UrlMetadata>("fetch_url_metadata", { url }),
+
+  openLoginItem: (id: string) => invoke<void>("open_login_url", { id }),
 };

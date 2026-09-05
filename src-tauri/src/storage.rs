@@ -167,6 +167,7 @@ mod tests {
                 notes: "".to_string(),
                 created_at: 0,
                 updated_at: 0,
+                favicon: String::new(),
             },
             fields: crate::vault::NoteFields {
                 body: "secret body".to_string(),

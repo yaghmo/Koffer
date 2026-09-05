@@ -16,8 +16,10 @@ fn full_vault_lifecycle() {
             notes: "".to_string(),
             created_at: 0,
             updated_at: 0,
+            favicon: String::new(),
         },
         fields: LoginFields {
+            method: "credentials".to_string(),
             url: "https://github.com".to_string(),
             username: "octocat".to_string(),
             password: "s3cret".to_string(),

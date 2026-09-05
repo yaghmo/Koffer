@@ -36,6 +36,7 @@ pub fn run() {
             commands::reset_activity,
             commands::reset_vault,
             commands::fetch_url_metadata,
+            commands::open_login_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

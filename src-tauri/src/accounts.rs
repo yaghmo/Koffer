@@ -71,10 +71,6 @@ fn legacy_vault_path() -> PathBuf {
     data_dir().join(LEGACY_VAULT_FILE)
 }
 
-fn legacy_config_path() -> PathBuf {
-    data_dir().join(LEGACY_CONFIG_FILE)
-}
-
 fn read_registry() -> Result<Vec<Account>, AccountError> {
     let path = accounts_path();
     if !path.exists() {

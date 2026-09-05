@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Item, LoginMethod } from "../lib/types";
-import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon } from "../components/Icon";
+import type { Item } from "../lib/types";
+import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon, ExternalIcon } from "../components/Icon";
+import { methodLabel, MethodChip } from "../lib/methods";
 
 interface Props {
   id: string;
@@ -106,15 +107,6 @@ function SecretField({
   );
 }
 
-const methodLabels: Record<LoginMethod, string> = {
-  credentials: "Username & Password",
-  google: "Google Account",
-  github: "GitHub Account",
-  microsoft: "Microsoft Account",
-  apple: "Apple Account",
-  facebook: "Facebook Account",
-};
-
 export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
   const [item, setItem] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,6 +197,16 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
           >
             <PencilIcon /> Edit
           </button>
+          {item.type === "login" && item.url && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => api.openLoginItem(item.id).catch(() => {})}
+              aria-label="Open in browser"
+            >
+              <ExternalIcon /> Open
+            </button>
+          )}
         </div>
       </div>
 
@@ -212,7 +214,13 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
         <Field label="Title" value={item.title} />
         {item.type === "login" && (
           <>
-            <Field label="Login method" value={methodLabels[item.method || "credentials"]} />
+            <div className="field">
+              <p className="field-label">Login method</p>
+              <div className="method-static">
+                <MethodChip method={item.method || "credentials"} size={22} />
+                <span>{methodLabel(item.method || "credentials")}</span>
+              </div>
+            </div>
             <Field
               label="URL"
               value={item.url}
