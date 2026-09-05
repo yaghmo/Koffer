@@ -1246,3 +1246,57 @@ input::-webkit-textfield-decoration-container {
 .account-name {
   display: block;
 }
+
+/* =================================================================
+ * RESPONSIVE
+ * -----------------------------------------------------------------
+ * Window resizes freely (resizable: true). Content scales to viewport
+ * with a few breakpoints: narrow windows shrink chrome and paddings,
+ * very narrow windows drop the fixed sidebar to a top bar.
+ * =================================================================
+ */
+
+@media (max-width: 760px) {
+  .app-with-sidebar {
+    display: block;
+  }
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    border-right: none;
+    border-bottom: 1px solid var(--paper-3);
+    overflow-x: auto;
+  }
+  .sidebar-header {
+    padding: 10px 16px;
+    border-bottom: none;
+  }
+  .sidebar-version {
+    margin: 0;
+  }
+  .app-header {
+    padding: 12px 20px;
+  }
+  .app-main {
+    padding: 24px 20px 60px;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-header .meta {
+    display: none;
+  }
+  .app-main {
+    padding: 20px 16px 48px;
+  }
+  .toolbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .toolbar-row {
+    flex-wrap: wrap;
+  }
+  .field-row {
+    flex-wrap: wrap;
+  }
+}
