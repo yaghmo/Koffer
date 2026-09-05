@@ -1,9 +1,9 @@
 //! Tauri IPC command handlers.
 //!
-//! All sensitive state (the derived key) lives behind a Mutex<Option<...>>
-//! in the app's managed state. Commands acquire the lock briefly, do their
-//! work, and release.
+//! Sensitive state (the derived key, the in-memory vault, the active
+//! account) lives behind Mutex<Option<...>> in the app's managed state.
 
+use crate::accounts::{self, Account, AccountMeta};
 use crate::autolock::AutoLock;
 use crate::config::{self, Config};
 use crate::crypto::{derive_key, random_bytes};
@@ -19,15 +19,16 @@ pub struct AppState {
     pub key: Mutex<Option<[u8; 32]>>,
     pub vault: Mutex<Option<Vault>>,
     pub autolock: Mutex<AutoLock>,
+    pub current_account: Mutex<Option<Account>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
-        let cfg = config::load();
         Self {
             key: Mutex::new(None),
             vault: Mutex::new(None),
-            autolock: Mutex::new(AutoLock::new(cfg.autolock_mins)),
+            autolock: Mutex::new(AutoLock::new(15)),
+            current_account: Mutex::new(None),
         }
     }
 
@@ -42,6 +43,9 @@ impl AppState {
         }
         if let Ok(mut v) = self.vault.lock() {
             *v = None;
+        }
+        if let Ok(mut a) = self.current_account.lock() {
+            *a = None;
         }
     }
 }
@@ -69,35 +73,46 @@ fn to_meta(item: &Item) -> ItemMeta {
 }
 
 #[tauri::command]
-pub fn vault_exists() -> bool {
-    storage::vault_exists()
+pub fn list_accounts() -> Result<Vec<AccountMeta>, String> {
+    accounts::list_accounts().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn setup_vault(password: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn setup_vault(
+    password: String,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<AccountMeta, String> {
     if password.len() < 8 {
         return Err("password must be at least 8 characters".to_string());
     }
+    let account = accounts::create_account(&name).map_err(|e| e.to_string())?;
     let salt = random_bytes(16);
     let key = derive_key(&password, &salt);
     let vault = vault::new_vault(salt);
-    storage::save_vault(&vault, &key).map_err(|e| e.to_string())?;
+    storage::save_vault(&account, &vault, &key).map_err(|e| e.to_string())?;
     *state.key.lock().unwrap() = Some(key);
     *state.vault.lock().unwrap() = Some(vault);
+    *state.current_account.lock().unwrap() = Some(account.clone());
     state.autolock.lock().unwrap().reset();
-    Ok(())
+    Ok((&account).into())
 }
 
 #[tauri::command]
-pub fn unlock_vault(password: String, state: State<'_, AppState>) -> Result<(), String> {
-    let vault_on_disk = match storage::load_vault_unverified() {
-        Ok(v) => v,
-        Err(_) => return Err("invalid password".to_string()),
-    };
+pub fn unlock_vault(
+    password: String,
+    account_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let id = Uuid::parse_str(&account_id).map_err(|e| e.to_string())?;
+    let account = accounts::get_account_legacy_fallback(id).map_err(|e| e.to_string())?;
+    let vault_on_disk = storage::load_vault_unverified(&account)
+        .map_err(|_| "invalid password".to_string())?;
     let key = derive_key(&password, &vault_on_disk.kdf_salt);
-    storage::load_vault_with_key(&key).map_err(|_| "invalid password".to_string())?;
+    storage::load_vault_with_key(&account, &key).map_err(|_| "invalid password".to_string())?;
     *state.key.lock().unwrap() = Some(key);
     *state.vault.lock().unwrap() = Some(vault_on_disk);
+    *state.current_account.lock().unwrap() = Some(account);
     state.autolock.lock().unwrap().reset();
     Ok(())
 }
@@ -162,6 +177,10 @@ pub fn get_item(id: String, state: State<'_, AppState>) -> Result<Item, String> 
 
 #[tauri::command]
 pub fn save_item(item: Item, state: State<'_, AppState>) -> Result<(), String> {
+    let account = {
+        let a = state.current_account.lock().unwrap();
+        a.clone().ok_or_else(|| "locked".to_string())?
+    };
     let key = {
         let k = state.key.lock().unwrap();
         *k.as_ref().ok_or_else(|| "locked".to_string())?
@@ -180,13 +199,17 @@ pub fn save_item(item: Item, state: State<'_, AppState>) -> Result<(), String> {
     } else {
         vault::add_item(vault, item);
     }
-    storage::save_vault(vault, &key).map_err(|e| e.to_string())?;
+    storage::save_vault(&account, vault, &key).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_item(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let account = {
+        let a = state.current_account.lock().unwrap();
+        a.clone().ok_or_else(|| "locked".to_string())?
+    };
     let key = {
         let k = state.key.lock().unwrap();
         *k.as_ref().ok_or_else(|| "locked".to_string())?
@@ -195,7 +218,7 @@ pub fn delete_item(id: String, state: State<'_, AppState>) -> Result<(), String>
     let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
     let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
     vault::delete_item(vault, uuid);
-    storage::save_vault(vault, &key).map_err(|e| e.to_string())?;
+    storage::save_vault(&account, vault, &key).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
 }
@@ -218,8 +241,14 @@ pub fn copy_to_clipboard(
 }
 
 #[tauri::command]
-pub fn get_config() -> Config {
-    config::load()
+pub fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
+    let account = state
+        .current_account
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "no active account".to_string())?;
+    Ok(config::load(&account))
 }
 
 #[tauri::command]
@@ -227,9 +256,15 @@ pub fn set_autolock_mins(mins: u8, state: State<'_, AppState>) -> Result<(), Str
     if !(15..=30).contains(&mins) {
         return Err("autolock must be between 15 and 30 minutes".to_string());
     }
-    let mut c = config::load();
+    let account = state
+        .current_account
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "no active account".to_string())?;
+    let mut c = config::load(&account);
     c.autolock_mins = mins;
-    config::save(&c).map_err(|e| e.to_string())?;
+    config::save(&account, &c).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().set_timeout(mins);
     Ok(())
 }
@@ -239,20 +274,36 @@ pub fn reset_activity(state: State<'_, AppState>) {
     state.autolock.lock().unwrap().reset();
 }
 
-/// Wipe the vault and config from disk after verifying the user can re-enter
-/// the current master password. Used by the Lock-screen "forgot password" flow
-/// to escape a forgotten password. Returns Err("invalid password") on bad pw.
+/// Wipe the vault and config for the given account after verifying the
+/// current master password. Used by the Lock-screen "forgot password"
+/// flow to escape a forgotten password. Returns Err("invalid password")
+/// on bad pw.
 #[tauri::command]
-pub fn reset_vault(password: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn reset_vault(
+    password: String,
+    account_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let id = Uuid::parse_str(&account_id).map_err(|e| e.to_string())?;
+    let account = accounts::get_account_legacy_fallback(id).map_err(|e| e.to_string())?;
+
     // Verify by attempting a full unlock cycle against the existing vault.
-    // load_vault_with_key will only succeed for the correct password.
-    let vault_on_disk = storage::load_vault_unverified()
+    let vault_on_disk = storage::load_vault_unverified(&account)
         .map_err(|_| "invalid password".to_string())?;
     let key = derive_key(&password, &vault_on_disk.kdf_salt);
-    storage::load_vault_with_key(&key).map_err(|_| "invalid password".to_string())?;
+    storage::load_vault_with_key(&account, &key)
+        .map_err(|_| "invalid password".to_string())?;
 
-    // Wipe the in-memory key first, then delete the files.
-    state.lock_and_clear();
-    storage::delete_vault_and_config().map_err(|e| e.to_string())?;
+    // Wipe the in-memory key first, then delete the files. If the
+    // currently unlocked account is the one being reset, also clear
+    // in-memory state.
+    {
+        let current = state.current_account.lock().unwrap();
+        if current.as_ref().map(|a| a.id) == Some(account.id) {
+            drop(current);
+            state.lock_and_clear();
+        }
+    }
+    storage::delete_vault_and_config(&account).map_err(|e| e.to_string())?;
     Ok(())
 }

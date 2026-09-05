@@ -1,6 +1,7 @@
 import { LockIcon, UnlockIcon } from "./Icon";
 
 interface Props {
+  accountName: string;
   isUnlocked: boolean;
   onLock: () => void;
   currentView: "vault" | "settings";
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function Sidebar({
+  accountName,
   isUnlocked,
   onLock,
   currentView,
@@ -20,7 +22,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <h1 className="sidebar-title">Password Manager</h1>
+        <h1 className="sidebar-title">{accountName || "Password Manager"}</h1>
         <p className="sidebar-version">v0.1.0</p>
       </div>
 

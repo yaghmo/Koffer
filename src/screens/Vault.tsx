@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { ItemKind, ItemMeta } from "../lib/types";
+import type { ItemMeta } from "../lib/types";
 import { PlusIcon } from "../components/Icon";
 import ItemList from "../components/ItemList";
 import SearchBar from "../components/SearchBar";
@@ -9,18 +9,21 @@ import Generator from "../components/Generator";
 
 interface Props {
   filter: "all" | "login" | "note" | "card";
+  editingId: string | "new" | null;
+  onEditItem: (id: string) => void;
+  onEditNew: () => void;
+  onEditorClose: () => void;
 }
 
-export default function Vault({ filter }: Props) {
+export default function Vault({ filter, editingId, onEditItem, onEditNew, onEditorClose }: Props) {
   const [items, setItems] = useState<ItemMeta[]>([]);
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<string | "new" | null>(null);
   const [showGenerator, setShowGenerator] = useState(false);
 
-  const kind: ItemKind | null = filter === "all" ? null : (filter as ItemKind);
+  const kind = filter === "all" ? undefined : filter;
 
   async function refresh() {
-    const list = await api.listItems(query || undefined, kind ?? undefined);
+    const list = await api.listItems(query || undefined, kind);
     setItems(list);
   }
 
@@ -34,22 +37,10 @@ export default function Vault({ filter }: Props) {
     refresh();
   }
 
-  if (editing) {
-    return (
-      <ItemEditor
-        id={editing === "new" ? null : editing}
-        onClose={() => {
-          setEditing(null);
-          refresh();
-        }}
-      />
-    );
-  }
-
   return (
     <div className="vault">
       <div>
-        <p className="screen-eyebrow">Vault · Unlocked</p>
+        <p className="screen-eyebrow">Vault</p>
         <h1 className="screen-title">
           {items.length === 0
             ? "An empty room"
@@ -70,16 +61,23 @@ export default function Vault({ filter }: Props) {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={() => setEditing("new")}
+            onClick={onEditNew}
           >
             <PlusIcon /> Add
           </button>
         </div>
       </div>
 
-      <ItemList items={items} onSelect={(it) => setEditing(it.id)} onDelete={handleDelete} />
+      <ItemList items={items} onSelect={(it) => onEditItem(it.id)} onDelete={handleDelete} />
 
       {showGenerator && <Generator onClose={() => setShowGenerator(false)} />}
+
+      {editingId && (
+        <ItemEditor
+          id={editingId === "new" ? null : editingId}
+          onClose={onEditorClose}
+        />
+      )}
     </div>
   );
 }

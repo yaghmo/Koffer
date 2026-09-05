@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { api } from "../lib/api";
+import type { Account } from "../lib/types";
 import { EyeIcon, EyeOffIcon, PlusIcon } from "../components/Icon";
 
 interface Props {
-  onCreated: () => void;
+  onCreated: (account: Account) => void;
 }
 
 export default function Setup({ onCreated }: Props) {
+  const [name, setName] = useState("");
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
@@ -16,6 +18,11 @@ export default function Setup({ onCreated }: Props) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Display name is required.");
+      return;
+    }
     if (pw.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
@@ -26,8 +33,8 @@ export default function Setup({ onCreated }: Props) {
     }
     setBusy(true);
     try {
-      await api.setupVault(pw);
-      onCreated();
+      const account = await api.setupVault(pw, trimmedName);
+      onCreated(account);
     } catch (e: any) {
       setError(String(e));
     } finally {
@@ -42,11 +49,24 @@ export default function Setup({ onCreated }: Props) {
         <div className="stage-frame">
           <div className="safelight" aria-hidden />
           <p className="hint">
-            Choose a master password.{" "}
+            Choose a display name and a master password.{" "}
             <span className="hint-strong">
-              We cannot recover it if you forget it.
+              We cannot recover the password if you forget it.
             </span>
           </p>
+          <div className="field">
+            <p className="label">Display name</p>
+            <div className="field-row">
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+                aria-label="Display name"
+                spellCheck={false}
+                maxLength={40}
+              />
+            </div>
+          </div>
           <div className="field">
             <p className="label">Master password</p>
             <div className="field-row">
@@ -54,7 +74,6 @@ export default function Setup({ onCreated }: Props) {
                 type={show ? "text" : "password"}
                 value={pw}
                 onChange={(e) => setPw(e.target.value)}
-                autoFocus
                 aria-label="Master password"
                 spellCheck={false}
                 autoComplete="new-password"
@@ -88,7 +107,7 @@ export default function Setup({ onCreated }: Props) {
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={busy || !pw || !confirm}
+            disabled={busy || !name || !pw || !confirm}
           >
             <PlusIcon />
             {busy ? "Creating…" : "Create vault"}

@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { api } from "../lib/api";
 
-export default function Settings() {
+interface Props {
+  accountId: string;
+  onLock: () => void;
+}
+
+export default function Settings({ accountId, onLock }: Props) {
   const [autolockMins, setAutolockMins] = useState(15);
   const [busy, setBusy] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -26,8 +31,8 @@ export default function Settings() {
     setResetError(null);
     setBusy(true);
     try {
-      await api.resetVault(resetPassword);
-      window.location.reload();
+      await api.resetVault(resetPassword, accountId);
+      onLock();
     } catch (err: any) {
       setResetError(String(err));
     } finally {

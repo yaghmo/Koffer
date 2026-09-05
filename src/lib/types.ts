@@ -48,3 +48,8 @@ export interface GenOpts {
 export interface Config {
   autolock_mins: number;
 }
+
+export interface Account {
+  id: string;
+  name: string;
+}

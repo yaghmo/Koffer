@@ -1,27 +1,41 @@
 import { useState } from "react";
 import { api } from "../lib/api";
-import { EyeIcon, EyeOffIcon, UnlockIcon, XIcon } from "../components/Icon";
+import type { Account } from "../lib/types";
+import { EyeIcon, EyeOffIcon, PlusIcon, UnlockIcon, XIcon } from "../components/Icon";
 
 interface Props {
-  onUnlocked: () => void;
-  /** Called after a successful "forgot password / reset vault" flow. */
-  onReset?: () => void;
+  accounts: Account[];
+  onUnlocked: (account: Account) => void;
+  onReset: (accountId: string) => void;
+  onAddNew: () => void;
 }
 
 type ResetStep = "idle" | "warn1" | "warn2" | "confirm";
 
-export default function Lock({ onUnlocked, onReset }: Props) {
+export default function AccountLock({ accounts, onUnlocked, onReset, onAddNew }: Props) {
+  const [selectedId, setSelectedId] = useState<string>(
+    accounts[0]?.id ?? ""
+  );
+  const selected = accounts.find((a) => a.id === selectedId) ?? accounts[0];
+
   const [pw, setPw] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Reset-flow state
+  // Reset-flow state, scoped to the currently selected account.
   const [step, setStep] = useState<ResetStep>("idle");
   const [confirmPw, setConfirmPw] = useState("");
   const [confirmShow, setConfirmShow] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
+
+  function pickAccount(id: string) {
+    setSelectedId(id);
+    setPw("");
+    setError(null);
+    cancelReset();
+  }
 
   function openReset() {
     setError(null);
@@ -37,11 +51,12 @@ export default function Lock({ onUnlocked, onReset }: Props) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!selected) return;
     setError(null);
     setBusy(true);
     try {
-      await api.unlockVault(pw);
-      onUnlocked();
+      await api.unlockVault(pw, selected.id);
+      onUnlocked(selected);
     } catch {
       setError("Wrong password. Try again.");
       setPw("");
@@ -52,18 +67,37 @@ export default function Lock({ onUnlocked, onReset }: Props) {
 
   async function submitReset(e: React.FormEvent) {
     e.preventDefault();
+    if (!selected) return;
     setConfirmError(null);
     setConfirmBusy(true);
     try {
-      await api.resetVault(confirmPw);
+      await api.resetVault(confirmPw, selected.id);
       cancelReset();
-      onReset?.();
+      onReset(selected.id);
     } catch {
       setConfirmError("Wrong password. Try again.");
       setConfirmPw("");
     } finally {
       setConfirmBusy(false);
     }
+  }
+
+  if (!selected) {
+    return (
+      <div className="stage">
+        <div className="screen-eyebrow">No accounts</div>
+        <div className="stage-frame">
+          <p className="hint">No vaults exist on this device.</p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onAddNew}
+          >
+            <PlusIcon /> Create one
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -73,7 +107,28 @@ export default function Lock({ onUnlocked, onReset }: Props) {
         <form onSubmit={submit} className="lock">
           <div className="stage-frame">
             <div className="safelight" aria-hidden />
-            <p className="label">Master password</p>
+
+            {accounts.length > 1 && (
+              <div className="account-picker">
+                <p className="label">Vault</p>
+                <div className="account-list">
+                  {accounts.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      className={`account-row ${a.id === selectedId ? "active" : ""}`}
+                      onClick={() => pickAccount(a.id)}
+                    >
+                      <span className="account-name">{a.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="label">
+              Master password{accounts.length > 1 ? ` · ${selected.name}` : ""}
+            </p>
             <div className="field-row">
               <input
                 type={show ? "text" : "password"}
@@ -110,7 +165,15 @@ export default function Lock({ onUnlocked, onReset }: Props) {
               onClick={openReset}
               disabled={busy}
             >
-              Forgot password / reset vault
+              Forgot password / reset this vault
+            </button>
+            <button
+              type="button"
+              className="link"
+              onClick={onAddNew}
+              disabled={busy}
+            >
+              + Add another vault
             </button>
           </div>
         </form>
@@ -120,9 +183,9 @@ export default function Lock({ onUnlocked, onReset }: Props) {
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal modal-danger">
             <p className="meta">Reset · Warning 1 of 2</p>
-            <h2>Permanently delete the vault?</h2>
+            <h2>Permanently delete "{selected.name}"?</h2>
             <p>
-              This will permanently delete the encrypted vault on disk. There
+              This will permanently delete this encrypted vault on disk. There
               is no recovery. Make sure you have no other way to recover your
               master password.
             </p>
@@ -148,8 +211,8 @@ export default function Lock({ onUnlocked, onReset }: Props) {
             <p className="meta">Reset · Warning 2 of 2</p>
             <h2>Last warning</h2>
             <p>
-              All your items will be lost. After this, the app returns to a
-              fresh state and you will set a new master password.
+              All items in "{selected.name}" will be lost. After this, you can
+              set up a fresh vault with the same name.
             </p>
             <div className="actions">
               <button type="button" className="btn-ghost" onClick={cancelReset}>
@@ -173,7 +236,7 @@ export default function Lock({ onUnlocked, onReset }: Props) {
             <p className="meta">Reset · Confirm</p>
             <h2>Confirm reset</h2>
             <p>
-              Re-enter your current master password to confirm. Wrong password
+              Re-enter the current master password to confirm. Wrong password
               aborts.
             </p>
             <div className="field">

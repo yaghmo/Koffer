@@ -1,5 +1,8 @@
-//! Encrypted on-disk storage for the vault.
+//! Encrypted on-disk storage for the vault. Per-account: each account has
+//! its own vault file under the data dir; see `accounts.rs` for the
+//! registry.
 
+use crate::accounts::Account;
 use crate::crypto::encrypt;
 use crate::vault::{deserialize_vault, serialize_vault, Vault, VaultError};
 use std::fs;
@@ -7,10 +10,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 
-const MAGIC: &[u8; 4] = b"PM01";
-const VERSION: u32 = 1;
-const APP_DIR: &str = "password_manager";
-const VAULT_FILE: &str = "vault.enc";
+pub const MAGIC: &[u8; 4] = b"PM01";
+pub const VERSION: u32 = 1;
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -25,46 +26,39 @@ pub enum StorageError {
 }
 
 fn data_dir() -> PathBuf {
-    // Honor APPDATA env override (used by tests; on Windows the dirs crate
-    // uses Shell-known-folder API and ignores APPDATA, so we check first).
     if let Some(p) = std::env::var_os("APPDATA") {
-        return PathBuf::from(p).join(APP_DIR);
+        return PathBuf::from(p).join("password_manager");
     }
     dirs::data_dir()
         .expect("platform data dir must exist")
-        .join(APP_DIR)
+        .join("password_manager")
 }
 
-pub fn vault_path() -> PathBuf {
-    data_dir().join(VAULT_FILE)
+pub fn vault_path(account: &Account) -> PathBuf {
+    data_dir().join(&account.vault_filename)
 }
 
-pub fn config_path() -> PathBuf {
-    data_dir().join("config.json")
+pub fn config_path(account: &Account) -> PathBuf {
+    data_dir().join(&account.config_filename)
 }
 
-pub fn vault_exists() -> bool {
-    vault_path().exists()
+pub fn vault_exists(account: &Account) -> bool {
+    vault_path(account).exists()
 }
 
-/// Delete the vault file and the config file. Missing files are not an error.
-/// Also removes the data dir itself if it becomes empty (e.g. first-run reset).
-pub fn delete_vault_and_config() -> Result<(), StorageError> {
-    let vp = vault_path();
+pub fn delete_vault_and_config(account: &Account) -> Result<(), StorageError> {
+    let vp = vault_path(account);
     if vp.exists() {
         fs::remove_file(&vp)?;
     }
-    let cp = config_path();
+    let cp = config_path(account);
     if cp.exists() {
         fs::remove_file(&cp)?;
     }
-    // Best-effort cleanup of the now-empty app dir; ignore if it fails or
-    // contains other files the user put there.
-    let _ = fs::remove_dir(data_dir());
     Ok(())
 }
 
-pub fn save_vault(vault: &Vault, key: &[u8; 32]) -> Result<(), StorageError> {
+pub fn save_vault(account: &Account, vault: &Vault, key: &[u8; 32]) -> Result<(), StorageError> {
     fs::create_dir_all(data_dir())?;
     let plaintext = serialize_vault(vault)?;
     let (nonce, ciphertext) = encrypt(key, &plaintext);
@@ -76,20 +70,20 @@ pub fn save_vault(vault: &Vault, key: &[u8; 32]) -> Result<(), StorageError> {
     blob.extend_from_slice(&nonce);
     blob.extend_from_slice(&ciphertext);
 
-    let tmp = vault_path().with_extension("tmp");
+    let path = vault_path(account);
+    let tmp = path.with_extension("tmp");
     {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(&blob)?;
         f.sync_all()?;
     }
-    // atomic rename
-    fs::rename(&tmp, vault_path())?;
+    fs::rename(&tmp, path)?;
     Ok(())
 }
 
 /// Read the salt from the vault file without verifying the key.
-pub fn load_vault_unverified() -> Result<Vault, StorageError> {
-    let bytes = fs::read(vault_path())?;
+pub fn load_vault_unverified(account: &Account) -> Result<Vault, StorageError> {
+    let bytes = fs::read(vault_path(account))?;
     if bytes.len() < 4 + 4 + 16 + 12 {
         return Err(StorageError::Invalid);
     }
@@ -101,7 +95,6 @@ pub fn load_vault_unverified() -> Result<Vault, StorageError> {
         return Err(StorageError::Invalid);
     }
     let salt = bytes[8..24].to_vec();
-    // Build a placeholder Vault with just the salt populated for key derivation.
     Ok(Vault {
         version: 1,
         kdf_salt: salt,
@@ -110,12 +103,12 @@ pub fn load_vault_unverified() -> Result<Vault, StorageError> {
 }
 
 /// Load and decrypt the vault with the given key.
-pub fn load_vault_with_key(key: &[u8; 32]) -> Result<Vault, StorageError> {
-    load_vault(key)
+pub fn load_vault_with_key(account: &Account, key: &[u8; 32]) -> Result<Vault, StorageError> {
+    load_vault(account, key)
 }
 
-pub fn load_vault(key: &[u8; 32]) -> Result<Vault, StorageError> {
-    let bytes = fs::read(vault_path())?;
+pub fn load_vault(account: &Account, key: &[u8; 32]) -> Result<Vault, StorageError> {
+    let bytes = fs::read(vault_path(account))?;
     if bytes.len() < 4 + 4 + 16 + 12 {
         return Err(StorageError::Invalid);
     }
@@ -141,30 +134,29 @@ pub fn load_vault(key: &[u8; 32]) -> Result<Vault, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::accounts::{create_account, Account};
     use crate::crypto::derive_key;
+    use crate::test_env::{lock_recover, override_data_dir_to_tmp};
     use crate::vault::new_vault;
-    use std::sync::Mutex;
 
-    // Hold every tempdir we create so the path stays valid for the whole test.
-    static TEMPDIRS: Mutex<Vec<tempfile::TempDir>> = Mutex::new(Vec::new());
-    // Serialize tests that mutate env vars; APPDATA changes are process-wide.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        lock_recover(&crate::test_env::ENV_LOCK)
+    }
 
-    fn override_data_dir_to_tmp() {
-        let tmp = tempfile::tempdir().unwrap();
-        // SAFETY: tests hold ENV_LOCK while mutating env
-        unsafe {
-            std::env::set_var("APPDATA", tmp.path());
-            std::env::set_var("XDG_DATA_HOME", tmp.path());
-            std::env::set_var("HOME", tmp.path());
-        }
-        TEMPDIRS.lock().unwrap().push(tmp);
+    fn fresh_tmp() {
+        override_data_dir_to_tmp("store");
+    }
+
+    fn fixture_account() -> Account {
+        // create_account also runs migration; safe to use as a fixture.
+        create_account("test").unwrap()
     }
 
     #[test]
     fn save_then_load_roundtrips() {
-        let _g = ENV_LOCK.lock().unwrap();
-        override_data_dir_to_tmp();
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
         let salt = crate::crypto::random_bytes(16);
         let key = derive_key("master", &salt);
         let mut v = new_vault(salt.clone());
@@ -180,78 +172,81 @@ mod tests {
                 body: "secret body".to_string(),
             },
         });
-        save_vault(&v, &key).unwrap();
-        assert!(vault_exists());
-        let v2 = load_vault(&key).unwrap();
+        save_vault(&acct, &v, &key).unwrap();
+        assert!(vault_exists(&acct));
+        let v2 = load_vault(&acct, &key).unwrap();
         assert_eq!(v2.items.len(), 1);
     }
 
     #[test]
     fn load_with_wrong_key_fails() {
-        let _g = ENV_LOCK.lock().unwrap();
-        override_data_dir_to_tmp();
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
         let salt = crate::crypto::random_bytes(16);
         let key = derive_key("master", &salt);
         let v = new_vault(salt);
-        save_vault(&v, &key).unwrap();
+        save_vault(&acct, &v, &key).unwrap();
         let wrong = derive_key("wrong", &crate::crypto::random_bytes(16));
-        assert!(load_vault(&wrong).is_err());
+        assert!(load_vault(&acct, &wrong).is_err());
     }
 
     #[test]
     fn load_corrupt_file_fails() {
-        let _g = ENV_LOCK.lock().unwrap();
-        override_data_dir_to_tmp();
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
         fs::create_dir_all(data_dir()).unwrap();
-        fs::write(vault_path(), b"corrupt data here").unwrap();
+        fs::write(vault_path(&acct), b"corrupt data here").unwrap();
         let key = derive_key("master", &crate::crypto::random_bytes(16));
-        assert!(load_vault(&key).is_err());
+        assert!(load_vault(&acct, &key).is_err());
     }
 
     #[test]
     fn vault_exists_false_when_no_file() {
-        let _g = ENV_LOCK.lock().unwrap();
-        override_data_dir_to_tmp();
-        assert!(!vault_exists());
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
+        assert!(!vault_exists(&acct));
     }
 
     #[test]
     fn load_rejects_wrong_magic() {
-        let _g = ENV_LOCK.lock().unwrap();
-        override_data_dir_to_tmp();
-        fs::create_dir_all(data_dir()).unwrap();
-        // craft a file with wrong magic
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
         let salt = crate::crypto::random_bytes(16);
         let key = derive_key("master", &salt);
         let v = new_vault(salt);
-        save_vault(&v, &key).unwrap();
-        let mut bytes = fs::read(vault_path()).unwrap();
+        save_vault(&acct, &v, &key).unwrap();
+        let mut bytes = fs::read(vault_path(&acct)).unwrap();
         bytes[0] = b'X';
-        fs::write(vault_path(), &bytes).unwrap();
-        assert!(load_vault(&key).is_err());
+        fs::write(vault_path(&acct), &bytes).unwrap();
+        assert!(load_vault(&acct, &key).is_err());
     }
 
     #[test]
     fn delete_vault_and_config_removes_both_files() {
-        let _g = ENV_LOCK.lock().unwrap();
-        override_data_dir_to_tmp();
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
         let salt = crate::crypto::random_bytes(16);
         let key = derive_key("master", &salt);
         let v = new_vault(salt);
-        save_vault(&v, &key).unwrap();
-        crate::config::save(&crate::config::Config::default()).unwrap();
-        assert!(vault_exists());
-        assert!(config_path().exists());
-        delete_vault_and_config().unwrap();
-        assert!(!vault_exists());
-        assert!(!config_path().exists());
+        save_vault(&acct, &v, &key).unwrap();
+        crate::config::save(&acct, &crate::config::Config::default()).unwrap();
+        assert!(vault_exists(&acct));
+        assert!(config_path(&acct).exists());
+        delete_vault_and_config(&acct).unwrap();
+        assert!(!vault_exists(&acct));
+        assert!(!config_path(&acct).exists());
     }
 
     #[test]
     fn delete_when_nothing_to_delete_succeeds() {
-        let _g = ENV_LOCK.lock().unwrap();
-        override_data_dir_to_tmp();
-        // No files created — delete should still be Ok.
-        delete_vault_and_config().unwrap();
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
+        delete_vault_and_config(&acct).unwrap();
     }
 }

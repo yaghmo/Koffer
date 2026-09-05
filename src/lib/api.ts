@@ -1,10 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Config, GenOpts, Item, ItemKind, ItemMeta } from "./types";
+import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta } from "./types";
 
 export const api = {
-  vaultExists: () => invoke<boolean>("vault_exists"),
-  setupVault: (password: string) => invoke<void>("setup_vault", { password }),
-  unlockVault: (password: string) => invoke<void>("unlock_vault", { password }),
+  listAccounts: () => invoke<Account[]>("list_accounts"),
+
+  setupVault: (password: string, name: string) =>
+    invoke<Account>("setup_vault", { password, name }),
+
+  unlockVault: (password: string, accountId: string) =>
+    invoke<void>("unlock_vault", { password, accountId }),
+
   lockVault: () => invoke<void>("lock_vault"),
   isUnlocked: () => invoke<boolean>("is_unlocked"),
 
@@ -24,5 +29,6 @@ export const api = {
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
 
   resetActivity: () => invoke<void>("reset_activity"),
-  resetVault: (password: string) => invoke<void>("reset_vault", { password }),
+  resetVault: (password: string, accountId: string) =>
+    invoke<void>("reset_vault", { password, accountId }),
 };

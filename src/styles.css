@@ -321,6 +321,21 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 0 1px var(--brass-100);
 }
 
+/* Hide browser-native password reveal (Edge) and clear (Webkit/Chromium)
+ * so only our custom .reveal button shows. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-caps-lock-indicator,
+input::-webkit-credentials-auto-fill-button {
+  display: none !important;
+}
+input::-webkit-textfield-decoration-container {
+  display: none;
+}
+
 /* The reveal button — no border, ink-dim until hover */
 .reveal {
   background: transparent;
@@ -1111,4 +1126,54 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 500;
   color: var(--brass-300);
   margin: 0 0 8px;
+}
+
+/* =================================================================
+ * ACCOUNT PICKER (lock screen with multiple vaults)
+ * =================================================================
+ */
+
+.account-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--paper-3);
+  border-radius: 6px;
+  padding: 4px;
+  background: var(--paper);
+}
+
+.account-row {
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+
+.account-row:hover {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.account-row.active {
+  background: color-mix(in oklab, var(--brass-100) 12%, var(--paper));
+  color: var(--brass-200);
+  font-weight: 600;
+}
+
+.account-name {
+  display: block;
 }
