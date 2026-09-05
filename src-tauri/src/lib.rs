@@ -4,6 +4,7 @@ pub mod clipboard;
 pub mod commands;
 pub mod config;
 pub mod crypto;
+pub mod metadata;
 pub mod password;
 pub mod storage;
 pub mod vault;
@@ -34,6 +35,7 @@ pub fn run() {
             commands::set_autolock_mins,
             commands::reset_activity,
             commands::reset_vault,
+            commands::fetch_url_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

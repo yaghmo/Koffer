@@ -17,6 +17,10 @@ vi.mock("../lib/api", () => ({
     }),
     saveItem: vi.fn().mockResolvedValue(undefined),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
+    fetchUrlMetadata: vi.fn().mockResolvedValue({
+      title: null,
+      favicon_data_url: null,
+    }),
   },
 }));
 
@@ -80,6 +84,22 @@ describe("ItemEditor", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
+  });
+
+  it("strips path from URL on blur and fetches metadata", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    const urlInput = screen.getByLabelText(/^url$/i) as HTMLInputElement;
+    fireEvent.change(urlInput, {
+      target: { value: "https://www.twitch.tv/humzh" },
+    });
+    fireEvent.blur(urlInput);
+    await waitFor(() =>
+      expect((screen.getByLabelText(/^url$/i) as HTMLInputElement).value).toBe(
+        "https://www.twitch.tv"
+      )
+    );
+    expect(api.fetchUrlMetadata).toHaveBeenCalledWith("https://www.twitch.tv");
   });
 
   it("masks the password and reveals it on toggle", async () => {

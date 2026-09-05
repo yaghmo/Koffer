@@ -7,6 +7,7 @@ use crate::accounts::{self, Account, AccountMeta};
 use crate::autolock::AutoLock;
 use crate::config::{self, Config};
 use crate::crypto::{derive_key, random_bytes};
+use crate::metadata::{self, UrlMetadata};
 use crate::password::{self, GenOpts};
 use crate::storage;
 use crate::vault::{self, Item, Vault};
@@ -306,4 +307,13 @@ pub fn reset_vault(
     }
     storage::delete_vault_and_config(&account).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Fetch URL metadata: title + favicon.
+/// Returns None fields when scrape fails (not an error).
+#[tauri::command]
+pub async fn fetch_url_metadata(url: String) -> Result<UrlMetadata, String> {
+    metadata::fetch_metadata(&url)
+        .await
+        .map_err(|e| e.to_string())
 }

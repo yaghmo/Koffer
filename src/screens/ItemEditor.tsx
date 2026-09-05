@@ -66,6 +66,10 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
   // Passwords are masked by default; the reveal toggle shows them in the clear.
   const [showPassword, setShowPassword] = useState(false);
 
+  // URL metadata (favicon + title) fetched on paste
+  const [favicon, setFavicon] = useState<string | null>(null);
+  const [fetchingMeta, setFetchingMeta] = useState(false);
+
   useEffect(() => {
     if (id === null) return;
     api.getItem(id).then((item) => {
@@ -102,6 +106,38 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
       window.setTimeout(() => setCopied((c) => (c === label ? null : c)), 1400);
     } catch {
       // ignore
+    }
+  }
+
+  async function handleUrlBlur() {
+    let url = login.url.trim();
+    if (!url || !isValidUrl(url) || fetchingMeta) return;
+
+    // Strip path/query: store bare host origin (https://www.twitch.tv).
+    try {
+      const u = new URL(url);
+      const cleaned = `${u.protocol}//${u.host}`;
+      if (cleaned !== url) {
+        url = cleaned;
+        setLogin((prev) => ({ ...prev, url: url }));
+      }
+    } catch {
+      // not a parseable URL — leave as typed
+    }
+
+    setFetchingMeta(true);
+    try {
+      const meta = await api.fetchUrlMetadata(url);
+      if (meta.favicon_data_url) {
+        setFavicon(meta.favicon_data_url);
+      }
+      if (meta.title && !title.trim()) {
+        setTitle(meta.title);
+      }
+    } catch {
+      // Fetch failed, no metadata. Silent ignore.
+    } finally {
+      setFetchingMeta(false);
     }
   }
 
@@ -225,9 +261,17 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
             <div className="field">
               <p className="field-label">URL</p>
               <div className="field-row">
+                {favicon && (
+                  <img
+                    src={favicon}
+                    alt=""
+                    style={{ width: 16, height: 16, marginRight: 8 }}
+                  />
+                )}
                 <input
                   value={login.url}
                   onChange={(e) => setLogin({ ...login, url: e.target.value })}
+                  onBlur={handleUrlBlur}
                   aria-label="URL"
                   spellCheck={false}
                   autoComplete="off"
