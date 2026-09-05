@@ -18,10 +18,13 @@ beforeEach(() => {
 
 const noop = () => {};
 const editorProps = {
-  editingId: null as string | "new" | null,
+  editing: null as null,
+  viewingId: null as string | null,
+  onViewItem: noop,
   onEditItem: noop,
   onEditNew: noop,
   onEditorClose: noop,
+  onViewerClose: noop,
 };
 
 describe("Vault", () => {

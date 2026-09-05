@@ -5,6 +5,7 @@ import { CopyIcon, CheckIcon, XIcon } from "../components/Icon";
 
 interface Props {
   id: string | null;
+  initialKind?: ItemKind;
   onClose: () => void;
 }
 
@@ -12,8 +13,8 @@ const emptyLogin = (): LoginFields => ({ url: "", username: "", password: "" });
 const emptyNote = (): NoteFields => ({ body: "" });
 const emptyCard = (): CardFields => ({ cardholder: "", number: "", exp: "", cvv: "" });
 
-export default function ItemEditor({ id, onClose }: Props) {
-  const [kind, setKind] = useState<ItemKind>("login");
+export default function ItemEditor({ id, initialKind, onClose }: Props) {
+  const [kind, setKind] = useState<ItemKind>(initialKind ?? "login");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [login, setLogin] = useState<LoginFields>(emptyLogin());

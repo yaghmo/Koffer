@@ -1,9 +1,10 @@
 import type { ItemMeta } from "../lib/types";
-import { TrashIcon } from "./Icon";
+import { PencilIcon, TrashIcon } from "./Icon";
 
 interface Props {
   items: ItemMeta[];
-  onSelect: (item: ItemMeta) => void;
+  onView: (item: ItemMeta) => void;
+  onEdit?: (item: ItemMeta) => void;
   onDelete: (id: string) => void;
 }
 
@@ -14,7 +15,7 @@ function formatStamp(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function ItemList({ items, onSelect, onDelete }: Props) {
+export default function ItemList({ items, onView, onEdit, onDelete }: Props) {
   if (items.length === 0) {
     return <p className="empty">No items yet · add your first one</p>;
   }
@@ -24,13 +25,23 @@ export default function ItemList({ items, onSelect, onDelete }: Props) {
         <li key={it.id}>
           <button
             className="row"
-            onClick={() => onSelect(it)}
-            aria-label={`Edit ${it.title}`}
+            onClick={() => onView(it)}
+            aria-label={`View ${it.title}`}
           >
             <span className={`kind kind-${it.kind}`}>{it.kind}</span>
             <span className="title">{it.title}</span>
             <span className="meta">{formatStamp(it.updated_at)}</span>
           </button>
+          {onEdit && (
+            <button
+              className="edit"
+              onClick={() => onEdit(it)}
+              aria-label={`Edit ${it.title}`}
+              title={`Edit ${it.title}`}
+            >
+              <PencilIcon />
+            </button>
+          )}
           <button
             className="delete"
             onClick={() => {

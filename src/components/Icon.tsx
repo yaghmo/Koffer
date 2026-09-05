@@ -107,3 +107,11 @@ export function TrashIcon({ size = 14, ...props }: IconProps) {
     </svg>
   );
 }
+
+export function PencilIcon({ size = 14, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)}>
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}

@@ -43,4 +43,10 @@ describe("ItemEditor", () => {
     await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("opens with the requested initial kind", async () => {
+    render(<ItemEditor id={null} initialKind="note" onClose={() => {}} />);
+    // Note editor shows a textarea with aria-label "Note body"
+    expect(await screen.findByLabelText(/note body/i)).toBeTruthy();
+  });
 });

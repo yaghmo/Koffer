@@ -661,6 +661,21 @@ input::-webkit-textfield-decoration-container {
   color: var(--danger-100);
   background: color-mix(in oklab, var(--danger-100) 8%, var(--paper));
 }
+.item-list .edit {
+  background: transparent;
+  border: 0;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  transition: color 150ms ease-out, background-color 150ms ease-out;
+}
+.item-list .edit:hover {
+  color: var(--brass-100);
+  background: var(--paper-1);
+}
 
 /* =================================================================
  * ITEM EDITOR
@@ -715,6 +730,34 @@ input::-webkit-textfield-decoration-container {
 }
 .editor .kind-tabs button:hover { color: var(--ink); background: var(--paper-1); }
 .editor .kind-tabs button.active {
+  color: var(--brass-200);
+  background: color-mix(in oklab, var(--brass-100) 12%, var(--paper));
+  border-color: var(--brass-100);
+}
+
+/* Top-level kind filter (used in Settings, outside the editor) */
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--paper-3);
+  margin-bottom: 16px;
+}
+.filter-tabs button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-dim);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-transform: capitalize;
+  transition: color 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out;
+}
+.filter-tabs button:hover { color: var(--ink); background: var(--paper-1); }
+.filter-tabs button.active {
   color: var(--brass-200);
   background: color-mix(in oklab, var(--brass-100) 12%, var(--paper));
   border-color: var(--brass-100);
@@ -779,6 +822,32 @@ input::-webkit-textfield-decoration-container {
   justify-content: center;
   z-index: 100;
   animation: fade-in 200ms ease-out;
+}
+
+/* Side sheet for the item viewer; same paper material as the desk */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklab, var(--paper) 70%, transparent);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  z-index: 90;
+  padding: 40px 20px;
+  overflow-y: auto;
+  animation: fade-in 200ms ease-out;
+}
+.overlay > .editor {
+  background: var(--paper);
+  border: 1px solid var(--paper-3);
+  border-radius: 10px;
+  padding: 28px 28px 24px;
+  width: min(560px, 100%);
+  align-self: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay { animation: none; }
 }
 
 @keyframes fade-in {

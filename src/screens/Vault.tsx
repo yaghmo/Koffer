@@ -1,21 +1,37 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { ItemMeta } from "../lib/types";
-import { PlusIcon } from "../components/Icon";
+import type { ItemKind, ItemMeta } from "../lib/types";
 import ItemList from "../components/ItemList";
 import SearchBar from "../components/SearchBar";
 import ItemEditor from "./ItemEditor";
 import Generator from "../components/Generator";
 
+type EditingTarget =
+  | { kind: "existing"; id: string }
+  | { kind: "new"; itemKind: ItemKind }
+  | null;
+
 interface Props {
   filter: "all" | "login" | "note" | "card";
-  editingId: string | "new" | null;
+  editing: EditingTarget;
+  viewingId: string | null;
+  refreshKey?: number;
+  onViewItem: (id: string) => void;
   onEditItem: (id: string) => void;
-  onEditNew: () => void;
+  onEditNew: (kind: ItemKind) => void;
   onEditorClose: () => void;
+  onViewerClose: () => void;
 }
 
-export default function Vault({ filter, editingId, onEditItem, onEditNew, onEditorClose }: Props) {
+export default function Vault({
+  filter,
+  editing,
+  refreshKey,
+  onViewItem,
+  onEditItem,
+  onEditNew,
+  onEditorClose,
+}: Props) {
   const [items, setItems] = useState<ItemMeta[]>([]);
   const [query, setQuery] = useState("");
   const [showGenerator, setShowGenerator] = useState(false);
@@ -30,12 +46,16 @@ export default function Vault({ filter, editingId, onEditItem, onEditNew, onEdit
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, kind]);
+  }, [query, kind, refreshKey]);
 
   async function handleDelete(id: string) {
     await api.deleteItem(id);
     refresh();
   }
+
+  // Three explicit "+ Kind" buttons so the user picks a kind up front instead
+  // of opening an editor and switching tabs.
+  const addKinds: ItemKind[] = ["login", "note", "card"];
 
   return (
     <div className="vault">
@@ -58,23 +78,33 @@ export default function Vault({ filter, editingId, onEditItem, onEditNew, onEdit
           >
             Generate
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onEditNew}
-          >
-            <PlusIcon /> Add
-          </button>
+          {addKinds.map((k) => (
+            <button
+              key={k}
+              type="button"
+              className="btn btn-primary"
+              onClick={() => onEditNew(k)}
+              aria-label={`Add ${k}`}
+            >
+              + {k}
+            </button>
+          ))}
         </div>
       </div>
 
-      <ItemList items={items} onSelect={(it) => onEditItem(it.id)} onDelete={handleDelete} />
+      <ItemList
+        items={items}
+        onView={(it) => onViewItem(it.id)}
+        onEdit={(it) => onEditItem(it.id)}
+        onDelete={handleDelete}
+      />
 
       {showGenerator && <Generator onClose={() => setShowGenerator(false)} />}
 
-      {editingId && (
+      {editing && (
         <ItemEditor
-          id={editingId === "new" ? null : editingId}
+          id={editing.kind === "existing" ? editing.id : null}
+          initialKind={editing.kind === "new" ? editing.itemKind : undefined}
           onClose={onEditorClose}
         />
       )}

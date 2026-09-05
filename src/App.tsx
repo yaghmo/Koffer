@@ -5,12 +5,20 @@ import Setup from "./screens/Setup";
 import AccountLock from "./screens/AccountLock";
 import Vault from "./screens/Vault";
 import Settings from "./screens/Settings";
+import ItemViewer from "./screens/ItemViewer";
 import Sidebar from "./components/Sidebar";
-import type { Account } from "./lib/types";
+import type { Account, ItemKind } from "./lib/types";
 
 type Status = "loading" | "no-accounts" | "locked" | "unlocked";
 type View = "vault" | "settings";
 type Filter = "all" | "login" | "note" | "card";
+
+// editingTarget is null when the editor is closed, an existing id when
+// editing, or { kind } when creating a new item of a specific kind.
+type EditingTarget =
+  | { kind: "existing"; id: string }
+  | { kind: "new"; itemKind: ItemKind }
+  | null;
 
 export default function App() {
   const [status, setStatus] = useState<Status>("loading");
@@ -18,7 +26,10 @@ export default function App() {
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
   const [view, setView] = useState<View>("vault");
   const [filter, setFilter] = useState<Filter>("all");
-  const [editingId, setEditingId] = useState<string | "new" | null>(null);
+  const [editing, setEditing] = useState<EditingTarget>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  // Bumped after viewer-side delete so the vault list refetches.
+  const [vaultRefresh, setVaultRefresh] = useState(0);
 
   useEffect(() => {
     api.listAccounts().then((list) => {
@@ -28,7 +39,8 @@ export default function App() {
     const unlisten = onVaultLocked(() => {
       setStatus("locked");
       setView("vault");
-      setEditingId(null);
+      setEditing(null);
+      setViewingId(null);
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -47,21 +59,24 @@ export default function App() {
     };
   }, [status]);
 
-  // Sidebar nav/filter always closes the editor. Unsaved changes are lost;
-  // matching the user's mental model that "clicking a section goes there."
+  // Sidebar nav/filter always closes the viewer/editor. Unsaved changes are
+  // lost; matches the user's mental model that "clicking a section goes there."
   function navigate(nextView: View) {
-    setEditingId(null);
+    setEditing(null);
+    setViewingId(null);
     setView(nextView);
   }
   function changeFilter(next: Filter) {
-    setEditingId(null);
+    setEditing(null);
+    setViewingId(null);
     setFilter(next);
   }
 
   function handleLock() {
     setStatus("locked");
     setView("vault");
-    setEditingId(null);
+    setEditing(null);
+    setViewingId(null);
     api.lockVault().catch(() => {});
   }
 
@@ -112,9 +127,6 @@ export default function App() {
               if (list.length === 0) {
                 setStatus("no-accounts");
               }
-              // Otherwise stay on the lock screen, list refreshed.
-              // The deleted id is removed from `accounts` automatically.
-              // Suppress unused warning when no extra logic.
               void deletedId;
             }}
             onAddNew={async () => {
@@ -141,16 +153,67 @@ export default function App() {
         {view === "vault" && (
           <Vault
             filter={filter}
-            editingId={editingId}
-            onEditItem={(id) => setEditingId(id)}
-            onEditNew={() => setEditingId("new")}
-            onEditorClose={() => setEditingId(null)}
+            editing={editing}
+            viewingId={viewingId}
+            refreshKey={vaultRefresh}
+            onViewItem={(id) => {
+              setEditing(null);
+              setViewingId(id);
+            }}
+            onEditItem={(id) => {
+              setViewingId(null);
+              setEditing({ kind: "existing", id });
+            }}
+            onEditNew={(itemKind) => {
+              setViewingId(null);
+              setEditing({ kind: "new", itemKind });
+            }}
+            onEditorClose={() => setEditing(null)}
+            onViewerClose={() => setViewingId(null)}
           />
         )}
         {view === "settings" && currentAccount && (
-          <Settings accountId={currentAccount.id} onLock={handleLock} />
+          <Settings
+            accountId={currentAccount.id}
+            onLock={handleLock}
+            onViewItem={(id) => setViewingId(id)}
+          />
+        )}
+        {/* Viewer overlays both views so the user can pop in from anywhere */}
+        {viewingId && (
+          <ItemViewerOverlay
+            id={viewingId}
+            onEdit={(id) => {
+              setViewingId(null);
+              setEditing({ kind: "existing", id });
+            }}
+            onClose={() => setViewingId(null)}
+            onDeleted={() => setVaultRefresh((n) => n + 1)}
+          />
         )}
       </main>
+    </div>
+  );
+}
+
+function ItemViewerOverlay(props: {
+  id: string;
+  onEdit: (id: string) => void;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  return (
+    <div className="overlay">
+      <ItemViewer
+        id={props.id}
+        onEdit={props.onEdit}
+        onClose={props.onClose}
+        onDelete={async (id) => {
+          await api.deleteItem(id);
+          props.onDeleted();
+          props.onClose();
+        }}
+      />
     </div>
   );
 }
