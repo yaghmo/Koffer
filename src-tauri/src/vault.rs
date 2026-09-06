@@ -96,11 +96,57 @@ impl Item {
     }
 }
 
+/// Single global identity profile for a vault: used to fill login/personal
+/// forms (email, phone, name, social handles, job applications, ...).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct PersonalInfo {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub phone: String,
+    #[serde(default)]
+    pub website: String,
+    #[serde(default)]
+    pub github: String,
+    #[serde(default)]
+    pub linkedin: String,
+    #[serde(default)]
+    pub address: String,
+    #[serde(default)]
+    pub city: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub zip: String,
+    #[serde(default)]
+    pub country: String,
+    #[serde(default)]
+    pub date_of_birth: String,
+    #[serde(default)]
+    pub current_title: String,
+    #[serde(default)]
+    pub current_company: String,
+    #[serde(default)]
+    pub years_experience: String,
+    #[serde(default)]
+    pub school: String,
+    #[serde(default)]
+    pub degree: String,
+    #[serde(default)]
+    pub desired_salary: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vault {
     pub version: u32,
     pub kdf_salt: Vec<u8>,
     pub items: Vec<Item>,
+    #[serde(default)]
+    pub personal: PersonalInfo,
 }
 
 pub fn new_vault(salt: Vec<u8>) -> Vault {
@@ -108,6 +154,7 @@ pub fn new_vault(salt: Vec<u8>) -> Vault {
         version: 1,
         kdf_salt: salt,
         items: Vec::new(),
+        personal: PersonalInfo::default(),
     }
 }
 
@@ -251,5 +298,42 @@ mod tests {
     fn deserialize_vault_rejects_garbage() {
         assert!(deserialize_vault(b"not json").is_err());
         assert!(deserialize_vault(b"").is_err());
+    }
+
+    #[test]
+    fn old_vault_without_personal_deserializes_to_default_profile() {
+        let json = br#"{"version":1,"kdf_salt":[1,2,3],"items":[]}"#;
+        let v = deserialize_vault(json).unwrap();
+        assert_eq!(v.personal, PersonalInfo::default());
+        assert_eq!(v.personal.email, "");
+    }
+
+    #[test]
+    fn personal_roundtrip_preserves_fields() {
+        let mut v = new_vault(vec![]);
+        v.personal = PersonalInfo {
+            name: "Ada L".to_string(),
+            username: "ada".to_string(),
+            email: "ada@example.com".to_string(),
+            phone: "+15551234567".to_string(),
+            website: "https://ada.example".to_string(),
+            github: "adagithub".to_string(),
+            linkedin: "adalinkedin".to_string(),
+            address: "1 Maths Road".to_string(),
+            city: "London".to_string(),
+            state: "".to_string(),
+            zip: "W1T 3AL".to_string(),
+            country: "UK".to_string(),
+            date_of_birth: "1815-12-10".to_string(),
+            current_title: "Analytical Engine Programmer".to_string(),
+            current_company: "Babbage & Co".to_string(),
+            years_experience: "15".to_string(),
+            school: "University of London".to_string(),
+            degree: "Mathematics".to_string(),
+            desired_salary: "80000".to_string(),
+        };
+        let bytes = serialize_vault(&v).unwrap();
+        let v2 = deserialize_vault(&bytes).unwrap();
+        assert_eq!(v2.personal, v.personal);
     }
 }

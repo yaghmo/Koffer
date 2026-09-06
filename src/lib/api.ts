@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, UrlMetadata } from "./types";
+import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, UrlMetadata } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -36,4 +36,8 @@ export const api = {
     invoke<UrlMetadata>("fetch_url_metadata", { url }),
 
   openLoginItem: (id: string) => invoke<void>("open_login_url", { id }),
+
+  getPersonalInfo: () => invoke<PersonalInfo>("get_personal_info"),
+  savePersonalInfo: (info: PersonalInfo) =>
+    invoke<void>("save_personal_info", { info }),
 };

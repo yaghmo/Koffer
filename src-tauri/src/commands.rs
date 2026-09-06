@@ -10,7 +10,7 @@ use crate::crypto::{derive_key, random_bytes};
 use crate::metadata::{self, UrlMetadata};
 use crate::password::{self, GenOpts};
 use crate::storage;
-use crate::vault::{self, Item, Vault};
+use crate::vault::{self, Item, PersonalInfo, Vault};
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
@@ -59,6 +59,7 @@ pub struct ItemMeta {
     pub updated_at: i64,
     pub favicon: String,
     pub method: Option<String>,
+    pub username: Option<String>,
 }
 
 fn to_meta(item: &Item) -> ItemMeta {
@@ -75,6 +76,16 @@ fn to_meta(item: &Item) -> ItemMeta {
         favicon: item.base().favicon.clone(),
         method: match item {
             Item::Login { fields, .. } => Some(fields.method.clone()),
+            _ => None,
+        },
+        username: match item {
+            Item::Login { fields, .. } => {
+                if fields.username.is_empty() {
+                    None
+                } else {
+                    Some(fields.username.clone())
+                }
+            }
             _ => None,
         },
     }
@@ -117,9 +128,10 @@ pub fn unlock_vault(
     let vault_on_disk = storage::load_vault_unverified(&account)
         .map_err(|_| "invalid password".to_string())?;
     let key = derive_key(&password, &vault_on_disk.kdf_salt);
-    storage::load_vault_with_key(&account, &key).map_err(|_| "invalid password".to_string())?;
+    let vault = storage::load_vault_with_key(&account, &key)
+        .map_err(|_| "invalid password".to_string())?;
     *state.key.lock().unwrap() = Some(key);
-    *state.vault.lock().unwrap() = Some(vault_on_disk);
+    *state.vault.lock().unwrap() = Some(vault);
     *state.current_account.lock().unwrap() = Some(account);
     state.autolock.lock().unwrap().reset();
     Ok(())
@@ -226,6 +238,34 @@ pub fn delete_item(id: String, state: State<'_, AppState>) -> Result<(), String>
     let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
     let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
     vault::delete_item(vault, uuid);
+    storage::save_vault(&account, vault, &key).map_err(|e| e.to_string())?;
+    state.autolock.lock().unwrap().reset();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_personal_info(state: State<'_, AppState>) -> Result<PersonalInfo, String> {
+    let vault = state.vault.lock().unwrap();
+    let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
+    Ok(vault.personal.clone())
+}
+
+#[tauri::command]
+pub fn save_personal_info(
+    info: PersonalInfo,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let account = {
+        let a = state.current_account.lock().unwrap();
+        a.clone().ok_or_else(|| "locked".to_string())?
+    };
+    let key = {
+        let k = state.key.lock().unwrap();
+        *k.as_ref().ok_or_else(|| "locked".to_string())?
+    };
+    let mut vault = state.vault.lock().unwrap();
+    let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
+    vault.personal = info;
     storage::save_vault(&account, vault, &key).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
@@ -351,13 +391,34 @@ pub fn open_login_url(
         return Err("item has no URL".to_string());
     }
 
+    // Prime the clipboard with the password that belongs at this URL.
+    // Credentials items: their own password. Provider items: the linked
+    // credential account (same username) — find it in the vault.
     if let Item::Login { fields, .. } = &item {
-        if fields.method == "credentials" && !fields.password.is_empty() {
-            crate::clipboard::copy_with_ttl(
-                &fields.password,
-                std::time::Duration::from_secs(60),
-            )
-            .map_err(|e| e.to_string())?;
+        let mut to_copy: Option<String> = None;
+        if fields.method == "credentials" {
+            if !fields.password.is_empty() {
+                to_copy = Some(fields.password.clone());
+            }
+        } else if !fields.username.is_empty() {
+            if let Some(Item::Login { fields: acct_fields, .. }) = vault
+                .items
+                .iter()
+                .find(|i| {
+                    matches!(
+                        i,
+                        Item::Login { fields: f, .. }
+                            if f.username == fields.username
+                                && !f.password.is_empty()
+                    )
+                })
+            {
+                to_copy = Some(acct_fields.password.clone());
+            }
+        }
+        if let Some(pw) = to_copy {
+            crate::clipboard::copy_with_ttl(&pw, std::time::Duration::from_secs(60))
+                .map_err(|e| e.to_string())?;
         }
     }
 

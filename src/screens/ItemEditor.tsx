@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Item, ItemKind, LoginFields, NoteFields, CardFields } from "../lib/types";
+import type { PersonalInfo } from "../lib/types";
+import type { Item, ItemKind, ItemMeta, LoginFields, LoginMethod, NoteFields, CardFields } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, XIcon } from "../components/Icon";
-import { methods, MethodChip } from "../lib/methods";
+import { methods, MethodChip, accountMatchesProvider, methodLabel } from "../lib/methods";
 
 interface Props {
   id: string | null;
@@ -62,6 +63,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
   const [card, setCard] = useState<CardFields>(emptyCard());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
 
   // Passwords are masked by default; the reveal toggle shows them in the clear.
@@ -70,6 +72,27 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
   // URL metadata (favicon + title) fetched on paste
   const [favicon, setFavicon] = useState<string | null>(null);
   const [fetchingMeta, setFetchingMeta] = useState(false);
+
+  // Provider account suggestions + nested "+ Add new account" sub-flow
+  const [accountSuggestions, setAccountSuggestions] = useState<ItemMeta[]>([]);
+  const [creatingAccount, setCreatingAccount] = useState(false);
+
+  // Global personal profile — offers email/phone/username as quick-fill chips.
+  const [personalInfo, setPersonalInfo] = useState<{ email: string; phone: string; username: string }>({ email: "", phone: "", username: "" });
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getPersonalInfo()
+      .then((p) => {
+        if (cancelled) return;
+        setPersonalInfo({ email: p.email, phone: p.phone, username: p.username });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (id === null) return;
@@ -99,6 +122,45 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
       setError(`Failed to load item: ${err}`);
     });
   }, [id]);
+
+  // Load provider-matching accounts when a non-credentials method is chosen.
+  // The list of all credential logins already in the vault is filtered by
+  // provider hints (email domain or URL keyword) so the user can pick an
+  // existing account instead of retyping it.
+  useEffect(() => {
+    if (kind !== "login" || login.method === "credentials") {
+      setAccountSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    api
+      .listItems(undefined, "login")
+      .then((all) => {
+        if (cancelled) return;
+        // Accounts may be stored as "credentials" (legacy) or as the provider
+        // method itself (e.g. added via "+ Add new account"); both match.
+        const matches = all.filter(
+          (it) =>
+            it.username &&
+            accountMatchesProvider(it.username, login.method),
+        );
+        // De-dupe by account identifier (same email across many sites)
+        const seen = new Set<string>();
+        const unique = matches.filter((it) => {
+          const key = (it.username || "").toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setAccountSuggestions(unique);
+      })
+      .catch(() => {
+        if (!cancelled) setAccountSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, login.method]);
 
   async function copy(label: string, text: string) {
     if (!text) return;
@@ -144,24 +206,23 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
   }
 
   async function save() {
+    const errors: Record<string, string> = {};
     if (!title.trim()) {
-      setError("Title is required.");
-      return;
+      errors.title = "Title is required.";
     }
     if (kind === "login" && !isValidUrl(login.url)) {
-      setError("URL must be a valid http(s) link (e.g. https://example.com).");
-      return;
+      errors.url = "URL must be a valid http(s) link (e.g. https://example.com).";
     }
     if (kind === "card") {
-      if (!card.exp.trim()) {
-        setError("Card expiration is required.");
-        return;
-      }
-      if (!isValidExp(card.exp)) {
-        setError("Card expiration must be MM/YY.");
-        return;
+      const exp = card.exp.trim();
+      if (!exp) {
+        errors.exp = "Card expiration is required.";
+      } else if (!isValidExp(exp)) {
+        errors.exp = "Card expiration must be MM/YY.";
       }
     }
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setBusy(true);
     setError(null);
     try {
@@ -194,6 +255,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
   }
 
   return (
+    <>
     <form
       className="editor"
       onSubmit={(e) => {
@@ -240,6 +302,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
               autoFocus={id === null}
             />
           </div>
+          {fieldErrors.title && <p className="field-error" role="alert">{fieldErrors.title}</p>}
         </div>
 
         {kind === "login" && (
@@ -283,58 +346,88 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                   placeholder="https://example.com"
                 />
               </div>
+              {fieldErrors.url && <p className="field-error" role="alert">{fieldErrors.url}</p>}
             </div>
-            {login.method === "credentials" && (
-              <>
-                <div className="field">
-                  <p className="field-label">Username</p>
-                  <div className="field-row">
-                    <input
-                      value={login.username}
-                      onChange={(e) => setLogin({ ...login, username: e.target.value })}
-                      aria-label="Username"
-                      spellCheck={false}
-                      autoComplete="off"
-                    />
-                  </div>
-                </div>
-                <div className="field">
-                  <p className="field-label">Password</p>
-                  <div className="copy-row">
-                    <div className="field-row">
-                      <input
-                        className="mono"
-                        type={showPassword ? "text" : "password"}
-                        value={login.password}
-                        onChange={(e) => setLogin({ ...login, password: e.target.value })}
-                        aria-label="Password"
-                        spellCheck={false}
-                        autoComplete="new-password"
-                      />
+            {login.method !== "credentials" && (
+              <div className="field">
+                <p className="field-label">Account</p>
+                {accountSuggestions.length > 0 ? (
+                  <div className="chips">
+                    {accountSuggestions.map((s) => (
                       <button
+                        key={s.id}
                         type="button"
-                        className="reveal"
-                        onClick={() => setShowPassword((s) => !s)}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                        aria-pressed={showPassword}
-                        title={showPassword ? "Hide password" : "Show password"}
+                        className={`chip-btn ${login.username === s.username ? "active" : ""}`}
+                        onClick={() => setLogin({ ...login, username: s.username || "" })}
                       >
-                        {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                        <span>{s.username}</span>
                       </button>
-                    </div>
-                    <button
-                      type="button"
-                      className={`copy-inline ${copied === "password" ? "copied" : ""}`}
-                      onClick={() => copy("password", login.password)}
-                      disabled={!login.password}
-                    >
-                      {copied === "password" ? <CheckIcon /> : <CopyIcon />}
-                      {copied === "password" ? "Copied" : "Copy"}
-                    </button>
+                    ))}
                   </div>
-                </div>
-              </>
+                ) : (
+                  <p className="muted">No {methodLabel(login.method)} account in your vault yet.</p>
+                )}
+                <button
+                  type="button"
+                  className="add-account-link"
+                  onClick={() => setCreatingAccount(true)}
+                >
+                  + Add new account
+                </button>
+              </div>
             )}
+            {login.method === "credentials" && (
+              <div className="field">
+                <p className="field-label">Username</p>
+                <div className="field-row">
+                  <input
+                    value={login.username}
+                    onChange={(e) => setLogin({ ...login, username: e.target.value })}
+                    aria-label="Username"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                </div>
+                {!login.username && (
+                  <PersonalChips personal={personalInfo} onPick={(u) => setLogin({ ...login, username: u })} />
+                )}
+              </div>
+            )}
+            <div className="field">
+              <p className="field-label">Password</p>
+              <div className="copy-row">
+                <div className="field-row">
+                  <input
+                    className="mono"
+                    type={showPassword ? "text" : "password"}
+                    value={login.password}
+                    onChange={(e) => setLogin({ ...login, password: e.target.value })}
+                    aria-label="Password"
+                    spellCheck={false}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="reveal"
+                    onClick={() => setShowPassword((s) => !s)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className={`copy-inline ${copied === "password" ? "copied" : ""}`}
+                  onClick={() => copy("password", login.password)}
+                  disabled={!login.password}
+                >
+                  {copied === "password" ? <CheckIcon /> : <CopyIcon />}
+                  {copied === "password" ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
           </>
         )}
 
@@ -415,6 +508,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                   maxLength={5}
                 />
               </div>
+              {fieldErrors.exp && <p className="field-error" role="alert">{fieldErrors.exp}</p>}
             </div>
             <div className="field">
               <p className="field-label">CVV</p>
@@ -465,5 +559,192 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
 
       {error && <p className="error" role="alert">{error}</p>}
     </form>
+    {creatingAccount && login.method !== "credentials" && (
+      <NewAccountModal
+        providerMethod={login.method}
+        onClose={() => setCreatingAccount(false)}
+        onCreated={({ username: u }) => {
+          setLogin((prev) => ({ ...prev, username: u }));
+          setCreatingAccount(false);
+          // Bump the suggestion list so the new account appears immediately.
+          setAccountSuggestions((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              kind: "login",
+              title: u,
+              updated_at: Date.now(),
+              favicon: "",
+              method: login.method,
+              username: u,
+            },
+          ]);
+        }}
+      />
+    )}
+    </>
+  );
+}
+
+/**
+ * Quick-fill chips sourced from the global personal profile: email, phone,
+ * and username. Shown when the identifier field is empty.
+ */
+function PersonalChips({
+  personal,
+  onPick,
+}: {
+  personal: Pick<PersonalInfo, "email" | "phone" | "username">;
+  onPick: (value: string) => void;
+}) {
+  const values = [
+    { label: "Email", value: personal.email },
+    { label: "Phone", value: personal.phone },
+    { label: "Username", value: personal.username },
+  ].filter((v) => v.value.trim());
+  if (values.length === 0) return null;
+  return (
+    <div className="suggestions">
+      <p className="suggestions-label">Personal profile</p>
+      <div className="chips">
+        {values.map((v) => (
+          <button
+            key={v.label}
+            type="button"
+            className="chip-btn"
+            onClick={() => onPick(v.value)}
+          >
+            {v.label}: <span>{v.value}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Inline sub-flow to add a brand-new credential login (e.g. a Gmail account)
+ * to the vault without leaving the parent ItemEditor. After saving, the
+ * parent picks up the new account via onCreated.
+ */
+function NewAccountModal({
+  providerMethod,
+  onClose,
+  onCreated,
+}: {
+  providerMethod: Exclude<LoginMethod, "credentials">;
+  onClose: () => void;
+  onCreated: (account: { id: string; username: string }) => void;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const providerLabel = methods.find((m) => m.id === providerMethod)?.label ?? providerMethod;
+
+  async function save() {
+    const errors: Record<string, string> = {};
+    if (!username.trim()) errors.account = "Account is required.";
+    if (!password) errors.password = "Password is required.";
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const item: Item = {
+        type: "login",
+        id: crypto.randomUUID(),
+        title: username.trim(),
+        notes: "",
+        created_at: 0,
+        updated_at: Date.now(),
+        favicon: "",
+        method: providerMethod,
+        url: "",
+        username: username.trim(),
+        password,
+      };
+      await api.saveItem(item);
+      onCreated({ id: item.id, username: item.username });
+    } catch (e: any) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="overlay" role="dialog" aria-label={`Add ${providerLabel} account`}>
+      <form
+        className="editor sub-modal"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <div className="toolbar">
+          <div className="method-static">
+            <MethodChip method={providerMethod} size={22} />
+            <div>
+              <p className="screen-eyebrow">New account</p>
+              <h2>Add {providerLabel} account</h2>
+            </div>
+          </div>
+          <div className="actions">
+            <button type="button" className="btn-ghost" onClick={onClose}>
+              <XIcon /> Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={busy || !username.trim() || !password}>
+              {busy ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+        <div className="fields">
+          <div className="field">
+            <p className="field-label">Account</p>
+            <div className="field-row">
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                aria-label="Account"
+                autoFocus
+                spellCheck={false}
+                autoComplete="off"
+                placeholder="you@example.com"
+              />
+            </div>
+            {fieldErrors.account && <p className="field-error" role="alert">{fieldErrors.account}</p>}
+          </div>
+          <div className="field">
+            <p className="field-label">Password</p>
+            <div className="field-row">
+              <input
+                className="mono"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-label="Password"
+                spellCheck={false}
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                className="reveal"
+                onClick={() => setShowPassword((s) => !s)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                title={showPassword ? "Hide" : "Show"}
+              >
+                {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
+            {fieldErrors.password && <p className="field-error" role="alert">{fieldErrors.password}</p>}
+          </div>
+        </div>
+        {error && <p className="error" role="alert">{error}</p>}
+      </form>
+    </div>
   );
 }

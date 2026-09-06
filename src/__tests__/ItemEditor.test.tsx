@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import ItemEditor from "../screens/ItemEditor";
 
 vi.mock("../lib/api", () => ({
@@ -16,10 +16,20 @@ vi.mock("../lib/api", () => ({
       password: "s3cret",
     }),
     saveItem: vi.fn().mockResolvedValue(undefined),
+    listItems: vi.fn().mockResolvedValue([]),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
     fetchUrlMetadata: vi.fn().mockResolvedValue({
       title: null,
       favicon_data_url: null,
+    }),
+    getPersonalInfo: vi.fn().mockResolvedValue({
+      name: "",
+      username: "",
+      email: "",
+      phone: "",
+      website: "",
+      github: "",
+      linkedin: "",
     }),
   },
 }));
@@ -110,6 +120,28 @@ describe("ItemEditor", () => {
     expect(pw.type).toBe("password");
     fireEvent.click(screen.getByRole("button", { name: /show password/i }));
     expect(pw.type).toBe("text");
+  });
+
+  it("saves an added account as a login of the provider method", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    // Pick the Google method → account sub-flow appears, no account input.
+    fireEvent.click(screen.getByRole("radio", { name: /google/i }));
+    fireEvent.click(screen.getByRole("button", { name: /\+ add new account/i }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/^account$/i), {
+      target: { value: "me@gmail.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^password$/i), {
+      target: { value: "pw" },
+    });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
+    const saved = (api.saveItem as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(saved.method).toBe("google");
+    expect(saved.username).toBe("me@gmail.com");
+    expect(saved.url).toBe("");
+    expect(saved.password).toBe("pw");
   });
 
   it("calls onSaved after a successful save", async () => {

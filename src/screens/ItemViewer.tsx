@@ -228,7 +228,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
               onCopy={() => copy("url", item.url)}
               copied={copied === "url"}
             />
-            {item.method === "credentials" && (
+            {item.method === "credentials" ? (
               <>
                 <Field
                   label="Username"
@@ -243,7 +243,24 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
                   copied={copied === "password"}
                 />
               </>
-            )}
+            ) : item.username ? (
+              <>
+                <Field
+                  label="Account"
+                  value={item.username}
+                  onCopy={() => copy("username", item.username)}
+                  copied={copied === "username"}
+                />
+                {item.password && (
+                  <SecretField
+                    label="Password"
+                    value={item.password}
+                    onCopy={() => copy("password", item.password)}
+                    copied={copied === "password"}
+                  />
+                )}
+              </>
+            ) : null}
           </>
         )}
         {item.type === "note" && (

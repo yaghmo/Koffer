@@ -37,6 +37,8 @@ pub fn run() {
             commands::reset_vault,
             commands::fetch_url_metadata,
             commands::open_login_url,
+            commands::get_personal_info,
+            commands::save_personal_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -51,5 +53,6 @@ pub use storage::{
 };
 pub use vault::{
     add_item, delete_item, deserialize_vault, get_item, list_items, new_vault, serialize_vault,
-    update_item, Item, ItemBase, LoginFields, NoteFields, CardFields, Vault, VaultError,
+    update_item, Item, ItemBase, LoginFields, NoteFields, CardFields, PersonalInfo, Vault,
+    VaultError,
 };

@@ -4,7 +4,7 @@
 
 use crate::accounts::Account;
 use crate::crypto::encrypt;
-use crate::vault::{deserialize_vault, serialize_vault, Vault, VaultError};
+use crate::vault::{deserialize_vault, serialize_vault, PersonalInfo, Vault, VaultError};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -99,6 +99,7 @@ pub fn load_vault_unverified(account: &Account) -> Result<Vault, StorageError> {
         version: 1,
         kdf_salt: salt,
         items: Vec::new(),
+        personal: PersonalInfo::default(),
     })
 }
 

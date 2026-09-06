@@ -491,6 +491,15 @@ input::-webkit-textfield-decoration-container {
   padding: 6px 0 0;
 }
 
+.field-error {
+  color: var(--danger-100);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+  padding: 5px 0 0;
+}
+
 .notice {
   color: var(--brass-300);
   font-family: var(--sans);
@@ -1354,6 +1363,76 @@ input::-webkit-textfield-decoration-container {
   align-items: center;
   gap: 10px;
   color: var(--ink);
+}
+
+/* Provider account suggestions — chips under the Account input */
+.suggestions {
+  margin-top: 10px;
+}
+.suggestions-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  margin: 0 0 6px 2px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--paper-3);
+  background: var(--paper-1);
+  color: var(--ink);
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.chip-btn:hover {
+  background: var(--paper-2);
+  border-color: var(--brass-100);
+}
+.chip-btn.active {
+  background: var(--brass-100);
+  color: var(--paper-0);
+  border-color: var(--brass-100);
+}
+.add-account-link {
+  margin-top: 10px;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  color: var(--brass-100);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+.add-account-link:hover {
+  text-decoration: underline;
+}
+
+/* Nested "+ Add new account" modal */
+.sub-modal {
+  max-width: 420px;
+  width: 92%;
+}
+
+/* Account identifier chip shown on the vault list for non-credentials items */
+.account {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  background: var(--paper-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
 }
 
 /* =================================================================

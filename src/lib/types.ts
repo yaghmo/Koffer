@@ -41,6 +41,7 @@ export interface ItemMeta {
   updated_at: number;
   favicon: string;
   method: LoginMethod | null;
+  username: string | null;
 }
 
 export interface GenOpts {
@@ -53,6 +54,28 @@ export interface GenOpts {
 
 export interface Config {
   autolock_mins: number;
+}
+
+export interface PersonalInfo {
+  name: string;
+  username: string;
+  email: string;
+  phone: string;
+  website: string;
+  github: string;
+  linkedin: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  date_of_birth: string;
+  current_title: string;
+  current_company: string;
+  years_experience: string;
+  school: string;
+  degree: string;
+  desired_salary: string;
 }
 
 export interface Account {

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autofill demo — job application</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: .05em; color: #666; margin: 1.5rem 0 .5rem; }
+  .grid { display: grid; grid-template-columns: 150px 1fr; gap: 0.6rem 0.8rem; align-items: center; }
+  label { font-weight: 600; font-size: 0.8rem; text-align: right; }
+  input { padding: 0.4rem 0.5rem; font-size: 0.9rem; border: 1px solid #bbb; border-radius: 4px; }
+  input.dirty { border-color: #2a7; }
+  button { padding: 0.5rem 1rem; font-size: 0.9rem; cursor: pointer; }
+  pre { background: #f4f4f4; padding: 0.8rem; border-radius: 6px; font-size: 0.78rem; overflow-x: auto; }
+  hr { border: 0; border-top: 1px solid #ddd; margin: 1.5rem 0; }
+</style>
+</head>
+<body>
+  <h1>Autofill content-script demo — job application</h1>
+  <p>Mirrors the field names a typical job application form uses. Click
+     <b>Fill from profile</b> — every field populates, and each gains an
+     <code>input</code> event (green ring = React-style listener fired).</p>
+
+  <form id="jobapp">
+    <h2>Contact</h2>
+    <div class="grid">
+      <label>Full name</label> <input name="fullName" data-autofill="name">
+      <label>Email</label> <input name="email" type="email" autocomplete="email">
+      <label>Phone</label> <input name="phone" type="tel" autocomplete="tel">
+      <label>Username</label> <input name="username" autocomplete="username">
+    </div>
+
+    <h2>Address</h2>
+    <div class="grid">
+      <label>Street</label> <input name="addressLine1">
+      <label>City</label> <input name="city">
+      <label>State / Province</label> <input id="state">
+      <label>Postal code</label> <input name="postalCode">
+      <label>Country</label> <input name="country">
+      <label>Date of birth</label> <input name="dateOfBirth" placeholder="YYYY-MM-DD">
+    </div>
+
+    <h2>Links</h2>
+    <div class="grid">
+      <label>Portfolio</label> <input name="portfolioUrl">
+      <label>GitHub</label> <input name="github">
+      <label>LinkedIn</label> <input id="linkedinUrl">
+    </div>
+
+    <h2>Employment &amp; education</h2>
+    <div class="grid">
+      <label>Job title</label> <input name="jobTitle">
+      <label>Current employer</label> <input name="currentEmployer">
+      <label>Years experience</label> <input name="yearsExperience" inputmode="decimal">
+      <label>University</label> <input name="university">
+      <label>Degree / Major</label> <input name="degree">
+      <label>Desired salary</label> <input name="desiredSalary" inputmode="numeric">
+    </div>
+
+    <h2>Account</h2>
+    <div class="grid">
+      <label>Password</label> <input name="password" type="password" autocomplete="new-password">
+    </div>
+  </form>
+
+  <p style="margin-top: 1rem">
+    <button id="fill">Fill from profile</button>
+    <button id="clear">Clear</button>
+  </p>
+
+  <pre id="report">No action yet.</pre>
+
+  <script src="./autofill.js"></script>
+  <script>
+    var profile = {
+      name: "Ada Lovelace",
+      username: "adaloves",
+      email: "ada@example.com",
+      phone: "+1 555 123 4567",
+      address: "1 Maths Rd, Apt 4",
+      city: "London",
+      state: "England",
+      zip: "W1T 3AL",
+      country: "United Kingdom",
+      date_of_birth: "1985-04-12",
+      website: "https://ada.example",
+      github: "adaloves-git",
+      linkedin: "https://linkedin.com/in/adalovelace",
+      current_title: "Analytical Engine Programmer",
+      current_company: "Babbage & Co",
+      years_experience: "15",
+      school: "University of London",
+      degree: "BSc Mathematics",
+      desired_salary: "80000",
+      password: "s3cret-pass",
+    };
+
+    // React-style listener: any code listening on 'input' sees the fill.
+    document.querySelectorAll("#jobapp input").forEach(function (inp) {
+      inp.addEventListener("input", function () { inp.classList.add("dirty"); });
+    });
+
+    var REPORT_FIELDS = 20; // number of distinct fields expected to fill
+
+    document.getElementById("fill").addEventListener("click", function () {
+      var report = Autofill.fill(document.getElementById("jobapp"), profile);
+      document.getElementById("report").textContent =
+        "formFound: " + report.formFound + "\n" +
+        "filled: " + JSON.stringify(report.filled, null, 1) + "\n" +
+        "missing: " + JSON.stringify(report.missing);
+    });
+
+    document.getElementById("clear").addEventListener("click", function () {
+      document.querySelectorAll("#jobapp input").forEach(function (inp) {
+        inp.value = "";
+        inp.classList.remove("dirty");
+      });
+      document.getElementById("report").textContent = "Cleared.";
+    });
+
+    // Self-check: run once on load to prove the positive path.
+    var check = Autofill.fill(document.getElementById("jobapp"), profile);
+    if (!(check.formFound && check.filled.length === REPORT_FIELDS && check.missing.length === 0)) {
+      console.error("autofill self-check FAILED:", check);
+      document.getElementById("report").textContent =
+        "SELF-CHECK FAILED: " + JSON.stringify(check);
+    } else {
+      console.info("autofill self-check OK:", check.filled.length, "fields");
+    }
+  </script>
+</body>
+</html>

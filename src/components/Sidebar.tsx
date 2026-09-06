@@ -4,8 +4,8 @@ interface Props {
   accountName: string;
   isUnlocked: boolean;
   onLock: () => void;
-  currentView: "vault" | "settings";
-  onNavigate: (view: "vault" | "settings") => void;
+  currentView: "vault" | "settings" | "personal";
+  onNavigate: (view: "vault" | "settings" | "personal") => void;
   currentFilter: "all" | "login" | "note" | "card";
   onFilterChange: (filter: "all" | "login" | "note" | "card") => void;
 }
@@ -61,6 +61,12 @@ export default function Sidebar({
                 Cards
               </button>
             </div>
+            <button
+              className={`sidebar-link ${currentView === "personal" ? "active" : ""}`}
+              onClick={() => onNavigate("personal")}
+            >
+              Personal info
+            </button>
             <button
               className={`sidebar-link ${currentView === "settings" ? "active" : ""}`}
               onClick={() => onNavigate("settings")}

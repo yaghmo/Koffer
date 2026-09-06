@@ -1,6 +1,6 @@
 use password_manager_lib::{
     add_item, derive_key, deserialize_vault, encrypt, generate, new_vault, random_bytes,
-    serialize_vault, save_vault, load_vault, Item, ItemBase, LoginFields,
+    serialize_vault, Item, ItemBase, LoginFields,
 };
 use uuid::Uuid;
 

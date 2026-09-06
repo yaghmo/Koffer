@@ -5,12 +5,13 @@ import Setup from "./screens/Setup";
 import AccountLock from "./screens/AccountLock";
 import Vault from "./screens/Vault";
 import Settings from "./screens/Settings";
+import PersonalInfoScreen from "./screens/PersonalInfo";
 import ItemViewer from "./screens/ItemViewer";
 import Sidebar from "./components/Sidebar";
 import type { Account, ItemKind } from "./lib/types";
 
 type Status = "loading" | "no-accounts" | "locked" | "unlocked";
-type View = "vault" | "settings";
+type View = "vault" | "settings" | "personal";
 type Filter = "all" | "login" | "note" | "card";
 
 // editingTarget is null when the editor is closed, an existing id when
@@ -70,6 +71,7 @@ export default function App() {
     setEditing(null);
     setViewingId(null);
     setFilter(next);
+    setView("vault");
   }
 
   function handleLock() {
@@ -175,6 +177,7 @@ export default function App() {
             onLock={handleLock}
           />
         )}
+        {view === "personal" && <PersonalInfoScreen />}
         {/* Viewer overlays both views so the user can pop in from anywhere */}
         {viewingId && (
           <ItemViewerOverlay

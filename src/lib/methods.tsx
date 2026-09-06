@@ -12,6 +12,33 @@ export const methods: { id: LoginMethod; label: string }[] = [
 export const methodLabel = (m: LoginMethod): string =>
   methods.find((x) => x.id === m)?.label ?? "Login";
 
+// Provider hints: email domains + URL keywords that identify a provider.
+const PROVIDER_HINTS: Record<Exclude<LoginMethod, "credentials">, { domains: string[]; urlKeywords: string[] }> = {
+  google: { domains: ["gmail.com", "googlemail.com"], urlKeywords: ["google.com"] },
+  github: { domains: [], urlKeywords: ["github.com"] },
+  microsoft: { domains: ["outlook.com", "hotmail.com", "live.com", "msn.com"], urlKeywords: ["microsoft.com", "live.com", "outlook.com"] },
+  apple: { domains: ["icloud.com", "me.com", "mac.com"], urlKeywords: ["apple.com", "icloud.com"] },
+  facebook: { domains: [], urlKeywords: ["facebook.com"] },
+};
+
+/** Which provider an account identifier belongs to, or null (e.g. "me@gmail.com" → "google"). */
+export function providerForAccount(account: string): LoginMethod | null {
+  if (!account) return null;
+  const lower = account.toLowerCase();
+  const at = lower.lastIndexOf("@");
+  const domain = at >= 0 ? lower.slice(at + 1) : "";
+  for (const key of Object.keys(PROVIDER_HINTS) as (keyof typeof PROVIDER_HINTS)[]) {
+    if (PROVIDER_HINTS[key].domains.includes(domain)) return key;
+  }
+  return null;
+}
+
+/** True when the account identifier belongs to the given provider. */
+export function accountMatchesProvider(account: string, method: LoginMethod): boolean {
+  if (method === "credentials") return false;
+  return providerForAccount(account) === method;
+}
+
 /** Brand chip: letter monogram per provider, colored. Microsoft = 4 squares. */
 export function MethodChip({
   method,
