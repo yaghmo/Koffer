@@ -101,7 +101,8 @@ export default function App() {
     );
   }
 
-  if (status === "no-accounts") {
+  // A reset can remove the last account while status is "locked".
+  if (status === "no-accounts" || (status === "locked" && accounts.length === 0)) {
     return (
       <div className="app">
         <main className="app-main">

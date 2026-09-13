@@ -30,7 +30,7 @@ Success means: the user unlocks once, finds or copies what they need, locks agai
 
 ## Positioning
 
-The product is the inverse of a synced, multi-device password manager. Its mechanism — local-only Argon2id + AES-256-GCM, no network code anywhere in the bundle, master key never crossing the Rust/JS boundary — is the same claim a competing product cannot make. The UI must show that mechanism only through absence: no sync indicators, no "your data is safe with us" copy, no cloud, no telemetry. Calm is the brand.
+The product is the inverse of a synced, multi-device password manager. Its mechanism — local-only Argon2id + AES-256-GCM, vault contents never leaving the machine, master key never crossing the Rust/JS boundary — is the same claim a competing product cannot make. The UI must show that mechanism only through absence: no sync indicators, no "your data is safe with us" copy, no cloud, no telemetry. Calm is the brand.
 
 ## Operating Context
 
@@ -52,7 +52,7 @@ Capabilities:
 - Reset vault from the Lock screen with password re-verification.
 
 Constraints (durable):
-- Local-only. No network calls of any kind from the UI or the Rust backend.
+- Local-only. Vault contents never leave the machine. The only network call fetches a site's title and favicon when the user enters a login URL: public http(s) hosts only, size-capped, and nothing from the vault is sent.
 - Master key lives in Rust memory only; never serialized, never crosses the JS boundary.
 - Argon2id (m=64 MiB, t=3, p=1) for key derivation.
 - AES-256-GCM with a fresh 12-byte nonce per save.

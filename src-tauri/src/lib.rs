@@ -13,12 +13,24 @@ pub mod vault;
 mod test_env;
 
 use commands::AppState;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
+        .setup(|app| {
+            // Idle watchdog: AutoLock only measures idle time; this enforces it.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_secs(10));
+                if handle.state::<AppState>().autolock_if_idle() {
+                    let _ = handle.emit("vault://locked", ());
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::list_accounts,
             commands::setup_vault,

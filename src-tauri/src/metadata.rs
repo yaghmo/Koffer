@@ -4,7 +4,13 @@
 //! the editor. Returns favicon as data URL and title for auto-fill.
 
 use serde::Serialize;
+use std::net::{IpAddr, Ipv4Addr};
 use thiserror::Error;
+
+/// Page bytes read for title/favicon discovery; <head> sits well inside this.
+const MAX_HTML_BYTES: usize = 1024 * 1024;
+/// Favicons are stored in the vault as data URLs, so keep them small.
+const MAX_ICON_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Error)]
 pub enum MetadataError {
@@ -26,17 +32,22 @@ pub async fn fetch_metadata(url: &str) -> Result<UrlMetadata, MetadataError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .user_agent("Mozilla/5.0")
+        // Re-check every hop so a public page can't redirect into the LAN.
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                attempt.error("too many redirects")
+            } else if is_public_http(attempt.url()) {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .build()
-        .map_err(|e| MetadataError::Request(e.to_string()))?;
+        .map_err(req_err)?;
 
-    let html = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| MetadataError::Request(e.to_string()))?
-        .text()
-        .await
-        .map_err(|e| MetadataError::Request(e.to_string()))?;
+    // A page cut off at the cap still has its <head>; parse what arrived.
+    let (html, _) = get_capped(&client, url, MAX_HTML_BYTES).await?;
+    let html = String::from_utf8_lossy(&html);
 
     let title = extract_title(&html);
     let favicon_href = extract_favicon(&html, url);
@@ -100,18 +111,86 @@ fn resolve_url(href: &str, base: &str) -> String {
 }
 
 async fn fetch_favicon(client: &reqwest::Client, url: &str) -> Result<String, MetadataError> {
-    let bytes = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| MetadataError::Request(e.to_string()))?
-        .bytes()
-        .await
-        .map_err(|e| MetadataError::Request(e.to_string()))?;
+    let (bytes, truncated) = get_capped(client, url, MAX_ICON_BYTES).await?;
+    if truncated {
+        return Err(MetadataError::Request("favicon too large".to_string()));
+    }
 
     // ponytail: no mime sniff, assume image. Browser decodes it.
     let b64 = base64_encode(&bytes);
     Ok(format!("data:image/x-icon;base64,{}", b64))
+}
+
+fn req_err(e: reqwest::Error) -> MetadataError {
+    MetadataError::Request(e.to_string())
+}
+
+/// GET a public http(s) URL, reading at most `max` body bytes. Returns the
+/// bytes and whether the body was cut off at the cap.
+async fn get_capped(
+    client: &reqwest::Client,
+    url: &str,
+    max: usize,
+) -> Result<(Vec<u8>, bool), MetadataError> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| MetadataError::Parse(e.to_string()))?;
+    if !is_public_http(&parsed) {
+        return Err(MetadataError::Request(
+            "only public http(s) addresses are fetched".to_string(),
+        ));
+    }
+    let mut resp = client.get(parsed).send().await.map_err(req_err)?;
+    let mut buf = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(req_err)? {
+        let room = max - buf.len();
+        if chunk.len() > room {
+            buf.extend_from_slice(&chunk[..room]);
+            return Ok((buf, true));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok((buf, false))
+}
+
+/// True for http(s) URLs whose host is not loopback, private, link-local, or
+/// otherwise local.
+/// ponytail: checks the literal host only; a public DNS name that resolves to
+/// a LAN address (DNS rebinding) still passes. Resolve and pin the IP if that
+/// threat ever matters.
+fn is_public_http(url: &reqwest::Url) -> bool {
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
+        return false;
+    }
+    match host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) => is_public_v4(ip),
+        Ok(IpAddr::V6(ip)) => match ip.to_ipv4_mapped() {
+            Some(v4) => is_public_v4(v4),
+            None => {
+                let first = ip.segments()[0];
+                !(ip.is_loopback()
+                    || ip.is_unspecified()
+                    || (first & 0xfe00) == 0xfc00 // unique local fc00::/7
+                    || (first & 0xffc0) == 0xfe80) // link-local fe80::/10
+            }
+        },
+        Err(_) => true, // domain name
+    }
+}
+
+fn is_public_v4(ip: Ipv4Addr) -> bool {
+    let [a, b, ..] = ip.octets();
+    !(ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || a == 0
+        || (a == 100 && (b & 0xc0) == 64)) // CGNAT / Tailscale 100.64.0.0/10
 }
 
 fn base64_encode(bytes: &[u8]) -> String {
@@ -145,6 +224,33 @@ mod tests {
     fn favicon_falls_back_to_root_ico() {
         let got = extract_favicon("<html></html>", "https://example.com/path").unwrap();
         assert_eq!(got, "https://example.com/favicon.ico");
+    }
+
+    #[test]
+    fn only_public_http_hosts_are_fetchable() {
+        let ok = |u: &str| is_public_http(&reqwest::Url::parse(u).unwrap());
+        assert!(ok("https://example.com/login"));
+        assert!(ok("http://93.184.216.34/"));
+        for bad in [
+            "file:///C:/Windows/win.ini",
+            "ftp://example.com/",
+            "http://localhost:1420/",
+            "http://app.localhost/",
+            "http://printer.local/",
+            "http://127.0.0.1/",
+            "http://2130706433/", // 127.0.0.1 in decimal
+            "http://0.0.0.0/",
+            "http://10.0.0.5/",
+            "http://192.168.1.1/",
+            "http://169.254.169.254/",
+            "http://100.100.1.1/",
+            "http://[::1]/",
+            "http://[::ffff:127.0.0.1]/",
+            "http://[fd00::1]/",
+            "http://[fe80::1]/",
+        ] {
+            assert!(!ok(bad), "{bad} must be refused");
+        }
     }
 
     #[test]

@@ -3,14 +3,14 @@
 //! Sensitive state (the derived key, the in-memory vault, the active
 //! account) lives behind Mutex<Option<...>> in the app's managed state.
 
-use crate::accounts::{self, Account, AccountMeta};
+use crate::accounts::{self, Account, AccountError, AccountMeta};
 use crate::autolock::AutoLock;
 use crate::config::{self, Config};
 use crate::crypto::{derive_key, random_bytes};
 use crate::metadata::{self, UrlMetadata};
 use crate::password::{self, GenOpts};
 use crate::storage;
-use crate::vault::{self, Item, PersonalInfo, Vault};
+use crate::vault::{self, Item, LoginFields, PersonalInfo, Vault};
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
@@ -48,6 +48,31 @@ impl AppState {
         if let Ok(mut a) = self.current_account.lock() {
             *a = None;
         }
+    }
+
+    /// Arm the idle timer for a new session with the account's configured
+    /// timeout. Call before storing the key, so the watchdog never sees an
+    /// unlocked vault paired with the previous session's expired timer.
+    fn start_autolock(&self, account: &Account) {
+        let mut al = self.autolock.lock().unwrap();
+        al.set_timeout(config::load(account).autolock_mins.clamp(15, 30));
+        al.reset();
+    }
+
+    /// Lock if the vault is unlocked and the idle timeout has elapsed.
+    /// Returns true when it locked. Guards are taken one at a time: commands
+    /// hold `vault` while locking `autolock`, so holding `autolock` here while
+    /// clearing could deadlock.
+    pub fn autolock_if_idle(&self) -> bool {
+        let unlocked = self.key.lock().map(|k| k.is_some()).unwrap_or(false);
+        if !unlocked {
+            return false;
+        }
+        let expired = self.autolock.lock().map(|mut a| a.tick()).unwrap_or(false);
+        if expired {
+            self.lock_and_clear();
+        }
+        expired
     }
 }
 
@@ -110,10 +135,10 @@ pub fn setup_vault(
     let key = derive_key(&password, &salt);
     let vault = vault::new_vault(salt);
     storage::save_vault(&account, &vault, &key).map_err(|e| e.to_string())?;
+    state.start_autolock(&account);
     *state.key.lock().unwrap() = Some(key);
     *state.vault.lock().unwrap() = Some(vault);
     *state.current_account.lock().unwrap() = Some(account.clone());
-    state.autolock.lock().unwrap().reset();
     Ok((&account).into())
 }
 
@@ -130,10 +155,10 @@ pub fn unlock_vault(
     let key = derive_key(&password, &vault_on_disk.kdf_salt);
     let vault = storage::load_vault_with_key(&account, &key)
         .map_err(|_| "invalid password".to_string())?;
+    state.start_autolock(&account);
     *state.key.lock().unwrap() = Some(key);
     *state.vault.lock().unwrap() = Some(vault);
     *state.current_account.lock().unwrap() = Some(account);
-    state.autolock.lock().unwrap().reset();
     Ok(())
 }
 
@@ -353,7 +378,12 @@ pub fn reset_vault(
         }
     }
     storage::delete_vault_and_config(&account).map_err(|e| e.to_string())?;
-    Ok(())
+    // Drop the registry row too, or the lock screen keeps listing an account
+    // whose vault is gone. Legacy-fallback ids were never registered.
+    match accounts::delete_account(account.id) {
+        Ok(()) | Err(AccountError::NotFound(_)) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Fetch URL metadata: title + favicon.
@@ -391,33 +421,9 @@ pub fn open_login_url(
         return Err("item has no URL".to_string());
     }
 
-    // Prime the clipboard with the password that belongs at this URL.
-    // Credentials items: their own password. Provider items: the linked
-    // credential account (same username) — find it in the vault.
     if let Item::Login { fields, .. } = &item {
-        let mut to_copy: Option<String> = None;
-        if fields.method == "credentials" {
-            if !fields.password.is_empty() {
-                to_copy = Some(fields.password.clone());
-            }
-        } else if !fields.username.is_empty() {
-            if let Some(Item::Login { fields: acct_fields, .. }) = vault
-                .items
-                .iter()
-                .find(|i| {
-                    matches!(
-                        i,
-                        Item::Login { fields: f, .. }
-                            if f.username == fields.username
-                                && !f.password.is_empty()
-                    )
-                })
-            {
-                to_copy = Some(acct_fields.password.clone());
-            }
-        }
-        if let Some(pw) = to_copy {
-            crate::clipboard::copy_with_ttl(&pw, std::time::Duration::from_secs(60))
+        if let Some(pw) = login_password(vault, fields) {
+            crate::clipboard::copy_with_ttl(pw, std::time::Duration::from_secs(60))
                 .map_err(|e| e.to_string())?;
         }
     }
@@ -426,4 +432,87 @@ pub fn open_login_url(
     app.shell().open(&url, None).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
+}
+
+/// Password to prime the clipboard with when opening a login: the item's
+/// own password, else (provider logins) the vault account saved for the same
+/// provider and username. Never an unrelated login that merely shares the
+/// username — one email is typically reused across many sites.
+fn login_password<'a>(vault: &'a Vault, fields: &'a LoginFields) -> Option<&'a str> {
+    if !fields.password.is_empty() {
+        return Some(&fields.password);
+    }
+    if fields.method == "credentials" || fields.username.is_empty() {
+        return None;
+    }
+    vault.items.iter().find_map(|i| match i {
+        Item::Login { fields: f, .. }
+            if f.method == fields.method
+                && f.username == fields.username
+                && !f.password.is_empty() =>
+        {
+            Some(f.password.as_str())
+        }
+        _ => None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vault::{new_vault, ItemBase};
+
+    fn login(method: &str, username: &str, password: &str) -> LoginFields {
+        LoginFields {
+            method: method.to_string(),
+            url: String::new(),
+            username: username.to_string(),
+            password: password.to_string(),
+        }
+    }
+
+    fn item(fields: LoginFields) -> Item {
+        Item::Login {
+            base: ItemBase {
+                id: Uuid::new_v4(),
+                title: String::new(),
+                notes: String::new(),
+                created_at: 0,
+                updated_at: 0,
+                favicon: String::new(),
+            },
+            fields,
+        }
+    }
+
+    #[test]
+    fn login_password_only_borrows_matching_provider_account() {
+        let mut v = new_vault(vec![]);
+        v.items.push(item(login("credentials", "me@gmail.com", "shop-pw")));
+        v.items.push(item(login("google", "me@gmail.com", "google-pw")));
+
+        let google = login("google", "me@gmail.com", "");
+        assert_eq!(login_password(&v, &google), Some("google-pw"));
+        let github = login("github", "me@gmail.com", "");
+        assert_eq!(login_password(&v, &github), None);
+        let own = login("credentials", "me@gmail.com", "own-pw");
+        assert_eq!(login_password(&v, &own), Some("own-pw"));
+        let empty = login("credentials", "me@gmail.com", "");
+        assert_eq!(login_password(&v, &empty), None);
+    }
+
+    #[test]
+    fn autolock_if_idle_clears_only_expired_unlocked_session() {
+        let s = AppState::new();
+        assert!(!s.autolock_if_idle(), "locked vault: nothing to do");
+
+        *s.key.lock().unwrap() = Some([7; 32]);
+        *s.vault.lock().unwrap() = Some(new_vault(vec![]));
+        assert!(!s.autolock_if_idle(), "fresh timer must not lock");
+
+        s.autolock.lock().unwrap().set_timeout(0);
+        assert!(s.autolock_if_idle());
+        assert!(s.key.lock().unwrap().is_none());
+        assert!(s.vault.lock().unwrap().is_none());
+    }
 }

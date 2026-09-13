@@ -58,6 +58,7 @@ cd src-tauri && cargo test  # backend
 - Vault file is encrypted at rest; safe to back up
 - Window close locks the vault
 - Master key lives in Rust memory only; never crosses the IPC boundary
+- Only network call: fetching a site's title and favicon when you enter a login URL (public hosts only, size-capped). Vault contents are never sent.
 
 ## Out of scope (v1)
 
