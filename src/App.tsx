@@ -93,10 +93,8 @@ export default function App() {
 
   if (status === "loading") {
     return (
-      <div className="app">
-        <main className="app-main">
-          <p className="muted">Loading…</p>
-        </main>
+      <div className="flex h-screen items-center justify-center bg-surface-container-lowest">
+        <p className="text-body-md text-on-surface-variant">Loading…</p>
       </div>
     );
   }
@@ -104,8 +102,8 @@ export default function App() {
   // A reset can remove the last account while status is "locked".
   if (status === "no-accounts" || (status === "locked" && accounts.length === 0)) {
     return (
-      <div className="app">
-        <main className="app-main">
+      <div className="h-screen bg-surface-container-lowest">
+        <main className="h-full">
           <Setup
             onCreated={async (acct) => {
               setCurrentAccount(acct);
@@ -120,8 +118,8 @@ export default function App() {
 
   if (status === "locked") {
     return (
-      <div className="app">
-        <main className="app-main">
+      <div className="h-screen bg-surface-container-lowest">
+        <main className="h-full">
           <AccountLock
             accounts={accounts}
             onUnlocked={(acct) => {
@@ -138,7 +136,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-with-sidebar">
+    <div className="flex h-screen">
       <Sidebar
         accountName={currentAccount?.name ?? ""}
         isUnlocked={status === "unlocked"}
@@ -148,7 +146,7 @@ export default function App() {
         currentFilter={filter}
         onFilterChange={changeFilter}
       />
-      <main className="app-main">
+      <main className="flex-1 overflow-y-auto">
         {view === "vault" && (
           <Vault
             filter={filter}
