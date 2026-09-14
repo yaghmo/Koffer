@@ -7,11 +7,11 @@
   </head>
   <body>
     <!--
-THESIS: A small room. The vault is a paper notebook on a desk. Calm, physical, no surveillance theater. Trust is signaled by the feel of the surface, not by a logo.
-OWN-WORLD: Warm cream paper ground, deep warm ink. One brass signal (the "press me" affordance), one sage signal (selection, copy, focus confirmation), brick only for the reset flow. Cards sit on the paper with hairline borders. Type is a system humanist sans throughout; mono only for actual data (timestamps, generated passwords, card numbers). No caps, no letterspacing shouting — labels are short, plain, sans. No ambient motion.
-STORY: The user opens the app, unlocks with a master password, finds the one thing they came for, copies it, locks. The vault feels like their own private drawer, not a control panel. The reset flow is the only red thing in the room — irreversible, deliberate.
-FIRST VIEWPORT: The Lock screen. A single centered password field with a hairline brass rule above it. The Unlock button is solid brass. Below, an underlined "Forgot password" link. The header is the app name on the left, a small lock icon and a meta line on the right. Nothing else.
-FORM: Paper-on-a-desk. Replaces the darkroom+cracktro world (2026-09-04 → 2026-09-04, same day) after first-impression testing: the darkroom reads as "operator console" to a new user, which is the wrong trust signal for a personal vault. Light, warm, ordinary — but precise. Same restraint, different metaphor.
+THESIS: A locked vault, not a control panel. Dark, precise, glass-on-obsidian. Trust is signaled by restraint — one soft glow on the thing you press, everything else still.
+PALETTE: surface-container-lowest is the canvas; cards float one step up (surface-container-low, blurred, hairline border). primary (#c0c1ff) is the one warm signal — the unlock button, the active nav row. secondary (#4edea3) marks "locked/live" state. error (#ffb4ab) only on the danger zone. warning (#f5c26b) only on the setup "can't recover" notice.
+MOTION: color/border/opacity transitions under 150ms on hover/focus, plus a static glow behind the primary button and the emblem. No spinners, no pulsing, no pinging, no fake delays. prefers-reduced-motion disables all of it.
+STORY: unlock with a master password, find the one thing you came for, copy it, lock. No sync, no biometrics, no audit trail — a private local drawer.
+FORM: Obsidian Cipher. Replaces the paper-on-a-desk world (2026-09-04 → 2026-09-13) after adopting the Stitch "CipherVault" visual system — same restraint, colder material.
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
     -->
     <div id="root"></div>
