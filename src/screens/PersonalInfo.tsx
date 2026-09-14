@@ -1,30 +1,35 @@
 import { useState, useEffect } from "react";
 import { api } from "../lib/api";
 import type { PersonalInfo } from "../lib/types";
-import { CheckIcon } from "../components/Icon";
+import { CheckIcon, UserIcon } from "../components/Icon";
+import { useHotkey } from "../lib/useHotkey";
 
 // Field metadata: label + optional fill target hint used by the extension.
-const FIELDS: { key: keyof PersonalInfo; label: string; placeholder?: string }[] = [
-  { key: "name", label: "Full name", placeholder: "Ada Lovelace" },
-  { key: "username", label: "Username", placeholder: "adaloves" },
-  { key: "email", label: "Main email", placeholder: "you@example.com" },
-  { key: "phone", label: "Phone", placeholder: "+1 555 123 4567" },
-  { key: "address", label: "Street address", placeholder: "1 Maths Rd, Apt 4" },
-  { key: "city", label: "City", placeholder: "London" },
-  { key: "state", label: "State / Province", placeholder: "—" },
-  { key: "zip", label: "ZIP / Postal code", placeholder: "W1T 3AL" },
-  { key: "country", label: "Country", placeholder: "United Kingdom" },
-  { key: "date_of_birth", label: "Date of birth", placeholder: "1985-04-12" },
-  { key: "website", label: "Portfolio / Website", placeholder: "https://example.com" },
-  { key: "github", label: "GitHub", placeholder: "yourhandle" },
-  { key: "linkedin", label: "LinkedIn", placeholder: "https://linkedin.com/in/yourname" },
-  { key: "current_title", label: "Current job title", placeholder: "Senior Engineer" },
-  { key: "current_company", label: "Current company", placeholder: "Acme Corp" },
-  { key: "years_experience", label: "Years of experience", placeholder: "8" },
-  { key: "school", label: "School / University", placeholder: "State University" },
-  { key: "degree", label: "Degree / Major", placeholder: "BSc Computer Science" },
-  { key: "desired_salary", label: "Desired salary", placeholder: "120000" },
+type Group = "Basics" | "Address" | "Online" | "Work & education";
+
+const FIELDS: { key: keyof PersonalInfo; label: string; placeholder?: string; group: Group; required?: boolean }[] = [
+  { key: "name", label: "Full name", placeholder: "Ada Lovelace", group: "Basics", required: true },
+  { key: "username", label: "Username", placeholder: "adaloves", group: "Basics" },
+  { key: "email", label: "Main email", placeholder: "you@example.com", group: "Basics", required: true },
+  { key: "phone", label: "Phone", placeholder: "+1 555 123 4567", group: "Basics" },
+  { key: "date_of_birth", label: "Date of birth", placeholder: "1985-04-12", group: "Basics" },
+  { key: "address", label: "Street address", placeholder: "1 Maths Rd, Apt 4", group: "Address" },
+  { key: "city", label: "City", placeholder: "London", group: "Address" },
+  { key: "state", label: "State / Province", placeholder: "—", group: "Address" },
+  { key: "zip", label: "ZIP / Postal code", placeholder: "W1T 3AL", group: "Address" },
+  { key: "country", label: "Country", placeholder: "United Kingdom", group: "Address" },
+  { key: "website", label: "Portfolio / Website", placeholder: "https://example.com", group: "Online" },
+  { key: "github", label: "GitHub", placeholder: "yourhandle", group: "Online" },
+  { key: "linkedin", label: "LinkedIn", placeholder: "https://linkedin.com/in/yourname", group: "Online" },
+  { key: "current_title", label: "Current job title", placeholder: "Senior Engineer", group: "Work & education" },
+  { key: "current_company", label: "Current company", placeholder: "Acme Corp", group: "Work & education" },
+  { key: "years_experience", label: "Years of experience", placeholder: "8", group: "Work & education" },
+  { key: "school", label: "School / University", placeholder: "State University", group: "Work & education" },
+  { key: "degree", label: "Degree / Major", placeholder: "BSc Computer Science", group: "Work & education" },
+  { key: "desired_salary", label: "Desired salary", placeholder: "120000", group: "Work & education" },
 ];
+
+const GROUPS: Group[] = ["Basics", "Address", "Online", "Work & education"];
 
 const empty = (): PersonalInfo => ({
   name: "", username: "", email: "", phone: "", address: "", city: "", state: "",
@@ -131,58 +136,69 @@ export default function PersonalInfoScreen() {
     }
   }
 
-  return (
-    <div className="settings">
-      <div className="settings-header">
-        <div>
-          <p className="screen-eyebrow">Personal info</p>
-          <h1 className="screen-title">Your identity profile</h1>
-        </div>
-      </div>
+  useHotkey("ctrl+s", save);
 
-      <form
-        className="settings-section"
-        onSubmit={(e) => {
-          e.preventDefault();
-          save();
-        }}
-      >
-        <p className="settings-description">
-          One profile for your vault. Used to fill login and signup forms — name,
-          email, phone, and your socials — in the browser autofill.
-        </p>
-        <div className="fields">
-          {FIELDS.map((f) => {
-            const inputProps = inputFor(f.key);
-            return (
-            <div className="field" key={f.key}>
-              <p className="field-label">{f.label}</p>
-              <div className="field-row">
-                <input
-                  value={profile[f.key]}
-                  onChange={(e) =>
-                    setProfile({ ...profile, [f.key]: sanitize(f.key, e.target.value) })
-                  }
-                  aria-label={f.label}
-                  spellCheck={false}
-                  autoComplete="off"
-                  placeholder={f.key === "date_of_birth" ? undefined : f.placeholder}
-                  {...inputProps}
-                />
-              </div>
-              {fieldErrors[f.key] && (
-                <p className="field-error" role="alert">{fieldErrors[f.key]}</p>
-              )}
-            </div>
-            );
-          })}
+  return (
+    <div className="mx-auto flex max-w-[720px] flex-col gap-6 px-8 py-8">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="label-sm">Personal info</p>
+          <h1 className="text-headline-lg text-on-surface">Your profile</h1>
+          <p className="text-body-md text-on-surface-variant">
+            Used to fill sign-up forms. Stays in your encrypted vault.
+          </p>
         </div>
-        {error && <p className="error" role="alert">{error}</p>}
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {saved ? <CheckIcon size={14} /> : null}
+        <button
+          type="button"
+          className="btn-primary flex-shrink-0"
+          onClick={save}
+          disabled={busy}
+        >
+          {saved ? <CheckIcon size={14} /> : <UserIcon size={14} />}
           {busy ? "Saving…" : saved ? "Saved" : "Save profile"}
         </button>
-      </form>
+      </div>
+
+      {GROUPS.map((group) => (
+        <div key={group} className="card flex flex-col gap-4 p-5">
+          <h2 className="text-body-md font-semibold text-on-surface">{group}</h2>
+          <div className="grid grid-cols-2 gap-4">
+            {FIELDS.filter((f) => f.group === group).map((f) => {
+              const inputProps = inputFor(f.key);
+              const long = f.key === "address";
+              return (
+                <div className={`flex flex-col gap-1.5 ${long ? "col-span-2" : ""}`} key={f.key}>
+                  <p className="label-md">
+                    {f.label}
+                    {f.required && <span className="text-primary"> *</span>}
+                  </p>
+                  <input
+                    value={profile[f.key]}
+                    onChange={(e) => setProfile({ ...profile, [f.key]: sanitize(f.key, e.target.value) })}
+                    aria-label={f.label}
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder={f.key === "date_of_birth" ? undefined : f.placeholder}
+                    className="field"
+                    {...inputProps}
+                  />
+                  {fieldErrors[f.key] && (
+                    <p role="alert" className="text-body-sm text-error">
+                      {fieldErrors[f.key]}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {error && (
+        <p role="alert" className="text-body-sm text-error">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
