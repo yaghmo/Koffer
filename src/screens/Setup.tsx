@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
 import { EyeIcon, EyeOffIcon, PlusIcon } from "../components/Icon";
+import { Emblem } from "../components/Emblem";
 
 interface Props {
   onCreated: (account: Account) => void;
@@ -43,33 +44,32 @@ export default function Setup({ onCreated }: Props) {
   }
 
   return (
-    <div className="stage">
-      <div className="screen-eyebrow">New vault</div>
-      <form onSubmit={submit} className="setup">
-        <div className="stage-frame">
-          <div className="safelight" aria-hidden />
-          <p className="hint">
-            Choose a display name and a master password.{" "}
-            <span className="hint-strong">
-              We cannot recover the password if you forget it.
-            </span>
+    <div className="flex min-h-full flex-col items-center justify-center gap-6 p-5">
+      <div className="card flex w-full max-w-[440px] flex-col items-center gap-6 p-8">
+        <Emblem size={56} glow />
+        <p className="label-sm text-secondary">New vault</p>
+
+        <form onSubmit={submit} className="flex w-full flex-col gap-4">
+          <p className="rounded-control border border-warning/30 bg-warning/10 px-3 py-2 text-body-sm text-warning">
+            We can't recover this password if you forget it.
           </p>
-          <div className="field">
-            <p className="label">Display name</p>
-            <div className="field-row">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                autoFocus
-                aria-label="Display name"
-                spellCheck={false}
-                maxLength={40}
-              />
-            </div>
+
+          <div className="flex flex-col gap-1.5">
+            <p className="label-md">Display name</p>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              aria-label="Display name"
+              spellCheck={false}
+              maxLength={40}
+              className="field"
+            />
           </div>
-          <div className="field">
-            <p className="label">Master password</p>
-            <div className="field-row">
+
+          <div className="flex flex-col gap-1.5">
+            <p className="label-md">Master password</p>
+            <div className="relative flex items-center">
               <input
                 type={show ? "text" : "password"}
                 value={pw}
@@ -77,43 +77,46 @@ export default function Setup({ onCreated }: Props) {
                 aria-label="Master password"
                 spellCheck={false}
                 autoComplete="new-password"
+                className="field pr-10 font-mono"
               />
               <button
                 type="button"
-                className="reveal"
                 onClick={() => setShow((s) => !s)}
                 aria-label={show ? "Hide password" : "Show password"}
                 aria-pressed={show}
                 title={show ? "Hide password" : "Show password"}
+                className="absolute right-2 text-outline transition-colors duration-150 ease-out hover:text-on-surface"
               >
-                {show ? <EyeOffIcon /> : <EyeIcon />}
+                {show ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
               </button>
             </div>
           </div>
-          <div className="field">
-            <p className="label">Confirm</p>
-            <div className="field-row">
-              <input
-                type={show ? "text" : "password"}
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                aria-label="Confirm master password"
-                spellCheck={false}
-                autoComplete="new-password"
-              />
-            </div>
+
+          <div className="flex flex-col gap-1.5">
+            <p className="label-md">Confirm</p>
+            <input
+              type={show ? "text" : "password"}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              aria-label="Confirm master password"
+              spellCheck={false}
+              autoComplete="new-password"
+              className="field font-mono"
+            />
           </div>
-          {error && <p className="error" role="alert">{error}</p>}
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={busy || !name || !pw || !confirm}
-          >
-            <PlusIcon />
+
+          {error && (
+            <p role="alert" className="text-body-sm text-error">
+              {error}
+            </p>
+          )}
+
+          <button type="submit" className="btn-primary w-full" disabled={busy || !name || !pw || !confirm}>
+            <PlusIcon size={16} />
             {busy ? "Creating…" : "Create vault"}
           </button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
