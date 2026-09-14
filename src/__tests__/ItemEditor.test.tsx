@@ -153,4 +153,34 @@ describe("ItemEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
+
+  it("Ctrl+S saves the form", async () => {
+    const { api } = await import("../lib/api");
+    const onClose = vi.fn();
+    render(<ItemEditor id={null} onClose={onClose} />);
+    fireEvent.change(await screen.findByLabelText(/title/i), {
+      target: { value: "Hotkey save" },
+    });
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Esc cancels when the form is untouched", async () => {
+    const onClose = vi.fn();
+    render(<ItemEditor id={null} onClose={onClose} />);
+    await screen.findByLabelText(/title/i);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Esc does not cancel after typing", async () => {
+    const onClose = vi.fn();
+    render(<ItemEditor id={null} onClose={onClose} />);
+    fireEvent.change(await screen.findByLabelText(/title/i), {
+      target: { value: "Don't lose me" },
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
