@@ -54,4 +54,12 @@ describe("ItemViewer", () => {
     fireEvent.click(screen.getByRole("button", { name: /copy username/i }));
     await waitFor(() => expect(api.copyToClipboard).toHaveBeenCalledWith("octocat", 30));
   });
+
+  it("Esc calls onClose", async () => {
+    const onClose = vi.fn();
+    render(<ItemViewer id="1" onEdit={() => {}} onClose={onClose} onDelete={() => {}} />);
+    await screen.findByDisplayValue("GitHub");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
+  });
 });

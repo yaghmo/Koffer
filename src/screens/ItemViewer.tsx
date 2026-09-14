@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import type { Item } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon, ExternalIcon } from "../components/Icon";
 import { methodLabel, MethodChip } from "../lib/methods";
+import { useHotkey } from "../lib/useHotkey";
 
 interface Props {
   id: string;
@@ -27,27 +28,25 @@ function Field({
   copied?: boolean;
 }) {
   return (
-    <div className="field">
-      <p className="field-label">{label}</p>
-      <div className="copy-row">
-        <div className="field-row">
-          <input
-            className={mono ? "mono" : undefined}
-            value={value || ""}
-            readOnly
-            spellCheck={false}
-            aria-label={label}
-          />
-        </div>
+    <div className="flex flex-col gap-1.5">
+      <p className="label-md">{label}</p>
+      <div className="flex items-center gap-2">
+        <input
+          className={`field flex-1 ${mono ? "font-mono" : ""}`}
+          value={value || ""}
+          readOnly
+          spellCheck={false}
+          aria-label={label}
+        />
         {onCopy && (
           <button
             type="button"
-            className={`copy-inline ${copied ? "copied" : ""}`}
             onClick={onCopy}
             disabled={!value}
             aria-label={`Copy ${label}`}
+            className={`btn-secondary ${copied ? "!border-secondary !text-secondary" : ""}`}
           >
-            {copied ? <CheckIcon /> : <CopyIcon />}
+            {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
             {copied ? "Copied" : "Copy"}
           </button>
         )}
@@ -69,12 +68,12 @@ function SecretField({
 }) {
   const [show, setShow] = useState(false);
   return (
-    <div className="field">
-      <p className="field-label">{label}</p>
-      <div className="copy-row">
-        <div className="field-row">
+    <div className="flex flex-col gap-1.5">
+      <p className="label-md">{label}</p>
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
           <input
-            className="mono"
+            className="field w-full pr-10 font-mono"
             type={show ? "text" : "password"}
             value={show ? value : mask(value)}
             readOnly
@@ -83,23 +82,23 @@ function SecretField({
           />
           <button
             type="button"
-            className="reveal"
             onClick={() => setShow((s) => !s)}
             aria-label={show ? "Hide" : "Show"}
             aria-pressed={show}
             title={show ? "Hide" : "Show"}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-outline transition-colors duration-150 ease-out hover:text-on-surface"
           >
-            {show ? <EyeOffIcon /> : <EyeIcon />}
+            {show ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
           </button>
         </div>
         <button
           type="button"
-          className={`copy-inline ${copied ? "copied" : ""}`}
           onClick={onCopy}
           disabled={!value}
           aria-label={`Copy ${label}`}
+          className={`btn-secondary ${copied ? "!border-secondary !text-secondary" : ""}`}
         >
-          {copied ? <CheckIcon /> : <CopyIcon />}
+          {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
@@ -121,15 +120,14 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
       .catch((err) => setError(String(err)));
   }, [id]);
 
+  useHotkey("escape", onClose);
+
   async function copy(label: string, text: string) {
     if (!text) return;
     try {
       await api.copyToClipboard(text, 30);
       setCopied(label);
-      window.setTimeout(
-        () => setCopied((c) => (c === label ? null : c)),
-        1400
-      );
+      window.setTimeout(() => setCopied((c) => (c === label ? null : c)), 1400);
     } catch {
       // ignore
     }
@@ -137,97 +135,82 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
 
   if (error) {
     return (
-      <div className="editor">
-        <div className="toolbar">
-          <div>
-            <p className="screen-eyebrow">Item</p>
-            <h2>Could not load</h2>
-          </div>
-          <div className="actions">
-            <button type="button" className="btn-ghost" onClick={onClose}>
-              <XIcon /> Close
-            </button>
-          </div>
+      <div className="dialog flex h-full w-[480px] flex-col gap-4 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-headline-sm text-on-surface">Could not load</h2>
+          <button type="button" onClick={onClose} className="btn-secondary" aria-label="Close">
+            <XIcon size={14} />
+          </button>
         </div>
-        <p className="error" role="alert">{error}</p>
+        <p role="alert" className="text-body-sm text-error">
+          {error}
+        </p>
       </div>
     );
   }
 
   if (!item) {
     return (
-      <div className="editor">
-        <div className="toolbar">
-          <div>
-            <p className="screen-eyebrow">Item</p>
-            <h2>Loading…</h2>
-          </div>
-        </div>
+      <div className="dialog flex h-full w-[480px] flex-col gap-4 p-6">
+        <h2 className="text-headline-sm text-on-surface">Loading…</h2>
       </div>
     );
   }
 
   return (
-    <div className="editor">
-      <div className="toolbar">
-        <div>
-          <p className="screen-eyebrow">Item · {item.type}</p>
-          <h2>{item.title || "Untitled"}</h2>
+    <div role="dialog" aria-modal="true" className="dialog flex h-full w-[480px] flex-col gap-6 overflow-y-auto p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className="label-sm">{item.type}</span>
+          <h2 className="truncate text-headline-sm text-on-surface">{item.title || "Untitled"}</h2>
         </div>
-        <div className="actions">
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {item.type === "login" && item.url && (
+            <button
+              type="button"
+              onClick={() => api.openLoginItem(item.id).catch(() => {})}
+              aria-label="Open in browser"
+              className="btn-primary"
+            >
+              <ExternalIcon size={14} /> Open
+            </button>
+          )}
+          <button type="button" onClick={() => onEdit(item.id)} aria-label="Edit item" className="btn-secondary">
+            <PencilIcon size={14} /> Edit item
+          </button>
           <button
             type="button"
-            className="btn-ghost"
             onClick={() => {
               if (confirm(`Delete "${item.title}"?`)) onDelete(item.id);
             }}
             aria-label="Delete item"
-            title="Delete"
+            className="rounded-control p-2 text-error transition-colors duration-150 ease-out hover:bg-error/12"
           >
-            <TrashIcon />
-          </button>
-          <button type="button" className="btn-ghost" onClick={onClose}>
-            <XIcon /> Close
+            <TrashIcon size={14} />
           </button>
           <button
             type="button"
-            className="btn btn-primary"
-            onClick={() => onEdit(item.id)}
-            aria-label="Edit item"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-control p-2 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-white/4 hover:text-on-surface"
           >
-            <PencilIcon /> Edit
+            <XIcon size={14} />
           </button>
-          {item.type === "login" && item.url && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => api.openLoginItem(item.id).catch(() => {})}
-              aria-label="Open in browser"
-            >
-              <ExternalIcon /> Open
-            </button>
-          )}
         </div>
       </div>
 
-      <div className="fields">
+      <div className="card flex flex-col gap-4 p-4">
         <Field label="Title" value={item.title} />
         {item.type === "login" && (
           <>
-            <div className="field">
-              <p className="field-label">Login method</p>
-              <div className="method-static">
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Login method</p>
+              <div className="flex items-center gap-2 text-on-surface">
                 <MethodChip method={item.method || "credentials"} size={22} />
                 <span>{methodLabel(item.method || "credentials")}</span>
               </div>
             </div>
-            <Field
-              label="URL"
-              value={item.url}
-              mono
-              onCopy={() => copy("url", item.url)}
-              copied={copied === "url"}
-            />
+            <Field label="URL" value={item.url} mono onCopy={() => copy("url", item.url)} copied={copied === "url"} />
             {item.method === "credentials" ? (
               <>
                 <Field
@@ -263,9 +246,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
             ) : null}
           </>
         )}
-        {item.type === "note" && (
-          <Field label="Body" value={item.body} />
-        )}
+        {item.type === "note" && <Field label="Body" value={item.body} />}
         {item.type === "card" && (
           <>
             <Field
@@ -274,28 +255,17 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
               onCopy={() => copy("cardholder", item.cardholder)}
               copied={copied === "cardholder"}
             />
-            <SecretField
-              label="Number"
-              value={item.number}
-              onCopy={() => copy("number", item.number)}
-              copied={copied === "number"}
-            />
-            <Field
-              label="Exp"
-              value={item.exp}
-              onCopy={() => copy("exp", item.exp)}
-              copied={copied === "exp"}
-            />
-            <SecretField
-              label="CVV"
-              value={item.cvv}
-              onCopy={() => copy("cvv", item.cvv)}
-              copied={copied === "cvv"}
-            />
+            <SecretField label="Number" value={item.number} onCopy={() => copy("number", item.number)} copied={copied === "number"} />
+            <Field label="Exp" value={item.exp} onCopy={() => copy("exp", item.exp)} copied={copied === "exp"} />
+            <SecretField label="CVV" value={item.cvv} onCopy={() => copy("cvv", item.cvv)} copied={copied === "cvv"} />
           </>
         )}
-        {item.notes && <Field label="Notes" value={item.notes} />}
       </div>
+      {item.notes && (
+        <div className="card p-4">
+          <Field label="Notes" value={item.notes} />
+        </div>
+      )}
     </div>
   );
 }

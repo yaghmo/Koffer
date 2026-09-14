@@ -201,17 +201,19 @@ function ItemViewerOverlay(props: {
   onDeleted: () => void;
 }) {
   return (
-    <div className="overlay">
-      <ItemViewer
-        id={props.id}
-        onEdit={props.onEdit}
-        onClose={props.onClose}
-        onDelete={async (id) => {
-          await api.deleteItem(id);
-          props.onDeleted();
-          props.onClose();
-        }}
-      />
+    <div className="fixed inset-0 z-40 flex items-stretch justify-end bg-black/50" onClick={props.onClose}>
+      <div onClick={(e) => e.stopPropagation()}>
+        <ItemViewer
+          id={props.id}
+          onEdit={props.onEdit}
+          onClose={props.onClose}
+          onDelete={async (id) => {
+            await api.deleteItem(id);
+            props.onDeleted();
+            props.onClose();
+          }}
+        />
+      </div>
     </div>
   );
 }
