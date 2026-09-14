@@ -174,6 +174,30 @@ pub fn is_unlocked(state: State<'_, AppState>) -> bool {
     state.key.lock().unwrap().is_some()
 }
 
+#[derive(Serialize)]
+pub struct AutolockStatus {
+    pub locked: bool,
+    pub remaining_secs: u64,
+    pub timeout_secs: u64,
+}
+
+/// Polled by the frontend while unlocked. Doubles as the idle-lock
+/// enforcement point: nothing else calls `autolock_if_idle`.
+#[tauri::command]
+pub fn autolock_status(state: State<'_, AppState>, app: AppHandle) -> AutolockStatus {
+    let locked = state.autolock_if_idle();
+    if locked {
+        let _ = app.emit("vault://locked", ());
+        return AutolockStatus { locked: true, remaining_secs: 0, timeout_secs: 0 };
+    }
+    let al = state.autolock.lock().unwrap();
+    AutolockStatus {
+        locked: false,
+        remaining_secs: al.remaining_secs(),
+        timeout_secs: al.timeout_secs(),
+    }
+}
+
 #[tauri::command]
 pub fn list_items(
     query: Option<String>,

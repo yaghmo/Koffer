@@ -10,6 +10,41 @@ interface Props {
   onNavigate: (view: "vault" | "settings" | "personal") => void;
   currentFilter: "all" | "login" | "note" | "card";
   onFilterChange: (filter: "all" | "login" | "note" | "card") => void;
+  autolock: { remainingSecs: number; timeoutSecs: number } | null;
+}
+
+const RING_RADIUS = 14;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+function formatMinSec(totalSecs: number): string {
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function AutolockRing({ remainingSecs, timeoutSecs }: { remainingSecs: number; timeoutSecs: number }) {
+  const fraction = timeoutSecs > 0 ? remainingSecs / timeoutSecs : 0;
+  const offset = RING_CIRCUMFERENCE * (1 - fraction);
+  return (
+    <div className="flex items-center gap-2" title="Time until auto-lock">
+      <svg width={32} height={32} viewBox="0 0 32 32" className="-rotate-90">
+        <circle cx={16} cy={16} r={RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={2.5} />
+        <circle
+          cx={16}
+          cy={16}
+          r={RING_RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeDasharray={RING_CIRCUMFERENCE}
+          strokeDashoffset={offset}
+          className="text-tertiary transition-[stroke-dashoffset] duration-1000 ease-linear"
+        />
+      </svg>
+      <span className="label-md">{formatMinSec(remainingSecs)}</span>
+    </div>
+  );
 }
 
 const VAULT_ITEMS = [
@@ -51,6 +86,7 @@ export default function Sidebar({
   onNavigate,
   currentFilter,
   onFilterChange,
+  autolock,
 }: Props) {
   return (
     <aside className="flex h-full w-[220px] flex-col border-r border-white/6 bg-surface-container-lowest">
@@ -90,6 +126,7 @@ export default function Sidebar({
             <NavRow active={currentView === "settings"} onClick={() => onNavigate("settings")}>
               <SettingsIcon size={16} /> Settings
             </NavRow>
+            {autolock && <AutolockRing remainingSecs={autolock.remainingSecs} timeoutSecs={autolock.timeoutSecs} />}
             <button type="button" onClick={onLock} className="btn-secondary w-full">
               <LockIcon size={16} /> Lock vault
             </button>

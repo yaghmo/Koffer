@@ -31,6 +31,7 @@ export default function App() {
   const [viewingId, setViewingId] = useState<string | null>(null);
   // Bumped after viewer-side delete so the vault list refetches.
   const [vaultRefresh, setVaultRefresh] = useState(0);
+  const [autolock, setAutolock] = useState<{ remainingSecs: number; timeoutSecs: number } | null>(null);
 
   useEffect(() => {
     api.listAccounts().then((list) => {
@@ -57,6 +58,37 @@ export default function App() {
     return () => {
       window.removeEventListener("mousedown", reset);
       window.removeEventListener("keydown", reset);
+    };
+  }, [status]);
+
+  // Polling this is also what makes the idle lock actually happen — nothing
+  // else calls the backend's autolock check.
+  useEffect(() => {
+    if (status !== "unlocked") {
+      setAutolock(null);
+      return;
+    }
+    let cancelled = false;
+    const id = window.setInterval(async () => {
+      try {
+        const s = await api.autolockStatus();
+        if (cancelled) return;
+        if (s.locked) {
+          setStatus("locked");
+          setView("vault");
+          setEditing(null);
+          setViewingId(null);
+          refreshAccounts().catch(() => {});
+        } else {
+          setAutolock({ remainingSecs: s.remaining_secs, timeoutSecs: s.timeout_secs });
+        }
+      } catch {
+        // transient IPC hiccup; next tick retries
+      }
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
     };
   }, [status]);
 
@@ -145,6 +177,7 @@ export default function App() {
         onNavigate={navigate}
         currentFilter={filter}
         onFilterChange={changeFilter}
+        autolock={autolock}
       />
       <main className="flex-1 overflow-y-auto">
         {view === "vault" && (

@@ -12,6 +12,8 @@ export const api = {
 
   lockVault: () => invoke<void>("lock_vault"),
   isUnlocked: () => invoke<boolean>("is_unlocked"),
+  autolockStatus: () =>
+    invoke<{ locked: boolean; remaining_secs: number; timeout_secs: number }>("autolock_status"),
 
   listItems: (query?: string, kind?: ItemKind) =>
     invoke<ItemMeta[]>("list_items", { query: query ?? null, kind: kind ?? null }),

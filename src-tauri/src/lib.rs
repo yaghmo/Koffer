@@ -37,6 +37,7 @@ pub fn run() {
             commands::unlock_vault,
             commands::lock_vault,
             commands::is_unlocked,
+            commands::autolock_status,
             commands::list_items,
             commands::get_item,
             commands::save_item,

@@ -31,6 +31,14 @@ impl AutoLock {
     pub fn timeout_mins(&self) -> u8 {
         (self.timeout.as_secs() / 60) as u8
     }
+
+    pub fn timeout_secs(&self) -> u64 {
+        self.timeout.as_secs()
+    }
+
+    pub fn remaining_secs(&self) -> u64 {
+        self.timeout.saturating_sub(self.last_activity.elapsed()).as_secs()
+    }
 }
 
 #[cfg(test)]
@@ -65,5 +73,14 @@ mod tests {
     fn timeout_mins_returns_initial_value() {
         let al = AutoLock::new(20);
         assert_eq!(al.timeout_mins(), 20);
+    }
+
+    #[test]
+    fn remaining_secs_counts_down_and_floors_at_zero() {
+        let mut al = AutoLock::new(15);
+        al.timeout = Duration::from_millis(20);
+        assert!(al.remaining_secs() <= 1);
+        sleep(Duration::from_millis(30));
+        assert_eq!(al.remaining_secs(), 0);
     }
 }
