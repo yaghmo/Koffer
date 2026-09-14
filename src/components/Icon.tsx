@@ -1,4 +1,5 @@
-import type { SVGProps } from "react";
+import type { ReactNode, SVGProps } from "react";
+import { cardBrand } from "../lib/cardBrand";
 
 type IconProps = SVGProps<SVGSVGElement> & { size?: number };
 
@@ -187,10 +188,8 @@ export function SettingsIcon({ size = 16, ...props }: IconProps) {
 export function NoteIcon({ size = 16, ...props }: IconProps) {
   return (
     <svg {...base(size, props)}>
-      <path d="M6 3h9l4 4v14H6z" />
-      <path d="M14 3v5h5" />
-      <path d="M9 12h6" />
-      <path d="M9 16h6" />
+      <path d="M17 3a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+      <path d="M15 5l3 3" />
     </svg>
   );
 }
@@ -202,4 +201,86 @@ export function CardIcon({ size = 16, ...props }: IconProps) {
       <path d="M2 10h20" />
     </svg>
   );
+}
+
+function BrandBadge({
+  size,
+  bg,
+  children,
+}: {
+  size: number;
+  bg: string;
+  children: ReactNode;
+}) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden focusable={false}>
+      <rect width="24" height="24" rx="4" fill={bg} />
+      {children}
+    </svg>
+  );
+}
+
+export function VisaIcon({ size = 16 }: { size?: number }) {
+  return (
+    <BrandBadge size={size} bg="#1A1F71">
+      <text x="12" y="15.5" textAnchor="middle" fontSize="7" fontStyle="italic" fontWeight="700" fill="#fff">
+        VISA
+      </text>
+    </BrandBadge>
+  );
+}
+
+export function MastercardIcon({ size = 16 }: { size?: number }) {
+  return (
+    <BrandBadge size={size} bg="#16181d">
+      <circle cx="9.5" cy="12" r="5.5" fill="#EB001B" />
+      <circle cx="14.5" cy="12" r="5.5" fill="#F79E1B" fillOpacity="0.9" />
+    </BrandBadge>
+  );
+}
+
+export function AmexIcon({ size = 16 }: { size?: number }) {
+  return (
+    <BrandBadge size={size} bg="#006FCF">
+      <text x="12" y="15" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="#fff">
+        AMEX
+      </text>
+    </BrandBadge>
+  );
+}
+
+export function DiscoverIcon({ size = 16 }: { size?: number }) {
+  return (
+    <BrandBadge size={size} bg="#1b1b1b">
+      <circle cx="17" cy="14" r="6" fill="#FF6000" />
+      <text x="10" y="15" textAnchor="middle" fontSize="6" fontWeight="700" fill="#fff">
+        DISC
+      </text>
+    </BrandBadge>
+  );
+}
+
+export function ImageIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+    </svg>
+  );
+}
+
+export function CardBrandIcon({ bin, size = 16 }: { bin?: string | null; size?: number }) {
+  switch (cardBrand(bin)) {
+    case "visa":
+      return <VisaIcon size={size} />;
+    case "mastercard":
+      return <MastercardIcon size={size} />;
+    case "amex":
+      return <AmexIcon size={size} />;
+    case "discover":
+      return <DiscoverIcon size={size} />;
+    default:
+      return <CardIcon size={size} />;
+  }
 }

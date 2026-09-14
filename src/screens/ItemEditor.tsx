@@ -620,6 +620,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                 favicon: "",
                 method: login.method,
                 username: u,
+                card_bin: null,
               },
             ]);
           }}

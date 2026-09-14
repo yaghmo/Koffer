@@ -42,6 +42,7 @@ export interface ItemMeta {
   favicon: string;
   method: LoginMethod | null;
   username: string | null;
+  card_bin: string | null;
 }
 
 export interface GenOpts {

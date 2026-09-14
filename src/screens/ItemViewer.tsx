@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { Item } from "../lib/types";
-import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon, ExternalIcon } from "../components/Icon";
+import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon, ExternalIcon, CardBrandIcon, NoteIcon } from "../components/Icon";
 import { methodLabel, MethodChip } from "../lib/methods";
 import { useHotkey } from "../lib/useHotkey";
 
@@ -160,9 +160,17 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
   return (
     <div role="dialog" aria-modal="true" className="dialog flex h-full w-[480px] flex-col gap-6 overflow-y-auto p-6">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <span className="label-sm">{item.type}</span>
-          <h2 className="truncate text-headline-sm text-on-surface">{item.title || "Untitled"}</h2>
+        <div className="flex min-w-0 items-center gap-3">
+          {item.type === "card" && <CardBrandIcon bin={item.number} size={32} />}
+          {item.type === "note" && (
+            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high text-on-surface-variant">
+              <NoteIcon size={16} />
+            </span>
+          )}
+          <div className="min-w-0">
+            <span className="label-sm">{item.type}</span>
+            <h2 className="truncate text-headline-sm text-on-surface">{item.title || "Untitled"}</h2>
+          </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
           {item.type === "login" && item.url && (

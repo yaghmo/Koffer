@@ -85,6 +85,7 @@ pub struct ItemMeta {
     pub favicon: String,
     pub method: Option<String>,
     pub username: Option<String>,
+    pub card_bin: Option<String>,
 }
 
 fn to_meta(item: &Item) -> ItemMeta {
@@ -110,6 +111,14 @@ fn to_meta(item: &Item) -> ItemMeta {
                 } else {
                     Some(fields.username.clone())
                 }
+            }
+            _ => None,
+        },
+        card_bin: match item {
+            // BIN (first 6 digits) is all brand detection needs.
+            Item::Card { fields, .. } => {
+                let digits: String = fields.number.chars().filter(|c| c.is_ascii_digit()).take(6).collect();
+                if digits.is_empty() { None } else { Some(digits) }
             }
             _ => None,
         },
@@ -507,6 +516,37 @@ mod tests {
             },
             fields,
         }
+    }
+
+    fn card_item(number: &str) -> Item {
+        Item::Card {
+            base: ItemBase {
+                id: Uuid::new_v4(),
+                title: String::new(),
+                notes: String::new(),
+                created_at: 0,
+                updated_at: 0,
+                favicon: String::new(),
+            },
+            fields: crate::vault::CardFields {
+                cardholder: String::new(),
+                number: number.to_string(),
+                exp: String::new(),
+                cvv: String::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn to_meta_extracts_card_bin_from_formatted_number() {
+        let meta = to_meta(&card_item("4111-2222-3333-4444"));
+        assert_eq!(meta.card_bin.as_deref(), Some("411122"));
+    }
+
+    #[test]
+    fn to_meta_card_bin_none_for_non_card_items() {
+        let meta = to_meta(&item(login("credentials", "u", "p")));
+        assert_eq!(meta.card_bin, None);
     }
 
     #[test]

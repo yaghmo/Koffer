@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../lib/api";
-import { SettingsIcon, ShieldIcon, XIcon } from "../components/Icon";
+import { SettingsIcon, ShieldIcon, ImageIcon, XIcon } from "../components/Icon";
 import { useHotkey } from "../lib/useHotkey";
 
 interface Props {
@@ -14,6 +14,8 @@ export default function Settings({ accountId, onLock }: Props) {
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetPassword, setResetPassword] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
+  const [logosBusy, setLogosBusy] = useState(false);
+  const [logosResult, setLogosResult] = useState<string | null>(null);
 
   useEffect(() => {
     api.getConfig().then((cfg) => setAutolockMins(cfg.autolock_mins));
@@ -27,6 +29,31 @@ export default function Settings({ accountId, onLock }: Props) {
       await api.setAutolockMins(autolockMins);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refreshLogos() {
+    setLogosBusy(true);
+    setLogosResult(null);
+    try {
+      const metas = await api.listItems(undefined, "login");
+      let updated = 0;
+      for (const meta of metas) {
+        const full = await api.getItem(meta.id);
+        if (full.type !== "login" || !full.url) continue;
+        try {
+          const fetched = await api.fetchUrlMetadata(full.url);
+          if (fetched.favicon_data_url) {
+            await api.saveItem({ ...full, favicon: fetched.favicon_data_url });
+            updated++;
+          }
+        } catch {
+          // one site failing (offline, no favicon) shouldn't stop the rest
+        }
+      }
+      setLogosResult(`Updated ${updated} of ${metas.length} login logos.`);
+    } finally {
+      setLogosBusy(false);
     }
   }
 
@@ -83,6 +110,21 @@ export default function Settings({ accountId, onLock }: Props) {
         <p className="text-body-sm text-on-surface-variant">
           Copied secrets clear after 30 seconds. Passwords copied when opening a login clear after 60.
         </p>
+      </div>
+
+      <div className="card flex flex-col gap-3 p-5">
+        <div className="flex items-center gap-2 text-on-surface">
+          <ImageIcon size={16} />
+          <h2 className="text-body-md font-semibold">Site logos</h2>
+        </div>
+        <p className="text-body-sm text-on-surface-variant">
+          Logos are fetched once when you add a login's URL. Re-fetch all of them if a site has since
+          changed its icon.
+        </p>
+        <button type="button" className="btn-secondary self-start" onClick={refreshLogos} disabled={logosBusy}>
+          {logosBusy ? "Refreshing…" : "Refresh site logos"}
+        </button>
+        {logosResult && <p className="text-body-sm text-on-surface-variant">{logosResult}</p>}
       </div>
 
       <div className="rounded-panel border border-error/30 bg-error/5 p-5">

@@ -1,5 +1,5 @@
 import type { ItemMeta } from "../lib/types";
-import { PencilIcon, TrashIcon, ExternalIcon, DatabaseIcon } from "./Icon";
+import { PencilIcon, TrashIcon, ExternalIcon, DatabaseIcon, NoteIcon, CardBrandIcon } from "./Icon";
 import { MethodChip, providerForAccount } from "../lib/methods";
 
 interface Props {
@@ -33,6 +33,20 @@ function rowIcon(it: ItemMeta) {
         </span>
       );
     }
+  }
+  if (it.kind === "card") {
+    return (
+      <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high">
+        <CardBrandIcon bin={it.card_bin} size={26} />
+      </span>
+    );
+  }
+  if (it.kind === "note") {
+    return (
+      <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high text-on-surface-variant">
+        <NoteIcon size={18} />
+      </span>
+    );
   }
   return (
     <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high text-body-md font-semibold text-on-surface-variant">
