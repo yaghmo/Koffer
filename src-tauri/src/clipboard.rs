@@ -10,20 +10,42 @@ pub enum ClipboardError {
     Backend(String),
 }
 
-pub fn copy_with_ttl(text: &str, ttl: Duration) -> Result<(), ClipboardError> {
-    let mut cb = arboard::Clipboard::new()
-        .map_err(|e| ClipboardError::Backend(e.to_string()))?;
+// ponytail: Windows clipboard history/cloud sync are separate stores from the
+// live clipboard. Marking the write as excluded stops the password from
+// landing in Win+V history or syncing to other devices; the TTL clear below
+// only ever affected the live clipboard, not history.
+#[cfg(windows)]
+fn set_text_excluding_history(text: &str) -> Result<(), ClipboardError> {
+    use clipboard_win::{options::DoClear, raw};
+
+    raw::open().map_err(|e| ClipboardError::Backend(e.to_string()))?;
+    let result = raw::set_string_with(text, DoClear)
+        .map_err(|e| ClipboardError::Backend(e.to_string()))
+        .map(|_| {
+            for name in ["CanIncludeInClipboardHistory", "CanUploadToCloudClipboard"] {
+                if let Some(fmt) = raw::register_format(name) {
+                    let _ = raw::set_without_clear(fmt.get(), &0u32.to_ne_bytes());
+                }
+            }
+        });
+    let _ = raw::close();
+    result
+}
+
+#[cfg(not(windows))]
+fn set_text_excluding_history(text: &str) -> Result<(), ClipboardError> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| ClipboardError::Backend(e.to_string()))?;
     cb.set_text(text.to_string())
-        .map_err(|e| ClipboardError::Backend(e.to_string()))?;
-    let text_owned = text.to_string();
+        .map_err(|e| ClipboardError::Backend(e.to_string()))
+}
+
+pub fn copy_with_ttl(text: &str, ttl: Duration) -> Result<(), ClipboardError> {
+    set_text_excluding_history(text)?;
     thread::spawn(move || {
         thread::sleep(ttl);
         if let Ok(mut cb) = arboard::Clipboard::new() {
             // Best-effort clear; ignore failure (something else may have overwritten)
             let _ = cb.set_text(String::new());
-            // We can't reliably read back on Windows without focus,
-            // but empty-string write is the standard "clear" pattern.
-            drop(text_owned);
         }
     });
     Ok(())
