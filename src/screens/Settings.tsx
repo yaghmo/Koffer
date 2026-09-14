@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { api } from "../lib/api";
+import { SettingsIcon, ShieldIcon, XIcon } from "../components/Icon";
+import { useHotkey } from "../lib/useHotkey";
 
 interface Props {
   accountId: string;
@@ -16,6 +18,8 @@ export default function Settings({ accountId, onLock }: Props) {
   useEffect(() => {
     api.getConfig().then((cfg) => setAutolockMins(cfg.autolock_mins));
   }, []);
+
+  useHotkey("escape", () => setShowResetModal(false), showResetModal);
 
   async function saveAutolock() {
     setBusy(true);
@@ -41,20 +45,20 @@ export default function Settings({ accountId, onLock }: Props) {
   }
 
   return (
-    <div className="settings">
-      <div className="settings-header">
-        <div>
-          <p className="screen-eyebrow">Settings</p>
-          <h1 className="screen-title">Vault preferences</h1>
-        </div>
+    <div className="mx-auto flex max-w-[720px] flex-col gap-6 px-8 py-8">
+      <div>
+        <p className="label-sm">Settings</p>
+        <h1 className="text-headline-lg text-on-surface">Vault settings</h1>
+        <p className="text-body-md text-on-surface-variant">Stored only on this device.</p>
       </div>
 
-      <div className="settings-section">
-        <h2 className="settings-heading">Auto-lock</h2>
-        <p className="settings-description">
-          Lock the vault after this many minutes of inactivity.
-        </p>
-        <div className="settings-control">
+      <div className="card flex flex-col gap-3 p-5">
+        <div className="flex items-center gap-2 text-on-surface">
+          <ShieldIcon size={16} />
+          <h2 className="text-body-md font-semibold">Auto-lock</h2>
+        </div>
+        <p className="text-body-sm text-on-surface-variant">Lock the vault after this many minutes of inactivity.</p>
+        <div className="flex items-center gap-3">
           <input
             type="range"
             min="15"
@@ -62,67 +66,66 @@ export default function Settings({ accountId, onLock }: Props) {
             value={autolockMins}
             onChange={(e) => setAutolockMins(Number(e.target.value))}
             aria-label="Auto-lock timeout in minutes"
+            className="h-1 flex-1 appearance-none rounded-full bg-surface-container-high accent-primary"
           />
-          <p className="settings-value">{autolockMins} minutes</p>
+          <span className="label-md rounded-chip bg-surface-container-high px-2 py-1">{autolockMins} min</span>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={saveAutolock}
-          disabled={busy}
-        >
+        <button type="button" className="btn-primary self-start" onClick={saveAutolock} disabled={busy}>
           {busy ? "Saving…" : "Save"}
         </button>
       </div>
 
-      <div className="settings-section">
-        <h2 className="settings-heading">Reset vault</h2>
-        <p className="settings-description">
+      <div className="card flex flex-col gap-2 p-5">
+        <div className="flex items-center gap-2 text-on-surface">
+          <SettingsIcon size={16} />
+          <h2 className="text-body-md font-semibold">Clipboard</h2>
+        </div>
+        <p className="text-body-sm text-on-surface-variant">
+          Copied secrets clear after 30 seconds. Passwords copied when opening a login clear after 60.
+        </p>
+      </div>
+
+      <div className="rounded-panel border border-error/30 bg-error/5 p-5">
+        <h2 className="text-body-md font-semibold text-error">Danger zone</h2>
+        <p className="mt-1 text-body-sm text-on-surface-variant">
           Permanently delete all items and reset the master password. This cannot be undone.
         </p>
-        <button
-          className="btn btn-danger"
-          onClick={() => setShowResetModal(true)}
-        >
+        <button type="button" className="btn-danger mt-3" onClick={() => setShowResetModal(true)}>
           Reset vault
         </button>
       </div>
 
       {showResetModal && (
-        <div className="modal-backdrop" onClick={() => setShowResetModal(false)}>
-          <div className="modal modal-danger" onClick={(e) => e.stopPropagation()}>
-            <p className="modal-meta">Reset · Confirm</p>
-            <h2>Reset vault?</h2>
-            <p>
-              This will permanently delete all items. Enter your current master
-              password to confirm.
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
+          onClick={() => setShowResetModal(false)}
+        >
+          <div className="dialog dialog-danger flex w-full max-w-[420px] flex-col gap-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <p className="label-sm text-error">Reset · Confirm</p>
+            <h2 className="text-headline-sm text-error">Reset vault?</h2>
+            <p className="text-body-sm text-on-surface-variant">
+              This will permanently delete all items. Enter your current master password to confirm.
             </p>
-            <form onSubmit={handleReset}>
-              <div className="field">
-                <div className="field-row">
-                  <input
-                    type="password"
-                    value={resetPassword}
-                    onChange={(e) => setResetPassword(e.target.value)}
-                    placeholder="Master password"
-                    aria-label="Master password"
-                    autoFocus
-                  />
-                </div>
-              </div>
-              {resetError && <p className="error" role="alert">{resetError}</p>}
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setShowResetModal(false)}
-                >
-                  Cancel
+            <form onSubmit={handleReset} className="flex flex-col gap-4">
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder="Master password"
+                aria-label="Master password"
+                autoFocus
+                className="field font-mono"
+              />
+              {resetError && (
+                <p role="alert" className="text-body-sm text-error">
+                  {resetError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <button type="button" className="btn-secondary" onClick={() => setShowResetModal(false)}>
+                  <XIcon size={14} /> Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="btn btn-danger"
-                  disabled={busy || !resetPassword}
-                >
+                <button type="submit" className="btn-danger" disabled={busy || !resetPassword}>
                   {busy ? "Resetting…" : "Reset vault"}
                 </button>
               </div>
