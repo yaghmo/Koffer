@@ -55,4 +55,14 @@ describe("Vault", () => {
       expect(api.listItems).toHaveBeenCalledWith("git", undefined)
     );
   });
+
+  it("Ctrl+K focuses the search input", async () => {
+    render(<Vault filter="all" {...editorProps} />);
+    await screen.findByText("GitHub");
+    const search = screen.getByPlaceholderText(/search/i) as HTMLInputElement;
+    search.blur();
+    expect(document.activeElement).not.toBe(search);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(document.activeElement).toBe(search);
+  });
 });

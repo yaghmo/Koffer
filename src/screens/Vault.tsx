@@ -5,6 +5,7 @@ import ItemList from "../components/ItemList";
 import SearchBar from "../components/SearchBar";
 import ItemEditor from "./ItemEditor";
 import Generator from "../components/Generator";
+import { useHotkey } from "../lib/useHotkey";
 
 type EditingTarget =
   | { kind: "existing"; id: string }
@@ -50,45 +51,47 @@ export default function Vault({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, kind, refreshKey]);
 
+  useHotkey("ctrl+k", () => {
+    document.getElementById("vault-search")?.focus();
+  });
+
   async function handleDelete(id: string) {
     await api.deleteItem(id);
     refresh();
   }
 
-  // Three explicit "+ Kind" buttons so the user picks a kind up front instead
-  // of opening an editor and switching tabs.
-  const addKinds: ItemKind[] = ["login", "note", "card"];
+  const addKinds: { kind: ItemKind; label: string }[] = [
+    { kind: "login", label: "Login" },
+    { kind: "note", label: "Note" },
+    { kind: "card", label: "Card" },
+  ];
 
   return (
-    <div className="vault">
-      <div>
-        <p className="screen-eyebrow">Vault</p>
-        <h1 className="screen-title">
-          {items.length === 0
-            ? "An empty room"
-            : `${items.length} item${items.length === 1 ? "" : "s"} on the shelf`}
-        </h1>
+    <div className="mx-auto flex max-w-[960px] flex-col gap-6 px-8 py-8">
+      <div className="flex items-center gap-3">
+        <h1 className="text-headline-md text-on-surface">Vault items</h1>
+        <span className="label-md rounded-chip bg-surface-container-high px-2 py-1">
+          {items.length} total
+        </span>
       </div>
 
-      <div className="toolbar">
+      <div className="sticky top-0 z-10 flex items-center gap-3 bg-surface-container-lowest py-1">
         <SearchBar value={query} onChange={setQuery} />
-        <div className="toolbar-row">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setShowGenerator(true)}
-          >
-            Generate
-          </button>
-          {addKinds.map((k) => (
+        <button type="button" className="btn-secondary" onClick={() => setShowGenerator(true)}>
+          Generate
+        </button>
+        <div className="flex overflow-hidden rounded-control border border-white/8">
+          {addKinds.map(({ kind: k, label }, i) => (
             <button
               key={k}
               type="button"
-              className="btn btn-primary"
               onClick={() => onEditNew(k)}
               aria-label={`Add ${k}`}
+              className={`bg-primary px-3 py-2.5 text-body-md font-medium text-on-primary transition-colors duration-150 ease-out hover:bg-primary-container ${
+                i > 0 ? "border-l border-on-primary/20" : ""
+              }`}
             >
-              + {k}
+              + {label}
             </button>
           ))}
         </div>
@@ -105,7 +108,7 @@ export default function Vault({
       {showGenerator && <Generator onClose={() => setShowGenerator(false)} />}
 
       {editing && (
-        <div className="overlay">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
           <ItemEditor
             id={editing.kind === "existing" ? editing.id : null}
             initialKind={editing.kind === "new" ? editing.itemKind : undefined}
