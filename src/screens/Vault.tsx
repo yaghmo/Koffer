@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { ItemKind, ItemMeta } from "../lib/types";
 import ItemList from "../components/ItemList";
 import SearchBar from "../components/SearchBar";
 import ItemEditor from "./ItemEditor";
 import Generator from "../components/Generator";
+import { PlusIcon } from "../components/Icon";
 import { useHotkey } from "../lib/useHotkey";
 
 type EditingTarget =
@@ -38,6 +39,8 @@ export default function Vault({
   const [items, setItems] = useState<ItemMeta[]>([]);
   const [query, setQuery] = useState("");
   const [showGenerator, setShowGenerator] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
 
   const kind = filter === "all" ? undefined : filter;
 
@@ -54,6 +57,16 @@ export default function Vault({
   useHotkey("ctrl+k", () => {
     document.getElementById("vault-search")?.focus();
   });
+  useHotkey("escape", () => setAddMenuOpen(false), addMenuOpen);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    function onOutside(e: MouseEvent) {
+      if (!addMenuRef.current?.contains(e.target as Node)) setAddMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [addMenuOpen]);
 
   async function handleDelete(id: string) {
     await api.deleteItem(id);
@@ -80,20 +93,37 @@ export default function Vault({
         <button type="button" className="btn-secondary" onClick={() => setShowGenerator(true)}>
           Generate
         </button>
-        <div className="flex overflow-hidden rounded-control border border-white/8">
-          {addKinds.map(({ kind: k, label }, i) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => onEditNew(k)}
-              aria-label={`Add ${k}`}
-              className={`bg-primary px-3 py-2.5 text-body-md font-medium text-on-primary transition-colors duration-150 ease-out hover:bg-primary-container ${
-                i > 0 ? "border-l border-on-primary/20" : ""
-              }`}
+        <div className="relative" ref={addMenuRef}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => setAddMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={addMenuOpen}
+          >
+            <PlusIcon size={14} /> Add
+          </button>
+          {addMenuOpen && (
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-20 mt-1 flex w-36 flex-col overflow-hidden rounded-control border border-white/8 bg-surface shadow-lg"
             >
-              + {label}
-            </button>
-          ))}
+              {addKinds.map(({ kind: k, label }) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAddMenuOpen(false);
+                    onEditNew(k);
+                  }}
+                  className="px-3 py-2 text-left text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-white/4"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

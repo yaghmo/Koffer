@@ -65,4 +65,30 @@ describe("Vault", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(document.activeElement).toBe(search);
   });
+
+  it("opens an item-kind menu from a single Add button and calls onEditNew on selection", async () => {
+    const onEditNew = vi.fn();
+    render(<Vault filter="all" {...editorProps} onEditNew={onEditNew} />);
+    await screen.findByText("GitHub");
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /add/i }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Card" }));
+    expect(onEditNew).toHaveBeenCalledWith("card");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("closes the Add menu on outside click and on Escape", async () => {
+    render(<Vault filter="all" {...editorProps} />);
+    await screen.findByText("GitHub");
+    fireEvent.click(screen.getByRole("button", { name: /add/i }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /add/i }));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });
