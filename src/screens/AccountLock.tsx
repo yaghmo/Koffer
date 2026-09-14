@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
 import { EyeIcon, EyeOffIcon, PlusIcon, LockIcon, UnlockIcon } from "../components/Icon";
 import { Emblem } from "../components/Emblem";
+import { useHotkey } from "../lib/useHotkey";
+import { useOutsideClose } from "../lib/useOutsideClose";
+
+const CRYPTO_BADGES = ["ARGON2ID", "AES-256-GCM", "LOCAL · AIR-GAPPED"];
 
 interface Props {
   accounts: Account[];
@@ -16,6 +20,11 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
+
+  useHotkey("escape", () => setSwitcherOpen(false), switcherOpen);
+  useOutsideClose(switcherRef, switcherOpen, () => setSwitcherOpen(false));
 
   // After a delete (or any account list change), drop a selection that no
   // longer exists and reset the form. Without this the deleted vault keeps
@@ -34,6 +43,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
     setSelectedId(id);
     setPw("");
     setError(null);
+    setSwitcherOpen(false);
   }
 
   async function submit(e: React.FormEvent) {
@@ -60,6 +70,13 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-secondary" aria-hidden />
           Locked
         </p>
+        <div className="flex flex-wrap items-center justify-center gap-1.5">
+          {CRYPTO_BADGES.map((b) => (
+            <span key={b} className="label-sm rounded-chip border border-white/8 px-2 py-1 text-tertiary">
+              {b}
+            </span>
+          ))}
+        </div>
 
         {!selected ? (
           <div className="flex w-full flex-col items-center gap-4 text-center">
@@ -71,23 +88,46 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
         ) : (
           <form onSubmit={submit} className="flex w-full flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <p className="label-md">{accounts.length > 1 ? "Choose a vault" : "Vault"}</p>
-              <ul className="flex flex-col gap-1 rounded-control border border-white/8 bg-surface p-1">
-                {accounts.map((a) => (
-                  <li key={a.id}>
+              <p className="label-md">Vault</p>
+              <div className="relative" ref={switcherRef}>
+                <div className="flex items-center justify-between gap-3 rounded-control border border-white/8 bg-surface px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-body-md font-medium text-on-surface">{selected.name}</p>
+                    <p className="label-md">Local vault · this device</p>
+                  </div>
+                  {accounts.length > 1 && (
                     <button
                       type="button"
-                      onClick={() => pickAccount(a.id)}
-                      className={`flex w-full flex-col gap-0.5 rounded-[6px] px-3 py-2 text-left transition-colors duration-150 ease-out ${
-                        a.id === selectedId ? "bg-surface-container-high" : "hover:bg-white/4"
-                      }`}
+                      onClick={() => setSwitcherOpen((o) => !o)}
+                      aria-haspopup="menu"
+                      aria-expanded={switcherOpen}
+                      className="btn-secondary shrink-0"
                     >
-                      <span className="text-body-md font-medium text-on-surface">{a.name}</span>
-                      {a.id === selectedId && <span className="label-md">Local vault · this device</span>}
+                      Switch
                     </button>
-                  </li>
-                ))}
-              </ul>
+                  )}
+                </div>
+                {switcherOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 top-full z-20 mt-1 flex w-full flex-col overflow-hidden rounded-control border border-white/8 bg-surface shadow-lg"
+                  >
+                    {accounts
+                      .filter((a) => a.id !== selectedId)
+                      .map((a) => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => pickAccount(a.id)}
+                          className="px-3 py-2 text-left text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-white/4"
+                        >
+                          {a.name}
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1.5">

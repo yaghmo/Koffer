@@ -61,7 +61,7 @@ describe("AccountLock", () => {
     expect(await screen.findByText(/wrong password/i)).toBeTruthy();
   });
 
-  it("renders an account picker when there is more than one account", () => {
+  it("renders a Switch button and reveals the other account when clicked", () => {
     render(
       <AccountLock
         accounts={[acct1, acct2]}
@@ -70,6 +70,8 @@ describe("AccountLock", () => {
       />
     );
     expect(screen.getByText("user1")).toBeTruthy();
+    expect(screen.queryByText("user2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /switch/i }));
     expect(screen.getByText("user2")).toBeTruthy();
   });
 
@@ -82,6 +84,7 @@ describe("AccountLock", () => {
         onAddNew={() => {}}
       />
     );
+    fireEvent.click(screen.getByRole("button", { name: /switch/i }));
     fireEvent.click(screen.getByText("user2"));
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "pw2" },
@@ -117,7 +120,7 @@ describe("AccountLock", () => {
     expect(screen.queryByRole("button", { name: /reset/i })).toBeNull();
   });
 
-  it("removes a deleted account from the list immediately when the prop changes", () => {
+  it("removes a deleted account from the switcher immediately when the prop changes", () => {
     const { rerender } = render(
       <AccountLock
         accounts={[acct1, acct2]}
@@ -125,6 +128,7 @@ describe("AccountLock", () => {
         onAddNew={() => {}}
       />
     );
+    fireEvent.click(screen.getByRole("button", { name: /switch/i }));
     expect(screen.getByText("user1")).toBeTruthy();
     expect(screen.getByText("user2")).toBeTruthy();
     rerender(

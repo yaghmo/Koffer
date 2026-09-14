@@ -7,6 +7,7 @@ import ItemEditor from "./ItemEditor";
 import Generator from "../components/Generator";
 import { PlusIcon } from "../components/Icon";
 import { useHotkey } from "../lib/useHotkey";
+import { useOutsideClose } from "../lib/useOutsideClose";
 
 type EditingTarget =
   | { kind: "existing"; id: string }
@@ -58,15 +59,7 @@ export default function Vault({
     document.getElementById("vault-search")?.focus();
   });
   useHotkey("escape", () => setAddMenuOpen(false), addMenuOpen);
-
-  useEffect(() => {
-    if (!addMenuOpen) return;
-    function onOutside(e: MouseEvent) {
-      if (!addMenuRef.current?.contains(e.target as Node)) setAddMenuOpen(false);
-    }
-    document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
-  }, [addMenuOpen]);
+  useOutsideClose(addMenuRef, addMenuOpen, () => setAddMenuOpen(false));
 
   async function handleDelete(id: string) {
     await api.deleteItem(id);
