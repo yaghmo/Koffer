@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import AccountLock from "../screens/AccountLock";
+import type { Account } from "../lib/types";
 
 const acct1 = { id: "a1", name: "user1" };
 const acct2 = { id: "a2", name: "user2" };
@@ -209,5 +211,56 @@ describe("AccountLock — import vault", () => {
     fireEvent.click(screen.getByRole("button", { name: /import vault/i }));
     await waitFor(() => expect(open).toHaveBeenCalled());
     expect(screen.queryByLabelText(/vault name/i)).toBeNull();
+  });
+
+  // Regression test for a race that the earlier "empty to populated" test
+  // above does NOT catch: it drives `accounts` with a direct `rerender()`,
+  // which updates the prop in the same tick as the assertion. The real
+  // App.tsx wiring is different — `accounts` lives in the PARENT, and
+  // `onImported` triggers an async IPC refetch (`listAccounts()`) that
+  // resolves strictly later than `setSelectedId(result.id)` runs inside
+  // `confirmImport`. This harness models that real shape: a parent that owns
+  // `accounts` state and only updates it after a genuine async gap.
+  function LockHarness({
+    initialAccounts,
+    accountsAfterImport,
+  }: {
+    initialAccounts: Account[];
+    accountsAfterImport: Account[];
+  }) {
+    const [accounts, setAccounts] = useState(initialAccounts);
+    const onImported = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      setAccounts(accountsAfterImport);
+    };
+    return (
+      <AccountLock
+        accounts={accounts}
+        onUnlocked={() => {}}
+        onAddNew={() => {}}
+        onImported={onImported}
+      />
+    );
+  }
+
+  it("selects the newly imported vault even when other vaults already exist (parent-owned accounts state, async refresh)", async () => {
+    const { api } = await import("../lib/api");
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    (open as any).mockResolvedValue("C:\\backups\\vault-backup.enc");
+    (api.importVault as any).mockResolvedValue({ id: acct2.id, name: acct2.name });
+
+    render(<LockHarness initialAccounts={[acct1]} accountsAfterImport={[acct1, acct2]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /import vault/i }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "user2" } });
+    fireEvent.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(api.importVault).toHaveBeenCalled());
+
+    // The newly imported vault must end up selected, not reverted back to
+    // the pre-existing one by the stale-selection repair effect.
+    await waitFor(() => expect(screen.getByText("user2")).toBeTruthy());
   });
 });

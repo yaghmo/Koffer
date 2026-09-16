@@ -28,6 +28,13 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   const [importName, setImportName] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  // Set right when we explicitly select a just-imported account, before the
+  // parent's `accounts` prop has caught up (its refetch is an async IPC
+  // round-trip). Cleared once `accounts` actually contains that id. Lets the
+  // repair effect below tell "stale prop, wait for it" apart from "this
+  // selection is genuinely gone" instead of reverting a deliberate selection
+  // out from under the user.
+  const pendingSelectionRef = useRef<string | null>(null);
 
   useHotkey("escape", () => setSwitcherOpen(false), switcherOpen);
   useOutsideClose(switcherRef, switcherOpen, () => setSwitcherOpen(false));
@@ -36,16 +43,20 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   // longer exists and reset the form. Without this the deleted vault keeps
   // showing as "selected" until the user picks another one.
   useEffect(() => {
-    if (!accounts.some((a) => a.id === selectedId)) {
-      setSelectedId(accounts[0]?.id ?? "");
-      setPw("");
-      setError(null);
+    if (accounts.some((a) => a.id === selectedId)) {
+      if (pendingSelectionRef.current === selectedId) pendingSelectionRef.current = null;
+      return;
     }
+    if (pendingSelectionRef.current === selectedId) return;
+    setSelectedId(accounts[0]?.id ?? "");
+    setPw("");
+    setError(null);
   }, [accounts, selectedId]);
 
   const selected = accounts.find((a) => a.id === selectedId);
 
   function pickAccount(id: string) {
+    pendingSelectionRef.current = null;
     setSelectedId(id);
     setPw("");
     setError(null);
@@ -89,6 +100,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
     try {
       const result = await api.importVault(importPath, importName);
       setImportPath(null);
+      pendingSelectionRef.current = result.id;
       setSelectedId(result.id);
       await onImported?.();
     } catch (err) {
