@@ -46,6 +46,11 @@ pub fn vault_exists(account: &Account) -> bool {
     vault_path(account).exists()
 }
 
+pub fn export_vault_file(account: &Account, dest: &std::path::Path) -> Result<(), StorageError> {
+    fs::copy(vault_path(account), dest)?;
+    Ok(())
+}
+
 pub fn delete_vault_and_config(account: &Account) -> Result<(), StorageError> {
     let vp = vault_path(account);
     if vp.exists() {
@@ -178,6 +183,25 @@ mod tests {
         assert!(vault_exists(&acct));
         let v2 = load_vault(&acct, &key).unwrap();
         assert_eq!(v2.items.len(), 1);
+    }
+
+    #[test]
+    fn export_vault_file_copies_bytes_exactly() {
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
+        let salt = crate::crypto::random_bytes(16);
+        let key = derive_key("master", &salt);
+        let v = new_vault(salt);
+        save_vault(&acct, &v, &key).unwrap();
+
+        let original = std::fs::read(vault_path(&acct)).unwrap();
+        let dest = std::env::temp_dir().join(format!("export-test-{}.enc", uuid::Uuid::new_v4()));
+        export_vault_file(&acct, &dest).unwrap();
+
+        let exported = std::fs::read(&dest).unwrap();
+        assert_eq!(exported, original);
+        std::fs::remove_file(&dest).unwrap();
     }
 
     #[test]
