@@ -162,6 +162,9 @@ export default function App() {
             onAddNew={async () => {
               setStatus("no-accounts");
             }}
+            onImported={async () => {
+              await refreshAccounts();
+            }}
           />
         </main>
       </div>

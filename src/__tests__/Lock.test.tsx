@@ -8,7 +8,12 @@ const acct2 = { id: "a2", name: "user2" };
 vi.mock("../lib/api", () => ({
   api: {
     unlockVault: vi.fn().mockResolvedValue(undefined),
+    importVault: vi.fn(),
   },
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
 }));
 
 describe("AccountLock", () => {
@@ -153,5 +158,38 @@ describe("AccountLock", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /create one/i }));
     expect(onAddNew).toHaveBeenCalled();
+  });
+});
+
+describe("AccountLock — import vault", () => {
+  it("imports a picked file under the typed name and reports it via onImported", async () => {
+    const { api } = await import("../lib/api");
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    (open as any).mockResolvedValue("C:\\backups\\vault-backup.enc");
+    (api.importVault as any).mockResolvedValue({ id: "a3", name: "restored" });
+    const onImported = vi.fn();
+    render(
+      <AccountLock accounts={[acct1]} onUnlocked={() => {}} onAddNew={() => {}} onImported={onImported} />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /import vault/i }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "restored" } });
+    fireEvent.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() =>
+      expect(api.importVault).toHaveBeenCalledWith("C:\\backups\\vault-backup.enc", "restored")
+    );
+    expect(onImported).toHaveBeenCalled();
+  });
+
+  it("does nothing when the open dialog is cancelled", async () => {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    (open as any).mockResolvedValue(null);
+    render(<AccountLock accounts={[acct1]} onUnlocked={() => {}} onAddNew={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /import vault/i }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    expect(screen.queryByLabelText(/vault name/i)).toBeNull();
   });
 });

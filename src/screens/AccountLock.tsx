@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
 import { EyeIcon, EyeOffIcon, PlusIcon, LockIcon, UnlockIcon } from "../components/Icon";
@@ -12,9 +13,10 @@ interface Props {
   accounts: Account[];
   onUnlocked: (account: Account) => void;
   onAddNew: () => void;
+  onImported?: () => void | Promise<void>;
 }
 
-export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
+export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported }: Props) {
   const [selectedId, setSelectedId] = useState<string>(accounts[0]?.id ?? "");
   const [pw, setPw] = useState("");
   const [show, setShow] = useState(false);
@@ -22,6 +24,10 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
   const [busy, setBusy] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
+  const [importPath, setImportPath] = useState<string | null>(null);
+  const [importName, setImportName] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   useHotkey("escape", () => setSwitcherOpen(false), switcherOpen);
   useOutsideClose(switcherRef, switcherOpen, () => setSwitcherOpen(false));
@@ -59,6 +65,31 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
       setPw("");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function pickImportFile() {
+    const path = await open({ multiple: false });
+    if (typeof path === "string") {
+      setImportPath(path);
+      setImportName("");
+      setImportError(null);
+    }
+  }
+
+  async function confirmImport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importPath) return;
+    setImportBusy(true);
+    setImportError(null);
+    try {
+      await api.importVault(importPath, importName);
+      setImportPath(null);
+      await onImported?.();
+    } catch (err) {
+      setImportError(String(err));
+    } finally {
+      setImportBusy(false);
     }
   }
 
@@ -175,6 +206,43 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew }: Props) {
             >
               <PlusIcon size={14} className="mr-1 inline align-[-2px]" /> Add another vault
             </button>
+          </form>
+        )}
+
+        <button
+          type="button"
+          onClick={pickImportFile}
+          className="self-center text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
+        >
+          Import vault
+        </button>
+
+        {importPath && (
+          <form onSubmit={confirmImport} className="flex w-full flex-col gap-3 border-t border-white/6 pt-4">
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Vault name</p>
+              <input
+                type="text"
+                value={importName}
+                onChange={(e) => setImportName(e.target.value)}
+                aria-label="Vault name"
+                autoFocus
+                className="field"
+              />
+              {importError && (
+                <p role="alert" className="text-body-sm text-error">
+                  {importError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setImportPath(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary" disabled={importBusy || !importName.trim()}>
+                {importBusy ? "Importing…" : "Import"}
+              </button>
+            </div>
           </form>
         )}
       </div>
