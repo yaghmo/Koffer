@@ -263,4 +263,47 @@ describe("AccountLock — import vault", () => {
     // the pre-existing one by the stale-selection repair effect.
     await waitFor(() => expect(screen.getByText("user2")).toBeTruthy());
   });
+
+  // Regression test for round 3: the import itself succeeds, but the
+  // post-import `onImported()` refresh rejects (e.g. a transient
+  // `listAccounts()` IPC failure) — mirroring App.tsx's real
+  // `onImported={async () => { await refreshAccounts().catch(() => {}); }}`
+  // wiring, where the rejection is swallowed and `accounts` never catches up
+  // with the newly imported id. Before this fix, `pendingSelectionRef` would
+  // stay set forever (nothing ever clears it), permanently suppressing the
+  // repair effect: `selected` resolves to `undefined` and the UI falls into
+  // the "No vaults exist" empty state even though `acct1` is still valid.
+  function FailedRefreshHarness({ initialAccounts }: { initialAccounts: Account[] }) {
+    const [accounts] = useState(initialAccounts);
+    const onImported = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // The refresh failed and swallowed its own error (as App.tsx's
+      // `.catch(() => {})` does) — `accounts` is never updated.
+    };
+    return (
+      <AccountLock accounts={accounts} onUnlocked={() => {}} onAddNew={() => {}} onImported={onImported} />
+    );
+  }
+
+  it("falls back to the previously-selected account, not the empty state, when the post-import refresh fails", async () => {
+    const { api } = await import("../lib/api");
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    (open as any).mockResolvedValue("C:\\backups\\vault-backup.enc");
+    (api.importVault as any).mockResolvedValue({ id: acct2.id, name: acct2.name });
+
+    render(<FailedRefreshHarness initialAccounts={[acct1]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /import vault/i }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText(/vault name/i), { target: { value: "user2" } });
+    fireEvent.click(screen.getByRole("button", { name: /^import$/i }));
+
+    await waitFor(() => expect(api.importVault).toHaveBeenCalled());
+
+    // `accounts` never gained acct2 (refresh silently failed) — must not get
+    // stuck on the empty state; should self-heal back to the still-valid acct1.
+    await waitFor(() => expect(screen.getByText("user1")).toBeTruthy());
+    expect(screen.queryByText(/no vaults exist/i)).toBeNull();
+  });
 });

@@ -170,7 +170,7 @@ export default function App() {
               setStatus("no-accounts");
             }}
             onImported={async () => {
-              await refreshAccounts();
+              await refreshAccounts().catch(() => {});
             }}
           />
         </main>

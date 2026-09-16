@@ -35,6 +35,12 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   // selection is genuinely gone" instead of reverting a deliberate selection
   // out from under the user.
   const pendingSelectionRef = useRef<string | null>(null);
+  // Latest `accounts` value, kept current on every render so `confirmImport`
+  // (a closure captured at the render it started in) can check the fresh
+  // list after awaiting `onImported`, even if a prop update happened in the
+  // meantime and this instance's `accounts` binding is now stale.
+  const accountsRef = useRef(accounts);
+  accountsRef.current = accounts;
 
   useHotkey("escape", () => setSwitcherOpen(false), switcherOpen);
   useOutsideClose(switcherRef, switcherOpen, () => setSwitcherOpen(false));
@@ -103,6 +109,16 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
       pendingSelectionRef.current = result.id;
       setSelectedId(result.id);
       await onImported?.();
+      // onImported's own refresh may have silently failed (it swallows its
+      // error) and never landed `result.id` in `accounts`. Don't leave the
+      // pending ref suppressing the repair effect forever in that case —
+      // neither `accounts` nor `selectedId` will change again on their own
+      // to make that effect re-run, so restore a valid selection right here
+      // instead of waiting on an update that may never come.
+      if (pendingSelectionRef.current === result.id && !accountsRef.current.some((a) => a.id === result.id)) {
+        pendingSelectionRef.current = null;
+        setSelectedId(accountsRef.current[0]?.id ?? "");
+      }
     } catch (err) {
       setImportError(String(err));
     } finally {
