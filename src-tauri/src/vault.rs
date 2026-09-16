@@ -181,6 +181,94 @@ pub fn list_items(vault: &Vault) -> Vec<&Item> {
     vault.items.iter().collect()
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+pub struct FlaggedItem {
+    pub id: Uuid,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+pub struct VaultStats {
+    pub total: usize,
+    pub logins: usize,
+    pub notes: usize,
+    pub cards: usize,
+    pub weak: Vec<FlaggedItem>,
+    pub reused: Vec<FlaggedItem>,
+    pub old: Vec<FlaggedItem>,
+    pub health_score: u8,
+}
+
+fn char_class_count(password: &str) -> usize {
+    let has_lower = password.chars().any(|c| c.is_ascii_lowercase());
+    let has_upper = password.chars().any(|c| c.is_ascii_uppercase());
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
+    let has_symbol = password.chars().any(|c| !c.is_ascii_alphanumeric());
+    [has_lower, has_upper, has_digit, has_symbol]
+        .iter()
+        .filter(|b| **b)
+        .count()
+}
+
+fn is_weak_password(password: &str) -> bool {
+    password.len() < 8 || char_class_count(password) < 3
+}
+
+const OLD_PASSWORD_THRESHOLD_SECS: i64 = 90 * 86_400;
+
+pub fn compute_stats(vault: &Vault, now: i64) -> VaultStats {
+    let mut logins = 0;
+    let mut notes = 0;
+    let mut cards = 0;
+    let mut weak = Vec::new();
+    let mut password_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for item in &vault.items {
+        match item {
+            Item::Login { base, fields } => {
+                logins += 1;
+                if is_weak_password(&fields.password) {
+                    weak.push(FlaggedItem { id: base.id, title: base.title.clone() });
+                }
+                *password_counts.entry(fields.password.as_str()).or_insert(0) += 1;
+            }
+            Item::Note { .. } => notes += 1,
+            Item::Card { .. } => cards += 1,
+        }
+    }
+    let mut reused = Vec::new();
+    let mut old = Vec::new();
+    for item in &vault.items {
+        if let Item::Login { base, fields } = item {
+            if password_counts.get(fields.password.as_str()).copied().unwrap_or(0) > 1 {
+                reused.push(FlaggedItem { id: base.id, title: base.title.clone() });
+            }
+            if now - base.updated_at > OLD_PASSWORD_THRESHOLD_SECS {
+                old.push(FlaggedItem { id: base.id, title: base.title.clone() });
+            }
+        }
+    }
+    let mut flagged_ids: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+    flagged_ids.extend(weak.iter().map(|f| f.id));
+    flagged_ids.extend(reused.iter().map(|f| f.id));
+    flagged_ids.extend(old.iter().map(|f| f.id));
+    let health_score = if logins == 0 {
+        100
+    } else {
+        (100 * (logins - flagged_ids.len().min(logins)) / logins) as u8
+    };
+
+    VaultStats {
+        total: vault.items.len(),
+        logins,
+        notes,
+        cards,
+        weak,
+        reused,
+        old,
+        health_score,
+    }
+}
+
 pub fn serialize_vault(v: &Vault) -> Result<Vec<u8>, VaultError> {
     Ok(serde_json::to_vec(v)?)
 }
@@ -220,6 +308,147 @@ mod tests {
                 password: "s3cret".to_string(),
             },
         }
+    }
+
+    #[test]
+    fn stats_counts_items_by_kind() {
+        let mut v = new_vault(vec![]);
+        add_item(&mut v, sample_login());
+        add_item(&mut v, sample_login());
+        add_item(
+            &mut v,
+            Item::Note {
+                base: ItemBase {
+                    id: Uuid::new_v4(),
+                    title: "wifi".to_string(),
+                    notes: "".to_string(),
+                    created_at: 0,
+                    updated_at: 0,
+                    favicon: String::new(),
+                },
+                fields: NoteFields { body: "".to_string() },
+            },
+        );
+        let stats = compute_stats(&v, 1_700_000_000);
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.logins, 2);
+        assert_eq!(stats.notes, 1);
+        assert_eq!(stats.cards, 0);
+    }
+
+    #[test]
+    fn stats_flags_short_or_single_char_class_passwords_as_weak() {
+        let mut v = new_vault(vec![]);
+        let mut short = sample_login();
+        short.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut short {
+            fields.password = "ab1".to_string();
+        }
+        let mut lettersonly = sample_login();
+        lettersonly.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut lettersonly {
+            fields.password = "abcdefghij".to_string();
+        }
+        let mut strong = sample_login();
+        strong.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut strong {
+            fields.password = "Tr0ub4dor&3xyz".to_string();
+        }
+        add_item(&mut v, short);
+        add_item(&mut v, lettersonly);
+        add_item(&mut v, strong);
+
+        let stats = compute_stats(&v, 1_700_000_000);
+        assert_eq!(stats.weak.len(), 2);
+    }
+
+    #[test]
+    fn stats_flags_passwords_reused_across_logins() {
+        let mut v = new_vault(vec![]);
+        let mut a = sample_login();
+        a.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut a {
+            fields.password = "Tr0ub4dor&3xyz".to_string();
+        }
+        let mut b = sample_login();
+        b.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut b {
+            fields.password = "Tr0ub4dor&3xyz".to_string();
+        }
+        let mut c = sample_login();
+        c.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut c {
+            fields.password = "Unique#Pass99".to_string();
+        }
+        add_item(&mut v, a);
+        add_item(&mut v, b);
+        add_item(&mut v, c);
+
+        let stats = compute_stats(&v, 1_700_000_000);
+        assert_eq!(stats.reused.len(), 2);
+    }
+
+    #[test]
+    fn stats_flags_logins_not_updated_in_over_90_days_as_old() {
+        let now = 1_700_000_000;
+        let ninety_one_days_ago = now - 91 * 86_400;
+        let mut v = new_vault(vec![]);
+        let mut stale = sample_login();
+        stale.base_mut().id = Uuid::new_v4();
+        stale.base_mut().updated_at = ninety_one_days_ago;
+        if let Item::Login { fields, .. } = &mut stale {
+            fields.password = "Tr0ub4dor&3xyz".to_string();
+        }
+        let mut fresh = sample_login();
+        fresh.base_mut().id = Uuid::new_v4();
+        fresh.base_mut().updated_at = now;
+        if let Item::Login { fields, .. } = &mut fresh {
+            fields.password = "Unique#Pass99".to_string();
+        }
+        add_item(&mut v, stale);
+        add_item(&mut v, fresh);
+
+        let stats = compute_stats(&v, now);
+        assert_eq!(stats.old.len(), 1);
+    }
+
+    #[test]
+    fn stats_health_score_is_percent_of_logins_with_no_flags() {
+        let mut v = new_vault(vec![]);
+        let mut weak = sample_login();
+        weak.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut weak {
+            fields.password = "abc".to_string();
+        }
+        let mut ok1 = sample_login();
+        ok1.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut ok1 {
+            fields.password = "Unique#Pass99".to_string();
+        }
+        let mut ok2 = sample_login();
+        ok2.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut ok2 {
+            fields.password = "An0ther$Strong1".to_string();
+        }
+        let mut ok3 = sample_login();
+        ok3.base_mut().id = Uuid::new_v4();
+        if let Item::Login { fields, .. } = &mut ok3 {
+            fields.password = "YetAn0ther$Str1".to_string();
+        }
+        add_item(&mut v, weak);
+        add_item(&mut v, ok1);
+        add_item(&mut v, ok2);
+        add_item(&mut v, ok3);
+
+        let stats = compute_stats(&v, 1_700_000_000);
+        assert_eq!(stats.health_score, 75);
+    }
+
+    #[test]
+    fn stats_health_score_is_100_when_no_logins() {
+        let v = new_vault(vec![]);
+        let stats = compute_stats(&v, 1_700_000_000);
+        assert_eq!(stats.health_score, 100);
     }
 
     #[test]

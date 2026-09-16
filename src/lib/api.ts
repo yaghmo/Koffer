@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, UrlMetadata } from "./types";
+import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, UrlMetadata, VaultStats } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -17,6 +17,8 @@ export const api = {
 
   listItems: (query?: string, kind?: ItemKind) =>
     invoke<ItemMeta[]>("list_items", { query: query ?? null, kind: kind ?? null }),
+
+  vaultStats: () => invoke<VaultStats>("vault_stats"),
 
   getItem: (id: string) => invoke<Item>("get_item", { id }),
   saveItem: (item: Item) => invoke<void>("save_item", { item }),

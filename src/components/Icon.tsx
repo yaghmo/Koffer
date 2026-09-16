@@ -167,6 +167,16 @@ export function GridIcon({ size = 16, ...props }: IconProps) {
   );
 }
 
+export function ChartIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)}>
+      <path d="M4 20V10" />
+      <path d="M11 20V4" />
+      <path d="M18 20v-7" />
+    </svg>
+  );
+}
+
 export function UserIcon({ size = 16, ...props }: IconProps) {
   return (
     <svg {...base(size, props)}>

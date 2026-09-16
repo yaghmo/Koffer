@@ -39,6 +39,7 @@ pub fn run() {
             commands::is_unlocked,
             commands::autolock_status,
             commands::list_items,
+            commands::vault_stats,
             commands::get_item,
             commands::save_item,
             commands::delete_item,
@@ -65,7 +66,7 @@ pub use storage::{
     load_vault, load_vault_unverified, load_vault_with_key, save_vault,
 };
 pub use vault::{
-    add_item, delete_item, deserialize_vault, get_item, list_items, new_vault, serialize_vault,
-    update_item, Item, ItemBase, LoginFields, NoteFields, CardFields, PersonalInfo, Vault,
-    VaultError,
+    add_item, compute_stats, delete_item, deserialize_vault, get_item, list_items, new_vault,
+    serialize_vault, update_item, FlaggedItem, Item, ItemBase, LoginFields, NoteFields, CardFields,
+    PersonalInfo, Vault, VaultError, VaultStats,
 };

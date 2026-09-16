@@ -244,6 +244,13 @@ pub fn list_items(
 }
 
 #[tauri::command]
+pub fn vault_stats(state: State<'_, AppState>) -> Result<vault::VaultStats, String> {
+    let vault = state.vault.lock().unwrap();
+    let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
+    Ok(vault::compute_stats(vault, chrono::Utc::now().timestamp()))
+}
+
+#[tauri::command]
 pub fn get_item(id: String, state: State<'_, AppState>) -> Result<Item, String> {
     let vault = state.vault.lock().unwrap();
     let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;

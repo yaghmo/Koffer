@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
-import { GridIcon, KeyIcon, NoteIcon, CardIcon, UserIcon, SettingsIcon, LockIcon, UnlockIcon } from "./Icon";
+import { GridIcon, KeyIcon, NoteIcon, CardIcon, UserIcon, SettingsIcon, LockIcon, UnlockIcon, ChartIcon } from "./Icon";
 import { Emblem } from "./Emblem";
 
 interface Props {
   accountName: string;
   isUnlocked: boolean;
   onLock: () => void;
-  currentView: "vault" | "settings" | "personal";
-  onNavigate: (view: "vault" | "settings" | "personal") => void;
+  currentView: "vault" | "settings" | "personal" | "stats";
+  onNavigate: (view: "vault" | "settings" | "personal" | "stats") => void;
   currentFilter: "all" | "login" | "note" | "card";
   onFilterChange: (filter: "all" | "login" | "note" | "card") => void;
   autolock: { remainingSecs: number; timeoutSecs: number } | null;
@@ -123,6 +123,9 @@ export default function Sidebar({
             </div>
           </nav>
           <div className="flex flex-col gap-2 border-t border-white/6 p-3">
+            <NavRow active={currentView === "stats"} onClick={() => onNavigate("stats")}>
+              <ChartIcon size={16} /> Stats
+            </NavRow>
             <NavRow active={currentView === "settings"} onClick={() => onNavigate("settings")}>
               <SettingsIcon size={16} /> Settings
             </NavRow>

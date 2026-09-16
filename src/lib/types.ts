@@ -88,3 +88,19 @@ export interface UrlMetadata {
   title: string | null;
   favicon_data_url: string | null;
 }
+
+export interface FlaggedItem {
+  id: string;
+  title: string;
+}
+
+export interface VaultStats {
+  total: number;
+  logins: number;
+  notes: number;
+  cards: number;
+  weak: FlaggedItem[];
+  reused: FlaggedItem[];
+  old: FlaggedItem[];
+  health_score: number;
+}
