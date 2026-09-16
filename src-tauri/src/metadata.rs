@@ -46,7 +46,7 @@ pub async fn fetch_metadata(url: &str) -> Result<UrlMetadata, MetadataError> {
         .map_err(req_err)?;
 
     // A page cut off at the cap still has its <head>; parse what arrived.
-    let (html, _) = get_capped(&client, url, MAX_HTML_BYTES).await?;
+    let (html, _, _) = get_capped(&client, url, MAX_HTML_BYTES).await?;
     let html = String::from_utf8_lossy(&html);
 
     let title = extract_title(&html);
@@ -111,14 +111,47 @@ fn resolve_url(href: &str, base: &str) -> String {
 }
 
 async fn fetch_favicon(client: &reqwest::Client, url: &str) -> Result<String, MetadataError> {
-    let (bytes, truncated) = get_capped(client, url, MAX_ICON_BYTES).await?;
+    let (bytes, truncated, content_type) = get_capped(client, url, MAX_ICON_BYTES).await?;
     if truncated {
         return Err(MetadataError::Request("favicon too large".to_string()));
     }
 
-    // ponytail: no mime sniff, assume image. Browser decodes it.
+    let mime = sniff_mime(content_type.as_deref(), &bytes);
     let b64 = base64_encode(&bytes);
-    Ok(format!("data:image/x-icon;base64,{}", b64))
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+/// Real Content-Type wins when it names an actual image format (servers
+/// often send a generic application/octet-stream); otherwise sniff magic
+/// bytes. Wrapping the wrong bytes in the wrong data: URL mime (e.g. an SVG
+/// favicon labeled image/x-icon) makes it fail to render entirely.
+fn sniff_mime(content_type: Option<&str>, bytes: &[u8]) -> &'static str {
+    if let Some(ct) = content_type {
+        let ct = ct.split(';').next().unwrap_or(ct).trim();
+        match ct {
+            "image/svg+xml" => return "image/svg+xml",
+            "image/png" => return "image/png",
+            "image/jpeg" => return "image/jpeg",
+            "image/gif" => return "image/gif",
+            "image/webp" => return "image/webp",
+            "image/x-icon" | "image/vnd.microsoft.icon" => return "image/x-icon",
+            _ => {}
+        }
+    }
+    let head = &bytes[..bytes.len().min(16)];
+    if head.starts_with(b"\x89PNG") {
+        "image/png"
+    } else if head.starts_with(b"GIF87a") || head.starts_with(b"GIF89a") {
+        "image/gif"
+    } else if head.starts_with(b"\xFF\xD8") {
+        "image/jpeg"
+    } else if head.starts_with(b"\x00\x00\x01\x00") {
+        "image/x-icon"
+    } else if head.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'<') {
+        "image/svg+xml"
+    } else {
+        "image/x-icon"
+    }
 }
 
 fn req_err(e: reqwest::Error) -> MetadataError {
@@ -126,12 +159,13 @@ fn req_err(e: reqwest::Error) -> MetadataError {
 }
 
 /// GET a public http(s) URL, reading at most `max` body bytes. Returns the
-/// bytes and whether the body was cut off at the cap.
+/// bytes, whether the body was cut off at the cap, and the response's
+/// Content-Type header if present.
 async fn get_capped(
     client: &reqwest::Client,
     url: &str,
     max: usize,
-) -> Result<(Vec<u8>, bool), MetadataError> {
+) -> Result<(Vec<u8>, bool, Option<String>), MetadataError> {
     let parsed = reqwest::Url::parse(url).map_err(|e| MetadataError::Parse(e.to_string()))?;
     if !is_public_http(&parsed) {
         return Err(MetadataError::Request(
@@ -139,16 +173,21 @@ async fn get_capped(
         ));
     }
     let mut resp = client.get(parsed).send().await.map_err(req_err)?;
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
     let mut buf = Vec::new();
     while let Some(chunk) = resp.chunk().await.map_err(req_err)? {
         let room = max - buf.len();
         if chunk.len() > room {
             buf.extend_from_slice(&chunk[..room]);
-            return Ok((buf, true));
+            return Ok((buf, true, content_type));
         }
         buf.extend_from_slice(&chunk);
     }
-    Ok((buf, false))
+    Ok((buf, false, content_type))
 }
 
 /// True for http(s) URLs whose host is not loopback, private, link-local, or
@@ -261,5 +300,32 @@ mod tests {
         )
         .unwrap();
         assert_eq!(got, "https://example.com/assets/icon.png");
+    }
+
+    #[test]
+    fn sniffs_svg_favicons_by_content_type() {
+        assert_eq!(sniff_mime(Some("image/svg+xml; charset=utf-8"), b"<svg></svg>"), "image/svg+xml");
+    }
+
+    #[test]
+    fn sniffs_svg_favicons_by_magic_bytes_when_content_type_is_missing() {
+        assert_eq!(sniff_mime(None, b"<svg xmlns=\"...\"></svg>"), "image/svg+xml");
+    }
+
+    #[test]
+    fn sniffs_png_favicons_by_magic_bytes() {
+        let png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0];
+        assert_eq!(sniff_mime(None, &png), "image/png");
+    }
+
+    #[test]
+    fn ignores_a_generic_content_type_and_falls_back_to_sniffing() {
+        let png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0];
+        assert_eq!(sniff_mime(Some("application/octet-stream"), &png), "image/png");
+    }
+
+    #[test]
+    fn defaults_to_x_icon_when_unrecognized() {
+        assert_eq!(sniff_mime(None, b"not an image"), "image/x-icon");
     }
 }
