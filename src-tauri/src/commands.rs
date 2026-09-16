@@ -426,6 +426,22 @@ pub fn reset_vault(
     }
 }
 
+#[tauri::command]
+pub fn export_vault(dest: String, state: State<'_, AppState>) -> Result<(), String> {
+    let account = {
+        let a = state.current_account.lock().unwrap();
+        a.clone().ok_or_else(|| "locked".to_string())?
+    };
+    storage::export_vault_file(&account, std::path::Path::new(&dest)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn import_vault(src: String, name: String) -> Result<AccountMeta, String> {
+    let account = accounts::import_account(std::path::Path::new(&src), &name)
+        .map_err(|e| e.to_string())?;
+    Ok(AccountMeta::from(&account))
+}
+
 /// Fetch URL metadata: title + favicon.
 /// Returns None fields when scrape fails (not an error).
 #[tauri::command]

@@ -49,6 +49,8 @@ pub fn run() {
             commands::set_autolock_mins,
             commands::reset_activity,
             commands::reset_vault,
+            commands::export_vault,
+            commands::import_vault,
             commands::fetch_url_metadata,
             commands::open_login_url,
             commands::get_personal_info,
