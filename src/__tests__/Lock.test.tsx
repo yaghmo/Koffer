@@ -159,6 +159,24 @@ describe("AccountLock", () => {
     fireEvent.click(screen.getByRole("button", { name: /create one/i }));
     expect(onAddNew).toHaveBeenCalled();
   });
+
+  // Regression test: an account list going from empty to populated (e.g. a
+  // freshly imported vault on a machine with zero accounts) must land the
+  // user on that account's unlock form rather than staying stuck on the
+  // "No vaults exist" empty state. This previously failed because the
+  // selection-repair effect was guarded by `selectedId &&`, which never
+  // fires when selectedId starts as "" (the zero-accounts default).
+  it("auto-selects the newly available account when the list goes from empty to populated", () => {
+    const { rerender } = render(
+      <AccountLock accounts={[]} onUnlocked={() => {}} onAddNew={() => {}} />
+    );
+    expect(screen.getByText(/no vaults exist/i)).toBeTruthy();
+
+    rerender(<AccountLock accounts={[acct1]} onUnlocked={() => {}} onAddNew={() => {}} />);
+
+    expect(screen.getByText("user1")).toBeTruthy();
+    expect(screen.queryByText(/no vaults exist/i)).toBeNull();
+  });
 });
 
 describe("AccountLock — import vault", () => {

@@ -37,7 +37,10 @@ export default function App() {
   useEffect(() => {
     api.listAccounts().then((list) => {
       setAccounts(list);
-      setStatus(list.length === 0 ? "no-accounts" : "locked");
+      // Zero accounts is not itself a reason to skip AccountLock — its own
+      // empty state ("No vaults exist on this device") already handles that
+      // and offers both "Create one" and "Import vault" (onAddNew/import).
+      setStatus("locked");
     });
     const unlisten = onVaultLocked(() => {
       setStatus("locked");
@@ -132,8 +135,12 @@ export default function App() {
     );
   }
 
-  // A reset can remove the last account while status is "locked".
-  if (status === "no-accounts" || (status === "locked" && accounts.length === 0)) {
+  // "no-accounts" is reached only via AccountLock's own "Create one"/"Add
+  // another vault" affordance (onAddNew below) — an empty account list on
+  // its own (fresh install, or a reset that removed the last account) stays
+  // on "locked" so AccountLock's empty state (with its "Import vault"
+  // option) is reachable.
+  if (status === "no-accounts") {
     return (
       <div className="h-screen bg-surface-container-lowest">
         <main className="h-full">

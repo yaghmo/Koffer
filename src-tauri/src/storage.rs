@@ -47,7 +47,17 @@ pub fn vault_exists(account: &Account) -> bool {
 }
 
 pub fn export_vault_file(account: &Account, dest: &std::path::Path) -> Result<(), StorageError> {
-    fs::copy(vault_path(account), dest)?;
+    let src = vault_path(account);
+    // Guard against exporting onto the live vault file itself. Both paths
+    // are already absolute (built from the same data_dir()), so a plain
+    // path comparison is enough — canonicalize() would require dest to
+    // already exist, which isn't true for the common "new file" case, so
+    // it's the wrong tool here. Treated as a no-op success: the vault file
+    // already *is* at dest, so nothing needs to happen.
+    if src == dest {
+        return Ok(());
+    }
+    fs::copy(src, dest)?;
     Ok(())
 }
 
@@ -202,6 +212,22 @@ mod tests {
         let exported = std::fs::read(&dest).unwrap();
         assert_eq!(exported, original);
         std::fs::remove_file(&dest).unwrap();
+    }
+
+    #[test]
+    fn export_vault_file_to_itself_is_a_noop_not_a_wipe() {
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
+        let salt = crate::crypto::random_bytes(16);
+        let key = derive_key("master", &salt);
+        let v = new_vault(salt);
+        save_vault(&acct, &v, &key).unwrap();
+
+        let original = std::fs::read(vault_path(&acct)).unwrap();
+        export_vault_file(&acct, &vault_path(&acct)).unwrap();
+        let after = std::fs::read(vault_path(&acct)).unwrap();
+        assert_eq!(after, original);
     }
 
     #[test]

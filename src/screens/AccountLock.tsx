@@ -36,7 +36,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   // longer exists and reset the form. Without this the deleted vault keeps
   // showing as "selected" until the user picks another one.
   useEffect(() => {
-    if (selectedId && !accounts.some((a) => a.id === selectedId)) {
+    if (!accounts.some((a) => a.id === selectedId)) {
       setSelectedId(accounts[0]?.id ?? "");
       setPw("");
       setError(null);
@@ -69,11 +69,15 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   }
 
   async function pickImportFile() {
-    const path = await open({ multiple: false });
-    if (typeof path === "string") {
-      setImportPath(path);
-      setImportName("");
-      setImportError(null);
+    try {
+      const path = await open({ multiple: false });
+      if (typeof path === "string") {
+        setImportPath(path);
+        setImportName("");
+        setImportError(null);
+      }
+    } catch (err) {
+      setImportError(String(err));
     }
   }
 
@@ -83,8 +87,9 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
     setImportBusy(true);
     setImportError(null);
     try {
-      await api.importVault(importPath, importName);
+      const result = await api.importVault(importPath, importName);
       setImportPath(null);
+      setSelectedId(result.id);
       await onImported?.();
     } catch (err) {
       setImportError(String(err));
@@ -216,6 +221,12 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
         >
           Import vault
         </button>
+
+        {!importPath && importError && (
+          <p role="alert" className="text-body-sm text-error">
+            {importError}
+          </p>
+        )}
 
         {importPath && (
           <form onSubmit={confirmImport} className="flex w-full flex-col gap-3 border-t border-white/6 pt-4">

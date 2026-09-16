@@ -19,6 +19,7 @@ export default function Settings({ accountId, onLock }: Props) {
   const [logosResult, setLogosResult] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportResult, setExportResult] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getConfig().then((cfg) => setAutolockMins(cfg.autolock_mins));
@@ -61,7 +62,14 @@ export default function Settings({ accountId, onLock }: Props) {
   }
 
   async function exportBackup() {
-    const dest = await save({ defaultPath: "vault-backup.enc" });
+    setExportError(null);
+    let dest: string | null;
+    try {
+      dest = await save({ defaultPath: "vault-backup.enc" });
+    } catch (err) {
+      setExportError(`Export failed: ${String(err)}`);
+      return;
+    }
     if (!dest) return;
     setExportBusy(true);
     setExportResult(null);
@@ -69,7 +77,7 @@ export default function Settings({ accountId, onLock }: Props) {
       await api.exportVault(dest);
       setExportResult("Backup saved.");
     } catch (err) {
-      setExportResult(`Export failed: ${String(err)}`);
+      setExportError(`Export failed: ${String(err)}`);
     } finally {
       setExportBusy(false);
     }
@@ -158,6 +166,11 @@ export default function Settings({ accountId, onLock }: Props) {
           {exportBusy ? "Exporting…" : "Export vault backup"}
         </button>
         {exportResult && <p className="text-body-sm text-on-surface-variant">{exportResult}</p>}
+        {exportError && (
+          <p role="alert" className="text-body-sm text-error">
+            {exportError}
+          </p>
+        )}
       </div>
 
       <div className="rounded-panel border border-error/30 bg-error/5 p-5">

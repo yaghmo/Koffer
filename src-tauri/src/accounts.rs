@@ -29,6 +29,8 @@ pub enum AccountError {
     NotFound(String),
     #[error("account name cannot be empty")]
     EmptyName,
+    #[error("not a valid vault file")]
+    InvalidVaultFile,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,11 +167,33 @@ pub fn create_account(name: &str) -> Result<Account, AccountError> {
     Ok(account)
 }
 
+/// Narrow header-format precheck (no decryption, no content parsing): reject
+/// anything whose magic bytes/version don't look like a vault file at all,
+/// so a garbage import can't create an account that's undeletable (unlock
+/// and reset_vault both require successful decryption, which is unreachable
+/// for a garbage file). Mirrors the same check `storage::load_vault_unverified`
+/// does before trusting a file's header.
+fn precheck_vault_header(src: &std::path::Path) -> Result<(), AccountError> {
+    let bytes = fs::read(src)?;
+    if bytes.len() < 4 + 4 + 16 + 12 {
+        return Err(AccountError::InvalidVaultFile);
+    }
+    if &bytes[0..4] != crate::storage::MAGIC {
+        return Err(AccountError::InvalidVaultFile);
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    if version != crate::storage::VERSION {
+        return Err(AccountError::InvalidVaultFile);
+    }
+    Ok(())
+}
+
 pub fn import_account(src: &std::path::Path, name: &str) -> Result<Account, AccountError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err(AccountError::EmptyName);
     }
+    precheck_vault_header(src)?;
     migrate_legacy_if_needed()?;
     let id = Uuid::new_v4();
     let vault_filename = format!("vault-{}.enc", id);
@@ -252,6 +276,19 @@ mod tests {
         assert!(create_account("   ").is_err());
     }
 
+    /// Builds bytes that pass the header precheck (valid MAGIC/VERSION) but
+    /// are not a real encrypted vault otherwise — good enough for tests that
+    /// only care about the copy/registry behavior, not decryption.
+    fn fixture_vault_bytes(tail: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(crate::storage::MAGIC);
+        bytes.extend_from_slice(&crate::storage::VERSION.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 16]); // fake salt
+        bytes.extend_from_slice(&[0u8; 12]); // fake nonce
+        bytes.extend_from_slice(tail);
+        bytes
+    }
+
     #[test]
     fn import_account_copies_file_and_registers_new_account() {
         let _g = lock_env();
@@ -259,16 +296,29 @@ mod tests {
         let src_dir = std::env::temp_dir().join(format!("import-src-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&src_dir).unwrap();
         let src = src_dir.join("backup.enc");
-        std::fs::write(&src, b"pretend-encrypted-bytes").unwrap();
+        let content = fixture_vault_bytes(b"pretend-ciphertext");
+        std::fs::write(&src, &content).unwrap();
 
         let acct = import_account(&src, "restored").unwrap();
 
         assert_eq!(acct.name, "restored");
         let copied = std::fs::read(data_dir().join(&acct.vault_filename)).unwrap();
-        assert_eq!(copied, b"pretend-encrypted-bytes");
+        assert_eq!(copied, content);
         let list = list_accounts().unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].id, acct.id);
+    }
+
+    #[test]
+    fn import_account_rejects_garbage_file_without_registering() {
+        let _g = lock_env();
+        fresh_tmp();
+        let src_dir = std::env::temp_dir().join(format!("import-src-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let src = src_dir.join("garbage.enc");
+        std::fs::write(&src, b"definitely not a vault file").unwrap();
+        assert!(import_account(&src, "restored").is_err());
+        assert!(list_accounts().unwrap().is_empty());
     }
 
     #[test]
