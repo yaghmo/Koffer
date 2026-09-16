@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
-import { SettingsIcon, ShieldIcon, ImageIcon, XIcon } from "../components/Icon";
+import { SettingsIcon, ShieldIcon, ImageIcon, XIcon, DatabaseIcon } from "../components/Icon";
 import { useHotkey } from "../lib/useHotkey";
 
 interface Props {
@@ -16,6 +17,8 @@ export default function Settings({ accountId, onLock }: Props) {
   const [resetError, setResetError] = useState<string | null>(null);
   const [logosBusy, setLogosBusy] = useState(false);
   const [logosResult, setLogosResult] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportResult, setExportResult] = useState<string | null>(null);
 
   useEffect(() => {
     api.getConfig().then((cfg) => setAutolockMins(cfg.autolock_mins));
@@ -54,6 +57,21 @@ export default function Settings({ accountId, onLock }: Props) {
       setLogosResult(`Updated ${updated} of ${metas.length} login logos.`);
     } finally {
       setLogosBusy(false);
+    }
+  }
+
+  async function exportBackup() {
+    const dest = await save({ defaultPath: "vault-backup.enc" });
+    if (!dest) return;
+    setExportBusy(true);
+    setExportResult(null);
+    try {
+      await api.exportVault(dest);
+      setExportResult("Backup saved.");
+    } catch (err) {
+      setExportResult(`Export failed: ${String(err)}`);
+    } finally {
+      setExportBusy(false);
     }
   }
 
@@ -125,6 +143,21 @@ export default function Settings({ accountId, onLock }: Props) {
           {logosBusy ? "Refreshing…" : "Refresh site logos"}
         </button>
         {logosResult && <p className="text-body-sm text-on-surface-variant">{logosResult}</p>}
+      </div>
+
+      <div className="card flex flex-col gap-3 p-5">
+        <div className="flex items-center gap-2 text-on-surface">
+          <DatabaseIcon size={16} />
+          <h2 className="text-body-md font-semibold">Backup</h2>
+        </div>
+        <p className="text-body-sm text-on-surface-variant">
+          Save a copy of your encrypted vault file so a lost or replaced device doesn't mean lost
+          data. The file only opens with your master password.
+        </p>
+        <button type="button" className="btn-secondary self-start" onClick={exportBackup} disabled={exportBusy}>
+          {exportBusy ? "Exporting…" : "Export vault backup"}
+        </button>
+        {exportResult && <p className="text-body-sm text-on-surface-variant">{exportResult}</p>}
       </div>
 
       <div className="rounded-panel border border-error/30 bg-error/5 p-5">

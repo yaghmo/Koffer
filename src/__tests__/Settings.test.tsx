@@ -30,7 +30,12 @@ vi.mock("../lib/api", () => ({
         : Promise.resolve({ title: null, favicon_data_url: null })
     ),
     saveItem: vi.fn().mockResolvedValue(undefined),
+    exportVault: vi.fn().mockResolvedValue(undefined),
   },
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  save: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -49,5 +54,29 @@ describe("Settings — site logos", () => {
         expect.objectContaining({ id: "1", favicon: "data:image/png;base64,abc" })
       )
     );
+  });
+});
+
+describe("Settings — export backup", () => {
+  it("saves the vault file to the chosen path", async () => {
+    const { api } = await import("../lib/api");
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    (save as any).mockResolvedValue("C:\\backups\\vault-backup.enc");
+    render(<Settings accountId="acct-1" onLock={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /export vault backup/i }));
+    await waitFor(() =>
+      expect(api.exportVault).toHaveBeenCalledWith("C:\\backups\\vault-backup.enc")
+    );
+    expect(await screen.findByText(/backup saved/i)).toBeTruthy();
+  });
+
+  it("does nothing when the save dialog is cancelled", async () => {
+    const { api } = await import("../lib/api");
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    (save as any).mockResolvedValue(null);
+    render(<Settings accountId="acct-1" onLock={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /export vault backup/i }));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    expect(api.exportVault).not.toHaveBeenCalled();
   });
 });
