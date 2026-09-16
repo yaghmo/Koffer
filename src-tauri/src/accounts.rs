@@ -165,6 +165,30 @@ pub fn create_account(name: &str) -> Result<Account, AccountError> {
     Ok(account)
 }
 
+pub fn import_account(src: &std::path::Path, name: &str) -> Result<Account, AccountError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AccountError::EmptyName);
+    }
+    migrate_legacy_if_needed()?;
+    let id = Uuid::new_v4();
+    let vault_filename = format!("vault-{}.enc", id);
+    let config_filename = format!("config-{}.json", id);
+    fs::create_dir_all(data_dir())?;
+    fs::copy(src, data_dir().join(&vault_filename))?;
+
+    let account = Account {
+        id,
+        name: trimmed.to_string(),
+        vault_filename,
+        config_filename,
+    };
+    let mut all = read_registry()?;
+    all.push(account.clone());
+    write_registry(&all)?;
+    Ok(account)
+}
+
 pub fn delete_account(id: Uuid) -> Result<(), AccountError> {
     let mut all = read_registry()?;
     let pos = all
@@ -226,6 +250,45 @@ mod tests {
         fresh_tmp();
         assert!(create_account("").is_err());
         assert!(create_account("   ").is_err());
+    }
+
+    #[test]
+    fn import_account_copies_file_and_registers_new_account() {
+        let _g = lock_env();
+        fresh_tmp();
+        let src_dir = std::env::temp_dir().join(format!("import-src-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let src = src_dir.join("backup.enc");
+        std::fs::write(&src, b"pretend-encrypted-bytes").unwrap();
+
+        let acct = import_account(&src, "restored").unwrap();
+
+        assert_eq!(acct.name, "restored");
+        let copied = std::fs::read(data_dir().join(&acct.vault_filename)).unwrap();
+        assert_eq!(copied, b"pretend-encrypted-bytes");
+        let list = list_accounts().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, acct.id);
+    }
+
+    #[test]
+    fn import_account_rejects_empty_name() {
+        let _g = lock_env();
+        fresh_tmp();
+        let src_dir = std::env::temp_dir().join(format!("import-src-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let src = src_dir.join("backup.enc");
+        std::fs::write(&src, b"x").unwrap();
+        assert!(import_account(&src, "").is_err());
+    }
+
+    #[test]
+    fn import_account_errors_on_missing_source_without_registering() {
+        let _g = lock_env();
+        fresh_tmp();
+        let missing = std::env::temp_dir().join(format!("no-such-file-{}.enc", Uuid::new_v4()));
+        assert!(import_account(&missing, "restored").is_err());
+        assert!(list_accounts().unwrap().is_empty());
     }
 
     #[test]
