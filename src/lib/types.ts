@@ -84,6 +84,11 @@ export interface Account {
   name: string;
 }
 
+export interface AccountMeta {
+  id: string;
+  name: string;
+}
+
 export interface UrlMetadata {
   title: string | null;
   favicon_data_url: string | null;

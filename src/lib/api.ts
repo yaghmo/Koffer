@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, UrlMetadata, VaultStats } from "./types";
+import type { Account, AccountMeta, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, UrlMetadata, VaultStats } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -35,6 +35,10 @@ export const api = {
   resetActivity: () => invoke<void>("reset_activity"),
   resetVault: (password: string, accountId: string) =>
     invoke<void>("reset_vault", { password, accountId }),
+
+  exportVault: (dest: string) => invoke<void>("export_vault", { dest }),
+  importVault: (src: string, name: string) =>
+    invoke<AccountMeta>("import_vault", { src, name }),
 
   fetchUrlMetadata: (url: string) =>
     invoke<UrlMetadata>("fetch_url_metadata", { url }),
