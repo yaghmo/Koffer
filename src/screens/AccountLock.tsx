@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
-import { EyeIcon, EyeOffIcon, PlusIcon, LockIcon, UnlockIcon } from "../components/Icon";
+import { EyeIcon, EyeOffIcon, PlusIcon, LockIcon, UnlockIcon, CheckIcon } from "../components/Icon";
 import { Emblem } from "../components/Emblem";
 import { useHotkey } from "../lib/useHotkey";
-import { useOutsideClose } from "../lib/useOutsideClose";
 
 const CRYPTO_BADGES = ["ARGON2ID", "AES-256-GCM", "LOCAL · AIR-GAPPED"];
 
@@ -23,7 +22,6 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
-  const switcherRef = useRef<HTMLDivElement>(null);
   const [importPath, setImportPath] = useState<string | null>(null);
   const [importName, setImportName] = useState("");
   const [importBusy, setImportBusy] = useState(false);
@@ -43,7 +41,6 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   accountsRef.current = accounts;
 
   useHotkey("escape", () => setSwitcherOpen(false), switcherOpen);
-  useOutsideClose(switcherRef, switcherOpen, () => setSwitcherOpen(false));
 
   // After a delete (or any account list change), drop a selection that no
   // longer exists and reset the form. Without this the deleted vault keeps
@@ -153,43 +150,20 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           <form onSubmit={submit} className="flex w-full flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <p className="label-md">Vault</p>
-              <div className="relative" ref={switcherRef}>
-                <div className="flex items-center justify-between gap-3 rounded-control border border-white/8 bg-surface px-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-body-md font-medium text-on-surface">{selected.name}</p>
-                    <p className="label-md">Local vault · this device</p>
-                  </div>
-                  {accounts.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setSwitcherOpen((o) => !o)}
-                      aria-haspopup="menu"
-                      aria-expanded={switcherOpen}
-                      className="btn-secondary shrink-0"
-                    >
-                      Switch
-                    </button>
-                  )}
+              <div className="flex items-center justify-between gap-3 rounded-control border border-white/8 bg-surface px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-body-md font-medium text-on-surface">{selected.name}</p>
+                  <p className="label-md">Local vault · this device</p>
                 </div>
-                {switcherOpen && (
-                  <div
-                    role="menu"
-                    className="absolute left-0 top-full z-20 mt-1 flex w-full flex-col overflow-hidden rounded-control border border-white/8 bg-surface shadow-lg"
+                {accounts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setSwitcherOpen(true)}
+                    aria-haspopup="dialog"
+                    className="btn-secondary shrink-0"
                   >
-                    {accounts
-                      .filter((a) => a.id !== selectedId)
-                      .map((a) => (
-                        <button
-                          key={a.id}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => pickAccount(a.id)}
-                          className="px-3 py-2 text-left text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-white/4"
-                        >
-                          {a.name}
-                        </button>
-                      ))}
-                  </div>
+                    Switch
+                  </button>
                 )}
               </div>
             </div>
@@ -285,6 +259,49 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           </form>
         )}
       </div>
+
+      {switcherOpen && accounts.length > 1 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
+          onClick={() => setSwitcherOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Switch vault"
+            className="dialog flex w-full max-w-[380px] flex-col gap-3 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="label-sm">Switch · Vault</p>
+            <h2 className="text-headline-sm text-on-surface">Choose a vault</h2>
+            <div className="flex flex-col gap-1">
+              {accounts.map((a) => {
+                const isCurrent = a.id === selectedId;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    disabled={isCurrent}
+                    onClick={() => pickAccount(a.id)}
+                    className={`flex items-center justify-between gap-3 rounded-control px-3 py-2.5 text-left text-body-sm transition-colors duration-150 ease-out ${
+                      isCurrent
+                        ? "cursor-default text-on-surface-variant"
+                        : "text-on-surface hover:bg-white/4"
+                    }`}
+                  >
+                    {a.name}
+                    {isCurrent && (
+                      <span className="label-sm flex items-center gap-1 text-secondary">
+                        <CheckIcon size={14} /> Current
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

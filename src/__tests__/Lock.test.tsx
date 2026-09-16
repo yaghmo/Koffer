@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import AccountLock from "../screens/AccountLock";
 import type { Account } from "../lib/types";
 
@@ -68,7 +68,7 @@ describe("AccountLock", () => {
     expect(await screen.findByText(/wrong password/i)).toBeTruthy();
   });
 
-  it("renders a Switch button and reveals the other account when clicked", () => {
+  it("renders a Switch button that opens a popup listing every vault", () => {
     render(
       <AccountLock
         accounts={[acct1, acct2]}
@@ -76,13 +76,15 @@ describe("AccountLock", () => {
         onAddNew={() => {}}
       />
     );
-    expect(screen.getByText("user1")).toBeTruthy();
-    expect(screen.queryByText("user2")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /switch/i }));
-    expect(screen.getByText("user2")).toBeTruthy();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("user1")).toBeTruthy();
+    expect(within(dialog).getByText(/current/i)).toBeTruthy();
+    expect(within(dialog).getByText("user2")).toBeTruthy();
   });
 
-  it("picking a different account switches the unlock target", async () => {
+  it("picking a different account in the popup switches the unlock target and closes the popup", async () => {
     const { api } = await import("../lib/api");
     render(
       <AccountLock
@@ -92,7 +94,8 @@ describe("AccountLock", () => {
       />
     );
     fireEvent.click(screen.getByRole("button", { name: /switch/i }));
-    fireEvent.click(screen.getByText("user2"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("user2"));
+    expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.change(screen.getByLabelText("Master password"), {
       target: { value: "pw2" },
     });
@@ -127,7 +130,7 @@ describe("AccountLock", () => {
     expect(screen.queryByRole("button", { name: /reset/i })).toBeNull();
   });
 
-  it("removes a deleted account from the switcher immediately when the prop changes", () => {
+  it("removes a deleted account from the switcher popup immediately when the prop changes", () => {
     const { rerender } = render(
       <AccountLock
         accounts={[acct1, acct2]}
@@ -136,8 +139,9 @@ describe("AccountLock", () => {
       />
     );
     fireEvent.click(screen.getByRole("button", { name: /switch/i }));
-    expect(screen.getByText("user1")).toBeTruthy();
-    expect(screen.getByText("user2")).toBeTruthy();
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("user1")).toBeTruthy();
+    expect(within(dialog).getByText("user2")).toBeTruthy();
     rerender(
       <AccountLock
         accounts={[acct1]}
@@ -145,6 +149,7 @@ describe("AccountLock", () => {
         onAddNew={() => {}}
       />
     );
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("user1")).toBeTruthy();
     expect(screen.queryByText("user2")).toBeNull();
   });
