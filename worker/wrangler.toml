@@ -1,0 +1,7 @@
+name = "vault-backup"
+main = "backup.js"
+compatibility_date = "2026-01-01"
+
+[[r2_buckets]]
+binding = "VAULT_BUCKET"
+bucket_name = "vault-backup"
