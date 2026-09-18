@@ -863,6 +863,56 @@ pub fn clear_backup_config(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether the vault has been written since the last successful upload.
+///
+/// This compares the file's mtime against a stored timestamp rather than
+/// tracking a dirty flag: `save_vault` has nine call sites and no shared
+/// wrapper, so a flag would mean nine edits today and a missed one the first
+/// time a tenth call site appears. The mtime is the same signal with none of
+/// that surface, and it survives a restart.
+pub fn needs_upload(vault_path: &std::path::Path, last_backup_secs: i64) -> bool {
+    let modified = match std::fs::metadata(vault_path).and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let secs = match modified.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_secs() as i64,
+        Err(_) => return false,
+    };
+    secs > last_backup_secs
+}
+
+/// Upload the vault now, whether or not it has changed. Wired to the "Back up
+/// now" button, which is an explicit instruction.
+#[tauri::command]
+pub async fn backup_now(state: State<'_, AppState>) -> Result<(), String> {
+    let (account, cfg) = {
+        let account = current_account(&state)?;
+        let vault = state.vault.lock().unwrap();
+        let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
+        let cfg = vault
+            .backup
+            .clone()
+            .ok_or_else(|| "cloud backup is not configured".to_string())?;
+        (account, cfg)
+    };
+
+    // The on-disk file is already ciphertext, so the upload needs no key.
+    let path = storage::vault_path(&account);
+    let blob = std::fs::read(&path).map_err(|e| e.to_string())?;
+
+    cloud::upload(&cfg, blob).await.map_err(|e| {
+        crate::log_warn!("backup_now", "failed: {e}");
+        e.to_string()
+    })?;
+
+    let mut c = config::load(&account);
+    c.last_cloud_backup_secs = chrono::Utc::now().timestamp();
+    let _ = config::save(&account, &c);
+    crate::log_info!("backup_now", "cloud backup uploaded");
+    Ok(())
+}
+
 /// Fetch URL metadata: title + favicon.
 /// Returns None fields when scrape fails (not an error).
 #[tauri::command]
@@ -1069,5 +1119,45 @@ mod tests {
         assert!(s.autolock_if_idle());
         assert!(s.key.lock().unwrap().is_none());
         assert!(s.vault.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn needs_upload_is_true_when_never_backed_up() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("needs-upload-never");
+        let p = crate::storage::data_dir().join("v.enc");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, b"x").unwrap();
+        assert!(needs_upload(&p, 0));
+    }
+
+    #[test]
+    fn needs_upload_is_false_when_the_stamp_is_newer_than_the_file() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("needs-upload-fresh");
+        let p = crate::storage::data_dir().join("v.enc");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, b"x").unwrap();
+        let future = chrono::Utc::now().timestamp() + 3600;
+        assert!(!needs_upload(&p, future));
+    }
+
+    #[test]
+    fn needs_upload_is_true_when_the_file_is_newer_than_the_stamp() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("needs-upload-stale");
+        let p = crate::storage::data_dir().join("v.enc");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, b"x").unwrap();
+        let ancient = chrono::Utc::now().timestamp() - 86_400;
+        assert!(needs_upload(&p, ancient));
+    }
+
+    #[test]
+    fn needs_upload_is_false_when_the_vault_file_is_missing() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("needs-upload-missing");
+        let p = crate::storage::data_dir().join("nope.enc");
+        assert!(!needs_upload(&p, 0));
     }
 }

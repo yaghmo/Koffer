@@ -67,6 +67,7 @@ pub fn run() {
             commands::get_backup_config,
             commands::set_backup_config,
             commands::clear_backup_config,
+            commands::backup_now,
             commands::fetch_url_metadata,
             commands::open_login_url,
             commands::get_personal_info,
