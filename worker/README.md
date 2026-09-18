@@ -89,7 +89,7 @@ path: 404. Any other method: 405.
 ## Tests
 
 ```bash
-node --test worker/
+node --test worker/backup.test.js
 ```
 
 Requires Node 20+.
