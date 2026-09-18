@@ -5,6 +5,7 @@
 
 use crate::accounts::{self, Account, AccountError, AccountMeta};
 use crate::autolock::AutoLock;
+use crate::cloud;
 use crate::config::{self, Config};
 use crate::metadata::{self, UrlMetadata};
 use crate::password::{self, GenOpts};
@@ -625,6 +626,7 @@ pub fn log_event(level: String, scope: String, message: String) {
 pub struct SecurityState {
     pub has_recovery: bool,
     pub last_export_secs: i64,
+    pub last_cloud_backup_secs: i64,
 }
 
 /// What the Security card in Settings shows: whether a recovery code exists
@@ -632,9 +634,11 @@ pub struct SecurityState {
 #[tauri::command]
 pub fn security_state(state: State<'_, AppState>) -> Result<SecurityState, String> {
     let account = current_account(&state)?;
+    let cfg = config::load(&account);
     Ok(SecurityState {
         has_recovery: storage::has_recovery_slot(&account),
-        last_export_secs: config::load(&account).last_export_secs,
+        last_export_secs: cfg.last_export_secs,
+        last_cloud_backup_secs: cfg.last_cloud_backup_secs,
     })
 }
 
@@ -796,6 +800,69 @@ pub fn import_vault(src: String, name: String) -> Result<AccountMeta, String> {
     Ok(AccountMeta::from(&account))
 }
 
+/// What the Cloud backup card in Settings shows. Deliberately has no token
+/// field: the UI never needs the secret back, only whether one is set.
+#[derive(Serialize, Clone)]
+pub struct BackupState {
+    pub configured: bool,
+    pub url: String,
+    pub last_backup_secs: i64,
+}
+
+#[tauri::command]
+pub fn get_backup_config(state: State<'_, AppState>) -> Result<BackupState, String> {
+    let account = current_account(&state)?;
+    let vault = state.vault.lock().unwrap();
+    let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
+    let cfg = vault.backup.as_ref();
+    Ok(BackupState {
+        configured: cfg.is_some(),
+        url: cfg.map(|c| c.url.clone()).unwrap_or_default(),
+        last_backup_secs: config::load(&account).last_cloud_backup_secs,
+    })
+}
+
+#[tauri::command]
+pub fn set_backup_config(
+    url: String,
+    put_token: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    cloud::validate_url(&url).map_err(|e| e.to_string())?;
+    if put_token.trim().is_empty() {
+        return Err("token cannot be empty".into());
+    }
+    let account = current_account(&state)?;
+    let keys = state.key.lock().unwrap();
+    let keys = keys.as_ref().ok_or_else(|| "locked".to_string())?;
+    let mut vault = state.vault.lock().unwrap();
+    let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
+
+    vault.backup = Some(cloud::BackupConfig {
+        url: url.trim().trim_end_matches('/').to_string(),
+        put_token: put_token.trim().to_string(),
+    });
+    storage::save_vault(&account, vault, keys).map_err(|e| e.to_string())?;
+    // The URL is as sensitive as the domain list the vault protects, so it is
+    // absent here on purpose.
+    crate::log_info!("set_backup_config", "cloud backup configured");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_backup_config(state: State<'_, AppState>) -> Result<(), String> {
+    let account = current_account(&state)?;
+    let keys = state.key.lock().unwrap();
+    let keys = keys.as_ref().ok_or_else(|| "locked".to_string())?;
+    let mut vault = state.vault.lock().unwrap();
+    let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
+
+    vault.backup = None;
+    storage::save_vault(&account, vault, keys).map_err(|e| e.to_string())?;
+    crate::log_info!("clear_backup_config", "cloud backup disabled");
+    Ok(())
+}
+
 /// Fetch URL metadata: title + favicon.
 /// Returns None fields when scrape fails (not an error).
 #[tauri::command]
@@ -882,6 +949,19 @@ fn login_password<'a>(vault: &'a Vault, fields: &'a LoginFields) -> Option<&'a s
 mod tests {
     use super::*;
     use crate::vault::{new_vault, ItemBase};
+
+    #[test]
+    fn backup_state_never_carries_the_token() {
+        // The UI only ever needs to know that a token exists. Returning it
+        // would push a live credential across IPC on every Settings render.
+        let s = BackupState {
+            configured: true,
+            url: "https://w.example.dev".into(),
+            last_backup_secs: 42,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!json.contains("token"), "BackupState exposes a token field: {json}");
+    }
 
     fn login(method: &str, username: &str, password: &str) -> LoginFields {
         LoginFields {
