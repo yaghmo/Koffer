@@ -35,6 +35,26 @@ impl AppState {
         }
     }
 
+    /// Read everything an upload needs while the vault is still unlocked.
+    ///
+    /// Returns `None` when there is nothing to do: locked, unconfigured, or
+    /// unchanged since the last successful upload. The caller runs the upload
+    /// after the wipe, which is safe because the job carries only the file
+    /// path — the bytes on disk are already ciphertext.
+    fn take_backup_job(&self) -> Option<(cloud::BackupConfig, std::path::PathBuf, Account)> {
+        let account = self.current_account.lock().ok()?.clone()?;
+        let cfg = {
+            let vault = self.vault.lock().ok()?;
+            vault.as_ref()?.backup.clone()?
+        };
+        let path = storage::vault_path(&account);
+        let last = config::load(&account).last_cloud_backup_secs;
+        if !needs_upload(&path, last) {
+            return None;
+        }
+        Some((cfg, path, account))
+    }
+
     fn lock_and_clear(&self) {
         if let Ok(mut k) = self.key.lock() {
             if let Some(keys) = k.as_mut() {
@@ -60,6 +80,21 @@ impl AppState {
         }
     }
 
+    /// Lock at the end of a session, backing up first if the vault changed.
+    ///
+    /// Separate from `lock_and_clear` because `reset_vault` also locks, and a
+    /// reset means the user is destroying this vault — uploading it on the way
+    /// out would hand the cloud a copy of exactly what they asked to erase.
+    fn lock_and_backup(&self) {
+        // Captured before the wipe: afterwards the vault's backup config is
+        // gone from memory. The upload itself runs from the on-disk file.
+        let job = self.take_backup_job();
+        self.lock_and_clear();
+        if let Some((cfg, path, account)) = job {
+            spawn_backup(cfg, path, account);
+        }
+    }
+
     /// Arm the idle timer for a new session with the account's configured
     /// timeout. Call before storing the key, so the watchdog never sees an
     /// unlocked vault paired with the previous session's expired timer.
@@ -80,7 +115,7 @@ impl AppState {
         }
         let expired = self.autolock.lock().map(|mut a| a.tick()).unwrap_or(false);
         if expired {
-            self.lock_and_clear();
+            self.lock_and_backup();
         }
         expired
     }
@@ -228,7 +263,7 @@ pub fn unlock_vault(
 #[tauri::command]
 pub fn lock_vault(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     crate::log_info!("lock_vault", "locked");
-    state.lock_and_clear();
+    state.lock_and_backup();
     let _ = app.emit("vault://locked", ());
     Ok(())
 }
@@ -888,6 +923,33 @@ pub fn needs_upload(vault_path: &std::path::Path, last_backup_secs: i64) -> bool
     secs >= last_backup_secs
 }
 
+/// Fire the upload without blocking the caller.
+///
+/// Locking must never wait on the network: the keys are already wiped by the
+/// time this runs, and a hung request must not hold the app. A failure needs
+/// no retry queue either — the stamp is only written on success, so the file's
+/// mtime stays newer and the next lock tries again.
+pub fn spawn_backup(cfg: cloud::BackupConfig, path: std::path::PathBuf, account: Account) {
+    tauri::async_runtime::spawn(async move {
+        let blob = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) => {
+                crate::log_warn!("auto_backup", "could not read vault: {e}");
+                return;
+            }
+        };
+        match cloud::upload(&cfg, blob).await {
+            Ok(()) => {
+                let mut c = config::load(&account);
+                c.last_cloud_backup_secs = chrono::Utc::now().timestamp();
+                let _ = config::save(&account, &c);
+                crate::log_info!("auto_backup", "cloud backup uploaded on lock");
+            }
+            Err(e) => crate::log_warn!("auto_backup", "failed: {e}"),
+        }
+    });
+}
+
 /// Upload the vault now, whether or not it has changed. Wired to the "Back up
 /// now" button, which is an explicit instruction.
 #[tauri::command]
@@ -1185,5 +1247,38 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
         assert!(needs_upload(&p, mtime));
+    }
+
+    #[test]
+    fn take_backup_job_is_none_when_locked() {
+        let st = AppState::new();
+        assert!(st.take_backup_job().is_none());
+    }
+
+    #[test]
+    fn take_backup_job_is_none_without_a_backup_config() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("take-job-unconfigured");
+        let account = crate::accounts::create_account("job-test").unwrap();
+        let st = AppState::new();
+        *st.current_account.lock().unwrap() = Some(account);
+        *st.vault.lock().unwrap() = Some(crate::vault::new_vault(vec![1, 2, 3]));
+        assert!(st.take_backup_job().is_none());
+    }
+
+    #[test]
+    fn resetting_a_vault_does_not_back_it_up() {
+        // A reset destroys the vault on purpose. Uploading it on the way out
+        // would leave in the cloud exactly what the user asked to erase.
+        let src = std::fs::read_to_string(file!()).unwrap();
+        let reset = src
+            .split("pub fn reset_vault")
+            .nth(1)
+            .expect("reset_vault not found");
+        let body = &reset[..reset.find("\npub fn ").unwrap_or(reset.len())];
+        assert!(
+            !body.contains("lock_and_backup"),
+            "reset_vault must lock without backing up"
+        );
     }
 }
