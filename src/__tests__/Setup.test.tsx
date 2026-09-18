@@ -14,7 +14,7 @@ vi.mock("../lib/api", () => {
 
 describe("Setup", () => {
   it("renders a display name field, two password fields, and a create button", () => {
-    render(<Setup onCreated={() => {}} />);
+    render(<Setup onCreated={() => {}} onCancel={() => {}} />);
     expect(screen.getByLabelText("Display name")).toBeTruthy();
     expect(screen.getByLabelText("Master password")).toBeTruthy();
     expect(screen.getByLabelText("Confirm master password")).toBeTruthy();
@@ -24,7 +24,7 @@ describe("Setup", () => {
   it("calls setupVault with name + password and onCreated when valid", async () => {
     const onCreated = vi.fn();
     const { api } = await import("../lib/api");
-    render(<Setup onCreated={onCreated} />);
+    render(<Setup onCreated={onCreated} onCancel={() => {}} />);
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "user1" },
     });
@@ -42,7 +42,7 @@ describe("Setup", () => {
   });
 
   it("rejects an empty display name", async () => {
-    render(<Setup onCreated={() => {}} />);
+    render(<Setup onCreated={() => {}} onCancel={() => {}} />);
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "   " },
     });
@@ -57,7 +57,7 @@ describe("Setup", () => {
   });
 
   it("shows an error when passwords do not match", async () => {
-    render(<Setup onCreated={() => {}} />);
+    render(<Setup onCreated={() => {}} onCancel={() => {}} />);
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "user1" },
     });

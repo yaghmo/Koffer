@@ -3,6 +3,63 @@ import { api } from "../lib/api";
 import type { PersonalInfo } from "../lib/types";
 import { CheckIcon, UserIcon } from "../components/Icon";
 import { useHotkey } from "../lib/useHotkey";
+import { logUi } from "../lib/log";
+import { COUNTRIES, groupsForDial, keepsTrunkZero } from "../lib/countries";
+import CountrySelect from "../components/CountrySelect";
+
+const DIALS = [...new Set(COUNTRIES.map((c) => c.dial))].sort((a, b) => b.length - a.length);
+
+// Phone is stored as one "+dial local" string; split it to drive the
+// separate country-code select and number input in the UI.
+function splitPhone(phone: string): { dial: string; local: string } {
+  for (const d of DIALS) {
+    if (phone.startsWith(d)) return { dial: d, local: phone.slice(d.length).trim() };
+  }
+  return { dial: "+1", local: phone };
+}
+
+// Group the national number by the country's own convention where one is
+// known, else in threes. Groups are joined with a hyphen: a plain space is
+// too easy to lose against a long digit run.
+//
+// A leading 0 is a national trunk code ("06..." in France) and is redundant
+// once a country code is attached, so it is dropped — but only once a second
+// digit arrives, otherwise the first 0 someone types vanishes under them.
+// Italy is the notable country that keeps it.
+export function formatPhoneLocal(raw: string, dial: string): string {
+  let digits = raw.replace(/\D/g, "").slice(0, 15);
+  if (digits.length > 1 && digits.startsWith("0") && !keepsTrunkZero(dial)) {
+    digits = digits.replace(/^0+/, "");
+  }
+
+  const pattern = groupsForDial(dial);
+  const out: string[] = [];
+  let i = 0;
+  let p = 0;
+  while (i < digits.length) {
+    const remaining = digits.length - i;
+    let size: number;
+    if (pattern && p < pattern.length) {
+      size = pattern[p];
+      p++;
+    } else {
+      size = remaining === 4 || remaining < 3 ? remaining : 3;
+    }
+    out.push(digits.slice(i, i + size));
+    i += size;
+  }
+  return out.join("-");
+}
+
+// E.164 allows 15 digits total including the country code, and no national
+// number is shorter than 4.
+function isValidPhone(phone: string): boolean {
+  const { dial, local } = splitPhone(phone);
+  const localDigits = local.replace(/\D/g, "").length;
+  if (localDigits === 0) return true;
+  const dialDigits = dial.replace(/\D/g, "").length;
+  return localDigits >= 4 && dialDigits + localDigits <= 15;
+}
 
 // Field metadata: label + optional fill target hint used by the extension.
 type Group = "Basics" | "Address" | "Online" | "Work & education";
@@ -11,7 +68,7 @@ const FIELDS: { key: keyof PersonalInfo; label: string; placeholder?: string; gr
   { key: "name", label: "Full name", placeholder: "Ada Lovelace", group: "Basics", required: true },
   { key: "username", label: "Username", placeholder: "adaloves", group: "Basics" },
   { key: "email", label: "Main email", placeholder: "you@example.com", group: "Basics", required: true },
-  { key: "phone", label: "Phone", placeholder: "+1 555 123 4567", group: "Basics" },
+  { key: "phone", label: "Phone", placeholder: "+1 555-123-4567", group: "Basics" },
   { key: "date_of_birth", label: "Date of birth", placeholder: "1985-04-12", group: "Basics" },
   { key: "address", label: "Street address", placeholder: "1 Maths Rd, Apt 4", group: "Address" },
   { key: "city", label: "City", placeholder: "London", group: "Address" },
@@ -42,16 +99,27 @@ const empty = (): PersonalInfo => ({
 // Keeps invalid characters from ever entering the value.
 function sanitize(key: keyof PersonalInfo, value: string): string {
   switch (key) {
-    case "phone":
-      return value.replace(/[^+\d\s().-]/g, "").slice(0, 20);
+    case "email":
+      // Addresses are case-insensitive in practice and never hold spaces.
+      return value.replace(/\s/g, "").toLowerCase().slice(0, 120);
     case "zip":
       return value.replace(/[^A-Za-z0-9\s-]/g, "").toUpperCase().slice(0, 12);
     case "years_experience":
       return value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1").slice(0, 5);
     case "desired_salary":
       return value.replace(/[^\d,]/g, "").slice(0, 12);
+    case "name":
+    case "city":
+    case "state":
+    case "country":
+      // Names of people and places: letters (incl. accents) and the few
+      // separators they really use. Keeps digits and punctuation out.
+      return value.replace(/[^\p{L}\s.'-]/gu, "").slice(0, 60);
+    case "username":
+    case "github":
+      return value.replace(/\s/g, "").slice(0, 39);
     default:
-      return value;
+      return value.slice(0, 120);
   }
 }
 
@@ -98,20 +166,32 @@ export default function PersonalInfoScreen() {
     if (profile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
       errors.email = "Not a valid email address.";
     }
-    if (profile.phone && !/^[+\d][\d\s().-]{5,}$/.test(profile.phone)) {
+    if (profile.phone && !isValidPhone(profile.phone)) {
       errors.phone = "Not a valid phone number.";
     }
     if (profile.website && profile.website !== "https://" && !/^https?:\/\/\S+$/.test(profile.website)) {
       errors.website = "Website must start with http:// or https://";
     }
+    if (profile.github && !/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(profile.github)) {
+      errors.github = "Handle only — letters, digits and single hyphens.";
+    }
+    if (profile.linkedin && !/^(https?:\/\/)?([a-z]{2,3}\.)?linkedin\.com\/\S+$/i.test(profile.linkedin)) {
+      errors.linkedin = "Must be a linkedin.com profile link.";
+    }
     if (profile.date_of_birth) {
       const d = new Date(`${profile.date_of_birth}T00:00:00`);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.date_of_birth) || Number.isNaN(d.getTime())) {
         errors.date_of_birth = "Pick a valid date.";
+      } else if (d > new Date()) {
+        errors.date_of_birth = "Date of birth can't be in the future.";
+      } else if (d.getFullYear() < 1900) {
+        errors.date_of_birth = "Date of birth looks wrong.";
       }
     }
     if (profile.years_experience && !/^\d+(\.\d+)?$/.test(profile.years_experience)) {
       errors.years_experience = "Number only, e.g. 8 or 3.5.";
+    } else if (profile.years_experience && Number(profile.years_experience) > 80) {
+      errors.years_experience = "That's more years than anyone has worked.";
     }
     if (profile.desired_salary && !/^\d[\d,]*$/.test(profile.desired_salary)) {
       errors.desired_salary = "Amount in digits only.";
@@ -126,7 +206,8 @@ export default function PersonalInfoScreen() {
 
     setBusy(true);
     try {
-      await api.savePersonalInfo(profile);
+      const phoneDigits = splitPhone(profile.phone).local.replace(/\D/g, "");
+      await api.savePersonalInfo(phoneDigits ? profile : { ...profile, phone: "" });
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1400);
     } catch (e: any) {
@@ -172,16 +253,53 @@ export default function PersonalInfoScreen() {
                     {f.label}
                     {f.required && <span className="text-primary"> *</span>}
                   </p>
-                  <input
-                    value={profile[f.key]}
-                    onChange={(e) => setProfile({ ...profile, [f.key]: sanitize(f.key, e.target.value) })}
-                    aria-label={f.label}
-                    spellCheck={false}
-                    autoComplete="off"
-                    placeholder={f.key === "date_of_birth" ? undefined : f.placeholder}
-                    className="field"
-                    {...inputProps}
-                  />
+                  {f.key === "phone" ? (
+                    <div className="flex gap-2">
+                      <CountrySelect
+                        dial={splitPhone(profile.phone).dial}
+                        onChange={(newDial) => {
+                          const { local } = splitPhone(profile.phone);
+                          const regrouped = formatPhoneLocal(local, newDial);
+                          logUi("info", "personal-info", `phone country=${newDial}`);
+                          setProfile({ ...profile, phone: regrouped ? `${newDial} ${regrouped}` : newDial });
+                        }}
+                      />
+                      <input
+                        // Regrouped on the way out so numbers saved before the
+                        // hyphen grouping still display with it.
+                        value={formatPhoneLocal(
+                          splitPhone(profile.phone).local,
+                          splitPhone(profile.phone).dial,
+                        )}
+                        onChange={(e) => {
+                          const { dial } = splitPhone(profile.phone);
+                          const local = formatPhoneLocal(e.target.value, dial);
+                          // Keep the dial when the number is emptied, or
+                          // clearing the field would snap the country back to
+                          // the +1 default.
+                          setProfile({ ...profile, phone: local ? `${dial} ${local}` : dial });
+                        }}
+                        aria-label={f.label}
+                        spellCheck={false}
+                        autoComplete="off"
+                        placeholder="555-123-4567"
+                        className="field flex-1"
+                        {...inputProps}
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      value={profile[f.key]}
+                      onChange={(e) => setProfile({ ...profile, [f.key]: sanitize(f.key, e.target.value) })}
+                      aria-label={f.label}
+                      spellCheck={false}
+                      autoComplete="off"
+                      placeholder={f.key === "date_of_birth" ? undefined : f.placeholder}
+                      max={f.key === "date_of_birth" ? new Date().toISOString().slice(0, 10) : undefined}
+                      className="field"
+                      {...inputProps}
+                    />
+                  )}
                   {fieldErrors[f.key] && (
                     <p role="alert" className="text-body-sm text-error">
                       {fieldErrors[f.key]}

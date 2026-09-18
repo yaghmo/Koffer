@@ -270,6 +270,44 @@ export function DiscoverIcon({ size = 16 }: { size?: number }) {
   );
 }
 
+export function PinIcon({ size = 14, filled = false, ...props }: IconProps & { filled?: boolean }) {
+  return (
+    <svg {...base(size, props)} fill={filled ? "currentColor" : "none"}>
+      <path d="M9 4h6l-1 5 3.5 3.5H6.5L10 9 9 4z" />
+      <line x1="12" y1="12.5" x2="12" y2="20" />
+    </svg>
+  );
+}
+
+export function ChevronIcon({ size = 14, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)}>
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+export function SortIcon({ size = 14, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)}>
+      <path d="M7 4v16" />
+      <path d="M4 17l3 3 3-3" />
+      <path d="M13 7h7" />
+      <path d="M13 12h5" />
+      <path d="M13 17h3" />
+    </svg>
+  );
+}
+
+export function ArrowRightIcon({ size = 14, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)}>
+      <line x1="4" y1="12" x2="19" y2="12" />
+      <path d="M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
 export function ImageIcon({ size = 16, ...props }: IconProps) {
   return (
     <svg {...base(size, props)}>

@@ -39,6 +39,21 @@ beforeEach(() => {
 });
 
 describe("ItemEditor", () => {
+  it("refuses to save a credentials login without a password", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    fireEvent.change(await screen.findByLabelText(/title/i), { target: { value: "No password" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    expect(await screen.findByText(/password is required/i)).toBeTruthy();
+    expect(api.saveItem).not.toHaveBeenCalled();
+  });
+
+  it("keeps the kind selector locked when editing an existing item", async () => {
+    render(<ItemEditor id="1" onClose={() => {}} />);
+    await screen.findByDisplayValue("GitHub");
+    expect(screen.queryByRole("group", { name: /item kind/i })).toBeNull();
+  });
+
   it("loads an existing item and shows its fields", async () => {
     render(<ItemEditor id="1" onClose={() => {}} />);
     expect(await screen.findByDisplayValue("GitHub")).toBeTruthy();
@@ -56,6 +71,9 @@ describe("ItemEditor", () => {
     render(<ItemEditor id={null} onClose={onClose} />);
     fireEvent.change(await screen.findByLabelText(/title/i), {
       target: { value: "Test login" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), {
+      target: { value: "s3cret-pw" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
@@ -92,6 +110,9 @@ describe("ItemEditor", () => {
     fireEvent.change(screen.getByLabelText(/^url$/i), {
       target: { value: "https://example.com" },
     });
+    fireEvent.change(screen.getByLabelText(/^password$/i), {
+      target: { value: "s3cret-pw" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
   });
@@ -122,6 +143,30 @@ describe("ItemEditor", () => {
     expect(pw.type).toBe("text");
   });
 
+  it("lowercases a typed email account", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("radio", { name: /google/i }));
+    fireEvent.click(screen.getByRole("button", { name: /\+ add new account/i }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/^account$/i), {
+      target: { value: "Me.Loud@GMAIL.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^password$/i), { target: { value: "pw" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
+    const saved = (api.saveItem as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(saved.username).toBe("me.loud@gmail.com");
+  });
+
+  it("hides the password field for a provider login until asked for", async () => {
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("radio", { name: /google/i }));
+    expect(screen.queryByLabelText(/^password$/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /still have a password/i }));
+    expect(screen.getByLabelText(/^password$/i)).toBeTruthy();
+  });
+
   it("saves an added account as a login of the provider method", async () => {
     const { api } = await import("../lib/api");
     render(<ItemEditor id={null} onClose={() => {}} />);
@@ -140,7 +185,9 @@ describe("ItemEditor", () => {
     const saved = (api.saveItem as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(saved.method).toBe("google");
     expect(saved.username).toBe("me@gmail.com");
-    expect(saved.url).toBe("");
+    // A Google sign-in is a Gmail account: titled and linked as one.
+    expect(saved.title).toBe("Gmail");
+    expect(saved.url).toBe("https://mail.google.com");
     expect(saved.password).toBe("pw");
   });
 
@@ -149,6 +196,9 @@ describe("ItemEditor", () => {
     render(<ItemEditor id={null} onClose={() => {}} onSaved={onSaved} />);
     fireEvent.change(await screen.findByLabelText(/title/i), {
       target: { value: "Saved" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), {
+      target: { value: "s3cret-pw" },
     });
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
@@ -160,6 +210,9 @@ describe("ItemEditor", () => {
     render(<ItemEditor id={null} onClose={onClose} />);
     fireEvent.change(await screen.findByLabelText(/title/i), {
       target: { value: "Hotkey save" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), {
+      target: { value: "s3cret-pw" },
     });
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
@@ -182,5 +235,33 @@ describe("ItemEditor", () => {
     });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  async function fillCard(values: { number: string; exp: string }) {
+    render(<ItemEditor id={null} initialKind="card" onClose={() => {}} />);
+    fireEvent.change(await screen.findByLabelText(/title/i), { target: { value: "My card" } });
+    fireEvent.change(screen.getByLabelText(/card number/i), { target: { value: values.number } });
+    fireEvent.change(screen.getByLabelText(/card expiration/i), { target: { value: values.exp } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+  }
+
+  it("rejects a card number that fails the Luhn check", async () => {
+    const { api } = await import("../lib/api");
+    await fillCard({ number: "4111111111111112", exp: "12/40" });
+    expect(await screen.findByText(/check the digits/i)).toBeTruthy();
+    expect(api.saveItem).not.toHaveBeenCalled();
+  });
+
+  it("rejects an expired card", async () => {
+    const { api } = await import("../lib/api");
+    await fillCard({ number: "4111111111111111", exp: "01/20" });
+    expect(await screen.findByText(/has expired/i)).toBeTruthy();
+    expect(api.saveItem).not.toHaveBeenCalled();
+  });
+
+  it("saves a card that passes Luhn and is still valid", async () => {
+    const { api } = await import("../lib/api");
+    await fillCard({ number: "4111111111111111", exp: "12/40" });
+    await waitFor(() => expect(api.saveItem).toHaveBeenCalled());
   });
 });

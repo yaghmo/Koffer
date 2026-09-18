@@ -19,14 +19,21 @@ vi.mock("../lib/api", () => ({
 
 describe("Stats", () => {
   it("shows counts by kind and the health score once loaded", async () => {
-    render(<Stats />);
-    expect(await screen.findByText("67")).toBeTruthy();
+    render(<Stats onViewItem={() => {}} />);
+    expect(await screen.findByText("67%")).toBeTruthy();
     expect(screen.getByText("5")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
   });
 
   it("lists flagged weak passwords by title", async () => {
-    render(<Stats />);
+    render(<Stats onViewItem={() => {}} />);
     expect(await screen.findByText("Weak Site")).toBeTruthy();
+  });
+
+  it("opens the item when a flagged row is clicked", async () => {
+    const onViewItem = vi.fn();
+    render(<Stats onViewItem={onViewItem} />);
+    (await screen.findByText("Weak Site")).closest("button")?.click();
+    expect(onViewItem).toHaveBeenCalledWith("1");
   });
 });

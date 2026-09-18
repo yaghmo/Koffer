@@ -5,26 +5,56 @@ import type { VaultStats } from "../lib/types";
 const RING_RADIUS = 44;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-function HealthRing({ score }: { score: number }) {
-  const offset = RING_CIRCUMFERENCE * (1 - score / 100);
+interface RingSegment {
+  count: number;
+  className: string;
+}
+
+// Three stacked arcs (good/moderate/weak), each sized by its share of total
+// logins — more weak logins visibly fills more of the ring with red, rather
+// than boiling everything down to one color picked off the overall score.
+function HealthRing({ score, segments }: { score: number; segments: RingSegment[] }) {
+  const total = segments.reduce((sum, s) => sum + s.count, 0);
+  let cumulative = 0;
   return (
-    <div className="relative flex h-[104px] w-[104px] items-center justify-center">
+    <div className="relative flex h-[104px] w-[104px] flex-shrink-0 items-center justify-center">
       <svg width={104} height={104} viewBox="0 0 104 104" className="-rotate-90">
         <circle cx={52} cy={52} r={RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={8} />
-        <circle
-          cx={52}
-          cy={52}
-          r={RING_RADIUS}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={8}
-          strokeLinecap="round"
-          strokeDasharray={RING_CIRCUMFERENCE}
-          strokeDashoffset={offset}
-          className="text-primary transition-[stroke-dashoffset] duration-500 ease-out"
-        />
+        {total === 0 ? (
+          <circle
+            cx={52}
+            cy={52}
+            r={RING_RADIUS}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={8}
+            className="text-secondary"
+          />
+        ) : (
+          segments
+            .filter((s) => s.count > 0)
+            .map((s, i) => {
+              const length = (RING_CIRCUMFERENCE * s.count) / total;
+              const offset = -cumulative;
+              cumulative += length;
+              return (
+                <circle
+                  key={i}
+                  cx={52}
+                  cy={52}
+                  r={RING_RADIUS}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={8}
+                  strokeDasharray={`${length} ${RING_CIRCUMFERENCE - length}`}
+                  strokeDashoffset={offset}
+                  className={`${s.className} transition-[stroke-dasharray] duration-500 ease-out`}
+                />
+              );
+            })
+        )}
       </svg>
-      <span className="absolute text-headline-lg text-on-surface">{score}</span>
+      <span className="absolute text-headline-md leading-none text-on-surface">{score}%</span>
     </div>
   );
 }
@@ -48,15 +78,74 @@ function CountRow({ stats }: { stats: VaultStats }) {
   );
 }
 
-function FlaggedList({ title, items }: { title: string; items: VaultStats["weak"] }) {
-  if (items.length === 0) return null;
+type IssueTag = "weak" | "reused" | "old";
+
+const TAG_LABEL: Record<IssueTag, string> = {
+  weak: "Weak",
+  reused: "Reused",
+  old: "Stale",
+};
+
+interface Issue {
+  id: string;
+  title: string;
+  tags: IssueTag[];
+}
+
+// Same login can be weak AND reused AND stale; merge by id so it shows once
+// with every reason attached, instead of three disconnected lists.
+function buildIssues(stats: VaultStats): Issue[] {
+  const byId = new Map<string, Issue>();
+  const add = (items: VaultStats["weak"], tag: IssueTag) => {
+    for (const item of items) {
+      const issue = byId.get(item.id) ?? { id: item.id, title: item.title, tags: [] };
+      issue.tags.push(tag);
+      byId.set(item.id, issue);
+    }
+  };
+  add(stats.weak, "weak");
+  add(stats.reused, "reused");
+  add(stats.old, "old");
+  return [...byId.values()];
+}
+
+function IssueList({ issues, onViewItem }: { issues: Issue[]; onViewItem: (id: string) => void }) {
+  if (issues.length === 0) {
+    return (
+      <div className="card flex flex-col gap-1 p-5">
+        <h2 className="text-body-md font-semibold text-on-surface">Needs attention</h2>
+        <p className="text-body-sm text-on-surface-variant">No weak, reused, or stale passwords found.</p>
+      </div>
+    );
+  }
   return (
     <div className="card flex flex-col gap-2 p-5">
-      <h2 className="text-body-md font-semibold text-on-surface">{title}</h2>
-      <ul className="flex flex-col gap-1">
-        {items.map((item) => (
-          <li key={item.id} className="text-body-sm text-on-surface-variant">
-            {item.title}
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-body-md font-semibold text-on-surface">Needs attention</h2>
+        <span className="label-sm flex-shrink-0">{issues.length}</span>
+      </div>
+      {/* Capped height so a vault with hundreds of flagged logins scrolls
+          inside the card instead of stretching the page. */}
+      <ul className="flex max-h-[320px] flex-col gap-1 overflow-y-auto">
+        {issues.map((issue) => (
+          <li key={issue.id}>
+            <button
+              type="button"
+              onClick={() => onViewItem(issue.id)}
+              className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-white/6"
+            >
+              <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">{issue.title}</span>
+              <span className="flex flex-shrink-0 gap-1.5">
+                {issue.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full bg-error/15 px-2 py-0.5 text-body-sm text-error"
+                  >
+                    {TAG_LABEL[tag]}
+                  </span>
+                ))}
+              </span>
+            </button>
           </li>
         ))}
       </ul>
@@ -64,7 +153,7 @@ function FlaggedList({ title, items }: { title: string; items: VaultStats["weak"
   );
 }
 
-export default function Stats() {
+export default function Stats({ onViewItem }: { onViewItem: (id: string) => void }) {
   const [stats, setStats] = useState<VaultStats | null>(null);
 
   useEffect(() => {
@@ -72,6 +161,27 @@ export default function Stats() {
   }, []);
 
   if (!stats) return null;
+
+  const issues = buildIssues(stats);
+  // A weak password is the worst tier; reused/stale alone is moderate.
+  const weakCount = issues.filter((i) => i.tags.includes("weak")).length;
+  const moderateCount = issues.length - weakCount;
+  const goodCount = Math.max(0, stats.logins - issues.length);
+  const tiers = [
+    { label: "Strong", count: goodCount, className: "text-secondary", hint: "No issues found." },
+    {
+      label: "Moderate",
+      count: moderateCount,
+      className: "text-tertiary",
+      hint: "Password is strong enough on its own, but it is reused on another login or has not been changed in over 90 days.",
+    },
+    {
+      label: "Weak",
+      count: weakCount,
+      className: "text-error",
+      hint: "Under 8 characters, or built from fewer than 3 of: lowercase, uppercase, digits, symbols.",
+    },
+  ];
 
   return (
     <div className="mx-auto flex max-w-[720px] flex-col gap-6 px-8 py-8">
@@ -81,20 +191,32 @@ export default function Stats() {
       </div>
 
       <div className="card flex items-center gap-6 p-6">
-        <HealthRing score={stats.health_score} />
-        <div className="flex flex-col gap-1">
+        <HealthRing score={stats.health_score} segments={tiers} />
+        <div className="flex min-w-0 flex-col gap-2">
           <p className="text-body-md font-semibold text-on-surface">Health score</p>
           <p className="text-body-sm text-on-surface-variant">
-            Share of logins with no weak, reused, or stale password.
+            {issues.length === 0
+              ? "No weak, reused, or stale passwords."
+              : `${issues.length} login${issues.length === 1 ? "" : "s"} need attention — see below.`}
           </p>
+          <div className="flex flex-wrap gap-3">
+            {tiers.map((t) => (
+              <span
+                key={t.label}
+                title={t.hint}
+                className={`flex cursor-help items-center gap-1.5 text-body-sm ${t.className}`}
+              >
+                <span className="h-2 w-2 rounded-full bg-current" />
+                {t.count} {t.label.toLowerCase()}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
       <CountRow stats={stats} />
 
-      <FlaggedList title="Weak passwords" items={stats.weak} />
-      <FlaggedList title="Reused passwords" items={stats.reused} />
-      <FlaggedList title="Not updated in 90+ days" items={stats.old} />
+      <IssueList issues={issues} onViewItem={onViewItem} />
     </div>
   );
 }

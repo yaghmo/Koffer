@@ -4,11 +4,13 @@
 //! the editor. Returns favicon as data URL and title for auto-fill.
 
 use serde::Serialize;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use thiserror::Error;
 
 /// Page bytes read for title/favicon discovery; <head> sits well inside this.
 const MAX_HTML_BYTES: usize = 1024 * 1024;
+/// Redirect hops followed before giving up.
+const MAX_HOPS: usize = 5;
 /// Favicons are stored in the vault as data URLs, so keep them small.
 const MAX_ICON_BYTES: usize = 256 * 1024;
 
@@ -29,31 +31,15 @@ pub struct UrlMetadata {
 /// Fetch URL metadata: title + favicon as data URL.
 /// Timeout 5s. Missing fields return None (not error).
 pub async fn fetch_metadata(url: &str) -> Result<UrlMetadata, MetadataError> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .user_agent("Mozilla/5.0")
-        // Re-check every hop so a public page can't redirect into the LAN.
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 5 {
-                attempt.error("too many redirects")
-            } else if is_public_http(attempt.url()) {
-                attempt.follow()
-            } else {
-                attempt.stop()
-            }
-        }))
-        .build()
-        .map_err(req_err)?;
-
     // A page cut off at the cap still has its <head>; parse what arrived.
-    let (html, _, _) = get_capped(&client, url, MAX_HTML_BYTES).await?;
+    let (html, _, _) = get_capped(url, MAX_HTML_BYTES).await?;
     let html = String::from_utf8_lossy(&html);
 
     let title = extract_title(&html);
     let favicon_href = extract_favicon(&html, url);
 
     let favicon_data_url = if let Some(href) = favicon_href {
-        fetch_favicon(&client, &href).await.ok()
+        fetch_favicon(&href).await.ok()
     } else {
         None
     };
@@ -67,21 +53,42 @@ pub async fn fetch_metadata(url: &str) -> Result<UrlMetadata, MetadataError> {
 fn extract_title(html: &str) -> Option<String> {
     // ponytail: regex cheaper than full HTML parser for one tag
     let re = regex::Regex::new(r"(?i)<title[^>]*>([^<]+)</title>").ok()?;
-    re.captures(html)
+    let raw = re
+        .captures(html)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty())?;
+    Some(shorten_title(&raw))
+}
+
+/// Real-world <title> tags are usually "Page Name - Site Name | Extra"; a
+/// login item just needs the short name, like a browser tab shows, so keep
+/// the first segment and cap length.
+fn shorten_title(title: &str) -> String {
+    let sep = regex::Regex::new(r"\s[-|·—–»:]\s").unwrap();
+    let first = sep.splitn(title, 2).next().unwrap_or(title).trim();
+    let mut short: String = first.chars().take(60).collect();
+    if first.chars().count() > 60 {
+        short.push('…');
+    }
+    short
 }
 
 fn extract_favicon(html: &str, base_url: &str) -> Option<String> {
-    // Look for <link rel="icon"> or <link rel="shortcut icon">
-    let re = regex::Regex::new(
-        r#"(?i)<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']+)["']"#,
-    )
-    .ok()?;
-    if let Some(cap) = re.captures(html) {
-        let href = cap.get(1)?.as_str();
-        return Some(resolve_url(href, base_url));
+    // Look for any <link rel="icon"> / <link rel="shortcut icon"> tag,
+    // reading rel and href independently so attribute order doesn't matter
+    // (real-world markup puts href before rel as often as not).
+    let tag_re = regex::Regex::new(r"(?i)<link\b[^>]*>").ok()?;
+    let rel_re = regex::Regex::new(r#"(?i)rel=["'](?:shortcut\s+)?icon["']"#).ok()?;
+    let href_re = regex::Regex::new(r#"(?i)href=["']([^"']+)["']"#).ok()?;
+
+    for tag in tag_re.find_iter(html) {
+        let tag = tag.as_str();
+        if rel_re.is_match(tag) {
+            if let Some(href) = href_re.captures(tag).and_then(|c| c.get(1)) {
+                return Some(resolve_url(href.as_str(), base_url));
+            }
+        }
     }
 
     // Fallback: /favicon.ico at root
@@ -110,8 +117,8 @@ fn resolve_url(href: &str, base: &str) -> String {
     }
 }
 
-async fn fetch_favicon(client: &reqwest::Client, url: &str) -> Result<String, MetadataError> {
-    let (bytes, truncated, content_type) = get_capped(client, url, MAX_ICON_BYTES).await?;
+async fn fetch_favicon(url: &str) -> Result<String, MetadataError> {
+    let (bytes, truncated, content_type) = get_capped(url, MAX_ICON_BYTES).await?;
     if truncated {
         return Err(MetadataError::Request("favicon too large".to_string()));
     }
@@ -158,21 +165,105 @@ fn req_err(e: reqwest::Error) -> MetadataError {
     MetadataError::Request(e.to_string())
 }
 
+/// Build a client that will only ever talk to `addr` for this request's
+/// host. Redirects are handled by the caller so every hop is re-resolved and
+/// re-checked.
+fn client_pinned_to(host: &str, addr: Option<SocketAddr>) -> Result<reqwest::Client, MetadataError> {
+    let mut builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        // A bare "Mozilla/5.0" is a well-known bot signature and gets 403'd by
+        // Cloudflare/Fastly-fronted sites (GitHub included); a real browser UA
+        // string gets through the same bot filters a login page's own visitors do.
+        .user_agent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        )
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some(addr) = addr {
+        // Pinning closes the DNS-rebinding window: the name was checked as
+        // public a moment ago, and this is the address that gets dialed, so a
+        // second lookup returning 127.0.0.1 has nothing to act on.
+        builder = builder.resolve(host, addr);
+    }
+    builder.build().map_err(req_err)
+}
+
+/// Resolve a URL's host and require every address it maps to to be public.
+/// Returns the address to pin, or None when the host was already a literal
+/// IP (nothing to rebind).
+async fn resolve_public(url: &reqwest::Url) -> Result<Option<SocketAddr>, MetadataError> {
+    let refused = || MetadataError::Request("only public http(s) addresses are fetched".to_string());
+    if !is_public_http(url) {
+        return Err(refused());
+    }
+    let host = url.host_str().ok_or_else(refused)?;
+    if host.parse::<IpAddr>().is_ok() {
+        return Ok(None); // is_public_http already vetted the literal
+    }
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|e| MetadataError::Request(format!("dns lookup failed: {e}")))?
+        .collect();
+    if addrs.is_empty() || !addrs.iter().all(|a| addr_is_public(*a)) {
+        return Err(refused());
+    }
+    Ok(Some(addrs[0]))
+}
+
+fn addr_is_public(addr: SocketAddr) -> bool {
+    match addr.ip() {
+        IpAddr::V4(ip) => is_public_v4(ip),
+        IpAddr::V6(ip) => match ip.to_ipv4_mapped() {
+            Some(v4) => is_public_v4(v4),
+            None => {
+                let first = ip.segments()[0];
+                !(ip.is_loopback()
+                    || ip.is_unspecified()
+                    || (first & 0xfe00) == 0xfc00
+                    || (first & 0xffc0) == 0xfe80)
+            }
+        },
+    }
+}
+
 /// GET a public http(s) URL, reading at most `max` body bytes. Returns the
 /// bytes, whether the body was cut off at the cap, and the response's
 /// Content-Type header if present.
 async fn get_capped(
-    client: &reqwest::Client,
     url: &str,
     max: usize,
 ) -> Result<(Vec<u8>, bool, Option<String>), MetadataError> {
-    let parsed = reqwest::Url::parse(url).map_err(|e| MetadataError::Parse(e.to_string()))?;
-    if !is_public_http(&parsed) {
-        return Err(MetadataError::Request(
-            "only public http(s) addresses are fetched".to_string(),
-        ));
+    let mut current = reqwest::Url::parse(url).map_err(|e| MetadataError::Parse(e.to_string()))?;
+    let mut resp = None;
+    for _ in 0..=MAX_HOPS {
+        let addr = resolve_public(&current).await?;
+        let host = current
+            .host_str()
+            .ok_or_else(|| MetadataError::Request("no host".to_string()))?
+            .to_string();
+        let client = client_pinned_to(&host, addr)?;
+        let r = client.get(current.clone()).send().await.map_err(req_err)?;
+        if r.status().is_redirection() {
+            let location = r
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| MetadataError::Request("redirect without location".to_string()))?;
+            // Re-resolved and re-checked on the next pass, so a public page
+            // cannot bounce the fetch into the LAN.
+            current = current
+                .join(location)
+                .map_err(|e| MetadataError::Parse(e.to_string()))?;
+            continue;
+        }
+        resp = Some(r);
+        break;
     }
-    let mut resp = client.get(parsed).send().await.map_err(req_err)?;
+    let mut resp = resp.ok_or_else(|| MetadataError::Request("too many redirects".to_string()))?;
+    if !resp.status().is_success() {
+        return Err(MetadataError::Request(format!("http status {}", resp.status())));
+    }
     let content_type = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -242,6 +333,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn addr_is_public_rejects_resolved_lan_addresses() {
+        let lan: SocketAddr = "192.168.1.10:443".parse().unwrap();
+        let loopback: SocketAddr = "127.0.0.1:80".parse().unwrap();
+        let cgnat: SocketAddr = "100.64.0.1:443".parse().unwrap();
+        let v6_local: SocketAddr = "[fe80::1]:443".parse().unwrap();
+        let public: SocketAddr = "93.184.216.34:443".parse().unwrap();
+        assert!(!addr_is_public(lan));
+        assert!(!addr_is_public(loopback));
+        assert!(!addr_is_public(cgnat));
+        assert!(!addr_is_public(v6_local));
+        assert!(addr_is_public(public));
+    }
+
+    #[test]
+    fn addr_is_public_sees_through_ipv4_mapped_v6() {
+        let mapped: SocketAddr = "[::ffff:127.0.0.1]:443".parse().unwrap();
+        assert!(!addr_is_public(mapped));
+    }
+
+    #[test]
     fn extracts_title_from_html() {
         let html = "<html><head><title>  Twitch   </title></head></html>";
         assert_eq!(extract_title(html).as_deref(), Some("Twitch"));
@@ -257,6 +368,23 @@ mod tests {
         let html = r#"<link rel="icon" href="/favicon.ico">"#;
         let got = extract_favicon(html, "https://twitch.tv").unwrap();
         assert_eq!(got, "https://twitch.tv/favicon.ico");
+    }
+
+    #[test]
+    fn extracts_favicon_href_regardless_of_attribute_order() {
+        let html = r#"<link href="/favicon.png" rel="icon">"#;
+        let got = extract_favicon(html, "https://example.com").unwrap();
+        assert_eq!(got, "https://example.com/favicon.png");
+    }
+
+    #[test]
+    fn shortens_title_to_first_segment() {
+        assert_eq!(
+            shorten_title("GitHub - Where the world builds software"),
+            "GitHub"
+        );
+        assert_eq!(shorten_title("Sign in | Twitch"), "Sign in");
+        assert_eq!(shorten_title("Plain Title"), "Plain Title");
     }
 
     #[test]

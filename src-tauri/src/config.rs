@@ -9,11 +9,14 @@ use thiserror::Error;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub autolock_mins: u8,
+    /// Unix seconds of the last successful export; 0 when never exported.
+    #[serde(default)]
+    pub last_export_secs: i64,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { autolock_mins: 15 }
+        Self { autolock_mins: 15, last_export_secs: 0 }
     }
 }
 
@@ -39,7 +42,7 @@ pub fn load(account: &Account) -> Config {
 }
 
 pub fn save(account: &Account, c: &Config) -> Result<(), ConfigError> {
-    if c.autolock_mins < 15 || c.autolock_mins > 30 {
+    if c.autolock_mins < 15 || c.autolock_mins > 90 {
         return Err(ConfigError::OutOfRange(c.autolock_mins));
     }
     if let Some(parent) = config_path(account).parent() {
@@ -82,7 +85,7 @@ mod tests {
         let _g = lock_env();
         fresh_tmp();
         let a = fixture();
-        let c = Config { autolock_mins: 25 };
+        let c = Config { autolock_mins: 25, ..Config::default() };
         save(&a, &c).unwrap();
         let c2 = load(&a);
         assert_eq!(c2.autolock_mins, 25);
@@ -93,8 +96,8 @@ mod tests {
         let _g = lock_env();
         fresh_tmp();
         let a = fixture();
-        assert!(save(&a, &Config { autolock_mins: 5 }).is_err());
-        assert!(save(&a, &Config { autolock_mins: 60 }).is_err());
+        assert!(save(&a, &Config { autolock_mins: 5, ..Config::default() }).is_err());
+        assert!(save(&a, &Config { autolock_mins: 91, ..Config::default() }).is_err());
     }
 
     #[test]

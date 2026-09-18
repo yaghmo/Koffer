@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
 import { onVaultLocked } from "./lib/events";
+import { refreshSiteLogos } from "./lib/logos";
+import { logUi } from "./lib/log";
 import Setup from "./screens/Setup";
 import AccountLock from "./screens/AccountLock";
 import Vault from "./screens/Vault";
@@ -30,6 +32,9 @@ export default function App() {
   const [filter, setFilter] = useState<Filter>("all");
   const [editing, setEditing] = useState<EditingTarget>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  // Set when the editor is opened from outside the vault view (e.g. Stats),
+  // so closing it can return there instead of always landing on "vault".
+  const [returnView, setReturnView] = useState<View | null>(null);
   // Bumped after viewer-side delete so the vault list refetches.
   const [vaultRefresh, setVaultRefresh] = useState(0);
   const [autolock, setAutolock] = useState<{ remainingSecs: number; timeoutSecs: number } | null>(null);
@@ -43,15 +48,35 @@ export default function App() {
       setStatus("locked");
     });
     const unlisten = onVaultLocked(() => {
+      logUi("info", "app", "vault locked by backend (idle timeout or lock command)");
       setStatus("locked");
       setView("vault");
       setEditing(null);
       setViewingId(null);
+      setReturnView(null);
     });
     return () => {
       unlisten.then((fn) => fn());
     };
   }, []);
+
+  // Re-check every login's favicon once per unlocked session, so a site that
+  // changed its icon updates without anyone pressing the Settings button.
+  // ponytail: serial fetches on a background promise; batch them if a large
+  // vault ever makes the first seconds after unlock feel slow.
+  useEffect(() => {
+    if (status !== "unlocked") return;
+    let cancelled = false;
+    refreshSiteLogos()
+      .then(([updated, total]) => {
+        logUi("info", "logos", `launch refresh updated=${updated} of=${total}`);
+        if (!cancelled && updated > 0) setVaultRefresh((n) => n + 1);
+      })
+      .catch((e) => logUi("warn", "logos", `launch refresh failed: ${String(e)}`));
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   // Reset autolock on any user activity
   useEffect(() => {
@@ -99,13 +124,17 @@ export default function App() {
   // Sidebar nav/filter always closes the viewer/editor. Unsaved changes are
   // lost; matches the user's mental model that "clicking a section goes there."
   function navigate(nextView: View) {
+    logUi("info", "nav", `view=${nextView}`);
     setEditing(null);
     setViewingId(null);
+    setReturnView(null);
     setView(nextView);
   }
   function changeFilter(next: Filter) {
+    logUi("info", "nav", `filter=${next}`);
     setEditing(null);
     setViewingId(null);
+    setReturnView(null);
     setFilter(next);
     setView("vault");
   }
@@ -115,6 +144,7 @@ export default function App() {
     setView("vault");
     setEditing(null);
     setViewingId(null);
+    setReturnView(null);
     // Always re-pull the account list so a vault deleted from Settings (or
     // anywhere else) stops appearing on the lock screen immediately.
     refreshAccounts().catch(() => {});
@@ -150,6 +180,10 @@ export default function App() {
               setAccounts([acct]);
               setStatus("unlocked");
             }}
+            onCancel={() => {
+              logUi("info", "app", "vault creation cancelled");
+              setStatus("locked");
+            }}
           />
         </main>
       </div>
@@ -163,6 +197,7 @@ export default function App() {
           <AccountLock
             accounts={accounts}
             onUnlocked={(acct) => {
+              logUi("info", "app", `unlocked account=${acct.id}`);
               setCurrentAccount(acct);
               setStatus("unlocked");
             }}
@@ -209,9 +244,16 @@ export default function App() {
               setViewingId(null);
               setEditing({ kind: "new", itemKind });
             }}
-            onEditorClose={() => setEditing(null)}
+            onEditorClose={() => {
+              setEditing(null);
+              if (returnView) {
+                setView(returnView);
+                setReturnView(null);
+              }
+            }}
             onViewerClose={() => setViewingId(null)}
             onItemSaved={() => setVaultRefresh((n) => n + 1)}
+            onFilterChange={changeFilter}
           />
         )}
         {view === "settings" && currentAccount && (
@@ -221,7 +263,7 @@ export default function App() {
           />
         )}
         {view === "personal" && <PersonalInfoScreen />}
-        {view === "stats" && <Stats />}
+        {view === "stats" && <Stats onViewItem={(id) => setViewingId(id)} />}
         {/* Viewer overlays both views so the user can pop in from anywhere */}
         {viewingId && (
           <ItemViewerOverlay
@@ -229,6 +271,8 @@ export default function App() {
             onEdit={(id) => {
               setViewingId(null);
               setEditing({ kind: "existing", id });
+              setReturnView(view === "vault" ? null : view);
+              setView("vault");
             }}
             onClose={() => setViewingId(null)}
             onDeleted={() => setVaultRefresh((n) => n + 1)}

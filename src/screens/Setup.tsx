@@ -1,20 +1,56 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
-import { EyeIcon, EyeOffIcon, PlusIcon } from "../components/Icon";
+import { EyeIcon, EyeOffIcon, PlusIcon, XIcon } from "../components/Icon";
 import { Emblem } from "../components/Emblem";
+import { passwordStrength } from "../lib/passwordStrength";
+import RecoveryCodeDialog from "../components/RecoveryCodeDialog";
 
 interface Props {
   onCreated: (account: Account) => void;
+  /** Back out of vault creation — without it this screen is a dead end. */
+  onCancel: () => void;
 }
 
-export default function Setup({ onCreated }: Props) {
+function StrengthMeter({ password }: { password: string }) {
+  const s = passwordStrength(password);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="label-md">Strength</span>
+        <span className={`label-md ${s.className}`}>{s.label}</span>
+      </div>
+      <div className="flex gap-1" role="img" aria-label={`Password strength: ${s.label}`}>
+        {[1, 2, 3, 4].map((step) => (
+          <span
+            key={step}
+            className={`h-1 flex-1 rounded-full transition-colors duration-150 ease-out ${
+              password && step <= s.score
+                ? s.score >= 3
+                  ? "bg-secondary"
+                  : s.score === 2
+                    ? "bg-tertiary"
+                    : "bg-error"
+                : "bg-surface-container-high"
+            }`}
+          />
+        ))}
+      </div>
+      {s.hint && <p className="text-body-sm text-on-surface-variant">{s.hint}</p>}
+    </div>
+  );
+}
+
+export default function Setup({ onCreated, onCancel }: Props) {
   const [name, setName] = useState("");
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Held until the code has been acknowledged, so the vault is never handed
+  // over before its only recovery path has been seen.
+  const [pending, setPending] = useState<{ account: Account; code: string } | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,12 +71,26 @@ export default function Setup({ onCreated }: Props) {
     setBusy(true);
     try {
       const account = await api.setupVault(pw, trimmedName);
-      onCreated(account);
+      let code = "";
+      try {
+        code = await api.createRecoveryCode(pw);
+      } catch {
+        // A vault without a recovery code is still a usable vault; Settings
+        // can mint one later rather than failing the whole creation here.
+      }
+      if (code) setPending({ account, code });
+      else onCreated(account);
     } catch (e: any) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
+  }
+
+  if (pending) {
+    return (
+      <RecoveryCodeDialog code={pending.code} onDone={() => onCreated(pending.account)} />
+    );
   }
 
   return (
@@ -92,6 +142,8 @@ export default function Setup({ onCreated }: Props) {
             </div>
           </div>
 
+          <StrengthMeter password={pw} />
+
           <div className="flex flex-col gap-1.5">
             <p className="label-md">Confirm</p>
             <input
@@ -114,6 +166,9 @@ export default function Setup({ onCreated }: Props) {
           <button type="submit" className="btn-primary w-full" disabled={busy || !name || !pw || !confirm}>
             <PlusIcon size={16} />
             {busy ? "Creating…" : "Create vault"}
+          </button>
+          <button type="button" className="btn-secondary w-full" onClick={onCancel} disabled={busy}>
+            <XIcon size={14} /> Cancel
           </button>
         </form>
       </div>

@@ -3,7 +3,7 @@
 use getrandom::getrandom;
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Nonce,
 };
 use thiserror::Error;
@@ -38,21 +38,37 @@ pub fn derive_key(password: &str, salt: &[u8]) -> [u8; 32] {
 
 /// Encrypt with AES-256-GCM. Returns (nonce, ciphertext_with_appended_tag).
 pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    encrypt_with_aad(key, plaintext, b"")
+}
+
+/// Encrypt, additionally authenticating `aad` (associated data that travels
+/// in the clear — the vault file header). The tag then covers it, so editing
+/// the header is detected instead of merely breaking decryption.
+pub fn encrypt_with_aad(key: &[u8; 32], plaintext: &[u8], aad: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let cipher = Aes256Gcm::new(key.into());
     let nonce_bytes = random_bytes(12);
     let nonce = Nonce::from_slice(&nonce_bytes);
     let ct = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(nonce, Payload { msg: plaintext, aad })
         .expect("AES-GCM encrypt should not fail with random nonce");
     (nonce_bytes, ct)
 }
 
 /// Decrypt with AES-256-GCM.
 pub fn decrypt(key: &[u8; 32], nonce: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    decrypt_with_aad(key, nonce, ciphertext, b"")
+}
+
+pub fn decrypt_with_aad(
+    key: &[u8; 32],
+    nonce: &[u8],
+    ciphertext: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
     let cipher = Aes256Gcm::new(key.into());
     let nonce = Nonce::from_slice(nonce);
     cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(nonce, Payload { msg: ciphertext, aad })
         .map_err(|_| CryptoError::Aead)
 }
 
@@ -128,6 +144,20 @@ mod tests {
         let (nonce, mut ct) = encrypt(&key, b"secret");
         let last = ct.len() - 1;
         ct[last] ^= 0x01;
+        assert!(decrypt(&key, &nonce, &ct).is_err());
+    }
+
+    #[test]
+    fn aad_must_match_to_decrypt() {
+        let key = derive_key("password", &random_bytes(16));
+        let (nonce, ct) = encrypt_with_aad(&key, b"secret", b"header-v2");
+        assert_eq!(
+            decrypt_with_aad(&key, &nonce, &ct, b"header-v2").unwrap(),
+            b"secret"
+        );
+        assert!(decrypt_with_aad(&key, &nonce, &ct, b"header-v3").is_err());
+        // And a no-AAD read of AAD-protected bytes fails too, which is what
+        // keeps the two file versions apart.
         assert!(decrypt(&key, &nonce, &ct).is_err());
     }
 

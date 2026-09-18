@@ -35,6 +35,23 @@ pub enum GenError {
     TooShort,
 }
 
+/// Uniform index in `0..n`, without modulo bias.
+///
+/// `byte % n` favours the first `256 % n` values — with the full 88-character
+/// alphabet that makes 80 of them 1.5x as likely as the other 8. Discarding
+/// the bytes above the largest multiple of `n` removes the skew entirely, at
+/// the cost of an occasional redraw.
+fn uniform_below(n: usize) -> usize {
+    assert!(n > 0 && n <= 256, "alphabet must fit in one byte");
+    let limit = 256 - (256 % n);
+    loop {
+        let b = random_bytes(1)[0] as usize;
+        if b < limit {
+            return b % n;
+        }
+    }
+}
+
 const LOWER: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
 const UPPER: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const DIGITS: &[u8] = b"0123456789";
@@ -67,18 +84,15 @@ pub fn generate(opts: &GenOpts) -> Result<String, GenError> {
     // Ensure at least one of each enabled class is present, then fill the rest.
     let mut out: Vec<u8> = Vec::with_capacity(opts.length);
     for c in &classes {
-        let b = random_bytes(1)[0];
-        out.push(c[(b as usize) % c.len()]);
+        out.push(c[uniform_below(c.len())]);
     }
     let all: Vec<u8> = classes.iter().flat_map(|c| c.iter().copied()).collect();
     while out.len() < opts.length {
-        let b = random_bytes(1)[0];
-        out.push(all[(b as usize) % all.len()]);
+        out.push(all[uniform_below(all.len())]);
     }
     // Fisher-Yates shuffle with secure random
     for i in (1..out.len()).rev() {
-        let r = random_bytes(1)[0] as usize;
-        out.swap(i, r % (i + 1));
+        out.swap(i, uniform_below(i + 1));
     }
     Ok(String::from_utf8(out).expect("ASCII subset"))
 }
@@ -150,6 +164,26 @@ mod tests {
             }),
             Err(GenError::TooShort)
         ));
+    }
+
+    #[test]
+    fn uniform_below_stays_in_range_and_covers_it() {
+        let mut seen = [0usize; 88];
+        for _ in 0..8_800 {
+            let i = uniform_below(88);
+            assert!(i < 88);
+            seen[i] += 1;
+        }
+        // Every slot should come up; a biased `% 88` would still pass this,
+        // but an off-by-one in the limit would not.
+        assert!(seen.iter().all(|c| *c > 0));
+    }
+
+    #[test]
+    fn uniform_below_is_exact_for_a_power_of_two() {
+        for _ in 0..1_000 {
+            assert!(uniform_below(2) < 2);
+        }
     }
 
     #[test]

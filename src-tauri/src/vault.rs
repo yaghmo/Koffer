@@ -147,6 +147,110 @@ pub struct Vault {
     pub items: Vec<Item>,
     #[serde(default)]
     pub personal: PersonalInfo,
+    /// Pinned item ids, in the order they were pinned. Kept here rather than
+    /// on the item so `save_item` (which replaces an item wholesale) can
+    /// never silently drop a pin.
+    #[serde(default)]
+    pub pinned: Vec<Uuid>,
+    /// Unix seconds of the last favicon check per item. Drives the 30-day
+    /// refresh so unlocking does not re-contact every site you have an
+    /// account with.
+    #[serde(default)]
+    pub icon_checked: std::collections::HashMap<Uuid, i64>,
+}
+
+/// How many items of each kind may be pinned at once.
+pub const PIN_LIMIT_LOGIN: usize = 10;
+pub const PIN_LIMIT_NOTE: usize = 5;
+pub const PIN_LIMIT_CARD: usize = 5;
+
+pub fn pin_limit(kind: &str) -> usize {
+    match kind {
+        "login" => PIN_LIMIT_LOGIN,
+        "note" => PIN_LIMIT_NOTE,
+        _ => PIN_LIMIT_CARD,
+    }
+}
+
+pub fn kind_of(item: &Item) -> &'static str {
+    match item {
+        Item::Login { .. } => "login",
+        Item::Note { .. } => "note",
+        Item::Card { .. } => "card",
+    }
+}
+
+/// Overwrite every secret-bearing string before the vault is dropped.
+///
+/// Dropping a String frees its buffer without clearing it, so passwords and
+/// card numbers would sit in reusable heap memory (and could reach a page
+/// file or crash dump) after locking. This does not reach copies already
+/// handed to the frontend — those live in the webview's heap.
+pub fn zeroize_secrets(vault: &mut Vault) {
+    use zeroize::Zeroize;
+    for item in vault.items.iter_mut() {
+        match item {
+            Item::Login { base, fields } => {
+                fields.password.zeroize();
+                fields.username.zeroize();
+                base.notes.zeroize();
+            }
+            Item::Note { base, fields } => {
+                fields.body.zeroize();
+                base.notes.zeroize();
+            }
+            Item::Card { base, fields } => {
+                fields.number.zeroize();
+                fields.cvv.zeroize();
+                fields.cardholder.zeroize();
+                base.notes.zeroize();
+            }
+        }
+    }
+    let p = &mut vault.personal;
+    for field in [
+        &mut p.name,
+        &mut p.username,
+        &mut p.email,
+        &mut p.phone,
+        &mut p.address,
+        &mut p.city,
+        &mut p.state,
+        &mut p.zip,
+        &mut p.country,
+        &mut p.date_of_birth,
+        &mut p.desired_salary,
+    ] {
+        field.zeroize();
+    }
+}
+
+pub fn is_pinned(vault: &Vault, id: Uuid) -> bool {
+    vault.pinned.contains(&id)
+}
+
+/// Pin or unpin an item. Errors when the per-kind limit is already reached,
+/// so the UI can say which limit was hit.
+pub fn set_pinned(vault: &mut Vault, id: Uuid, pinned: bool) -> Result<(), String> {
+    if !pinned {
+        vault.pinned.retain(|p| *p != id);
+        return Ok(());
+    }
+    if vault.pinned.contains(&id) {
+        return Ok(());
+    }
+    let kind = kind_of(get_item(vault, id).ok_or_else(|| "not found".to_string())?);
+    let limit = pin_limit(kind);
+    let used = vault
+        .pinned
+        .iter()
+        .filter(|p| get_item(vault, **p).map(kind_of) == Some(kind))
+        .count();
+    if used >= limit {
+        return Err(format!("You can pin up to {limit} {kind}s. Unpin one first."));
+    }
+    vault.pinned.push(id);
+    Ok(())
 }
 
 pub fn new_vault(salt: Vec<u8>) -> Vault {
@@ -155,6 +259,8 @@ pub fn new_vault(salt: Vec<u8>) -> Vault {
         kdf_salt: salt,
         items: Vec::new(),
         personal: PersonalInfo::default(),
+        pinned: Vec::new(),
+        icon_checked: std::collections::HashMap::new(),
     }
 }
 
@@ -171,6 +277,14 @@ pub fn update_item(vault: &mut Vault, item: Item) {
 
 pub fn delete_item(vault: &mut Vault, id: Uuid) {
     vault.items.retain(|i| i.id() != id);
+    // A pin pointing at a deleted item would keep a hole in the pinned row.
+    vault.pinned.retain(|p| *p != id);
+    vault.icon_checked.remove(&id);
+}
+
+/// Unix seconds of the item's last favicon check, 0 when never checked.
+pub fn icon_checked_at(vault: &Vault, id: Uuid) -> i64 {
+    vault.icon_checked.get(&id).copied().unwrap_or(0)
 }
 
 pub fn get_item(vault: &Vault, id: Uuid) -> Option<&Item> {
@@ -211,7 +325,9 @@ fn char_class_count(password: &str) -> usize {
 }
 
 fn is_weak_password(password: &str) -> bool {
-    password.len() < 8 || char_class_count(password) < 3
+    // chars(), not len(): "🔑🔑" is 8 bytes but only 2 characters, and a
+    // byte count would wave it through as strong.
+    password.chars().count() < 8 || char_class_count(password) < 3
 }
 
 const OLD_PASSWORD_THRESHOLD_SECS: i64 = 90 * 86_400;
@@ -290,6 +406,116 @@ pub fn deserialize_vault(bytes: &[u8]) -> Result<Vault, VaultError> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn zeroize_secrets_clears_passwords_and_card_data() {
+        let mut v = new_vault(vec![0; 16]);
+        add_item(&mut v, sample_login());
+        add_item(
+            &mut v,
+            Item::Card {
+                base: ItemBase {
+                    id: Uuid::new_v4(),
+                    title: "Visa".to_string(),
+                    notes: "pin 1234".to_string(),
+                    created_at: 0,
+                    updated_at: 0,
+                    favicon: String::new(),
+                },
+                fields: CardFields {
+                    cardholder: "A Person".to_string(),
+                    number: "4111111111111111".to_string(),
+                    exp: "12/40".to_string(),
+                    cvv: "123".to_string(),
+                },
+            },
+        );
+        v.personal.email = "me@example.com".to_string();
+        zeroize_secrets(&mut v);
+        for item in &v.items {
+            match item {
+                Item::Login { fields, .. } => assert!(fields.password.is_empty()),
+                Item::Card { base, fields } => {
+                    assert!(fields.number.is_empty());
+                    assert!(fields.cvv.is_empty());
+                    assert!(base.notes.is_empty());
+                }
+                Item::Note { .. } => {}
+            }
+        }
+        assert!(v.personal.email.is_empty());
+    }
+
+    #[test]
+    fn pin_limit_is_ten_logins_and_five_of_the_rest() {
+        let mut v = new_vault(vec![0; 16]);
+        let mut ids = Vec::new();
+        for _ in 0..11 {
+            let mut it = sample_login();
+            it.base_mut().id = Uuid::new_v4();
+            ids.push(it.id());
+            add_item(&mut v, it);
+        }
+        for id in ids.iter().take(10) {
+            set_pinned(&mut v, *id, true).unwrap();
+        }
+        let err = set_pinned(&mut v, ids[10], true).unwrap_err();
+        assert!(err.contains("10 logins"), "{err}");
+        assert_eq!(v.pinned.len(), 10);
+    }
+
+    #[test]
+    fn unpinning_frees_a_slot() {
+        let mut v = new_vault(vec![0; 16]);
+        let a = sample_login();
+        let b = {
+            let mut it = sample_login();
+            it.base_mut().id = Uuid::new_v4();
+            it
+        };
+        let (ida, idb) = (a.id(), b.id());
+        add_item(&mut v, a);
+        add_item(&mut v, b);
+        set_pinned(&mut v, ida, true).unwrap();
+        assert!(is_pinned(&v, ida));
+        set_pinned(&mut v, ida, false).unwrap();
+        assert!(!is_pinned(&v, ida));
+        set_pinned(&mut v, idb, true).unwrap();
+        assert_eq!(v.pinned, vec![idb]);
+    }
+
+    #[test]
+    fn pinning_twice_is_a_no_op_not_a_second_slot() {
+        let mut v = new_vault(vec![0; 16]);
+        let it = sample_login();
+        let id = it.id();
+        add_item(&mut v, it);
+        set_pinned(&mut v, id, true).unwrap();
+        set_pinned(&mut v, id, true).unwrap();
+        assert_eq!(v.pinned.len(), 1);
+    }
+
+    #[test]
+    fn deleting_an_item_drops_its_icon_timestamp() {
+        let mut v = new_vault(vec![0; 16]);
+        let it = sample_login();
+        let id = it.id();
+        add_item(&mut v, it);
+        v.icon_checked.insert(id, 1_700_000_000);
+        delete_item(&mut v, id);
+        assert_eq!(icon_checked_at(&v, id), 0);
+    }
+
+    #[test]
+    fn deleting_a_pinned_item_drops_its_pin() {
+        let mut v = new_vault(vec![0; 16]);
+        let it = sample_login();
+        let id = it.id();
+        add_item(&mut v, it);
+        set_pinned(&mut v, id, true).unwrap();
+        delete_item(&mut v, id);
+        assert!(v.pinned.is_empty());
+    }
+
     fn sample_login() -> Item {
         let now = 1_700_000_000;
         Item::Login {
@@ -360,6 +586,19 @@ mod tests {
 
         let stats = compute_stats(&v, 1_700_000_000);
         assert_eq!(stats.weak.len(), 2);
+    }
+
+    #[test]
+    fn short_multibyte_passwords_are_weak() {
+        let mut v = new_vault(vec![0; 16]);
+        let mut it = sample_login();
+        if let Item::Login { fields, .. } = &mut it {
+            // 8 bytes, 2 characters.
+            fields.password = "🔑🔑".to_string();
+        }
+        add_item(&mut v, it);
+        let stats = compute_stats(&v, 1_700_000_000);
+        assert_eq!(stats.weak.len(), 1);
     }
 
     #[test]

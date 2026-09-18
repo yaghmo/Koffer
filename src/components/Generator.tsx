@@ -6,6 +6,8 @@ import { useHotkey } from "../lib/useHotkey";
 
 interface Props {
   onClose: () => void;
+  /** When set, shows a "Use" button that fills the caller's password field and closes. */
+  onUse?: (password: string) => void;
 }
 
 const defaults: GenOpts = { length: 20, lower: true, upper: true, digits: true, symbols: true };
@@ -17,7 +19,7 @@ const CLASSES: { key: keyof Omit<GenOpts, "length">; label: string }[] = [
   { key: "symbols", label: "!@#" },
 ];
 
-export default function Generator({ onClose }: Props) {
+export default function Generator({ onClose, onUse }: Props) {
   const [opts, setOpts] = useState<GenOpts>(defaults);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -105,10 +107,21 @@ export default function Generator({ onClose }: Props) {
           <button type="button" className="btn-secondary flex-1" onClick={generate}>
             Generate
           </button>
-          <button type="button" className="btn-primary flex-1" onClick={copy} disabled={!value}>
-            {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-            {copied ? "Copied" : "Copy"}
-          </button>
+          {onUse ? (
+            <button
+              type="button"
+              className="btn-primary flex-1"
+              onClick={() => onUse(value)}
+              disabled={!value}
+            >
+              Use password
+            </button>
+          ) : (
+            <button type="button" className="btn-primary flex-1" onClick={copy} disabled={!value}>
+              {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          )}
         </div>
 
         {error && (

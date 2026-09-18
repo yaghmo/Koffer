@@ -3,12 +3,24 @@ import { api } from "../lib/api";
 import type { PersonalInfo } from "../lib/types";
 import type { Item, ItemKind, ItemMeta, LoginFields, LoginMethod, NoteFields, CardFields } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, XIcon, ShieldIcon, KeyIcon, CardIcon, NoteIcon } from "../components/Icon";
-import { methods, MethodChip, accountMatchesProvider, methodLabel } from "../lib/methods";
+import {
+  methods,
+  MethodChip,
+  accountMatchesProvider,
+  methodLabel,
+  providerAccount,
+  normalizeAccount,
+} from "../lib/methods";
 import { useHotkey } from "../lib/useHotkey";
+import Generator from "../components/Generator";
+import NoteEditor from "../components/NoteEditor";
+import { logUi } from "../lib/log";
 
 interface Props {
   id: string | null;
   initialKind?: ItemKind;
+  /** Set when the kind came from an active section filter, not a free choice. */
+  lockKind?: boolean;
   onClose: () => void;
   onSaved?: () => void;
 }
@@ -33,8 +45,44 @@ function isValidExp(s: string): boolean {
   return /^\d{2}\/\d{2}$/.test(t);
 }
 
+// MM must be 01-12 and the card must not already be expired. Cards stay valid
+// through the last day of their printed month.
+function isExpiredOrBadMonth(exp: string, now = new Date()): "month" | "expired" | null {
+  const [mm, yy] = exp.trim().split("/").map(Number);
+  if (mm < 1 || mm > 12) return "month";
+  const expiresEnd = new Date(2000 + yy, mm, 1);
+  return expiresEnd <= now ? "expired" : null;
+}
+
+// Luhn checksum — catches typo'd digits in a card number.
+function isValidCardNumber(raw: string): boolean {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 13 || digits.length > 19) return false;
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = digits.charCodeAt(i) - 48;
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
+
+// Embossed names are letters and a few separators, capped at the 26 chars
+// the card itself allows.
+function sanitizeCardholder(raw: string): string {
+  return raw.replace(/[^A-Za-z\u00C0-\u024F .'-]/g, "").slice(0, 26);
+}
+
+// ISO/IEC 7812 allows up to 19 digits (UnionPay, some Discover and Maestro
+// cards use them); capping at 16 silently truncated those and then failed
+// them on Luhn.
 function formatCardNumber(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 16);
+  const digits = raw.replace(/\D/g, "").slice(0, 19);
   const parts = [];
   for (let i = 0; i < digits.length; i += 4) {
     parts.push(digits.slice(i, i + 4));
@@ -68,7 +116,10 @@ function Section({ title, icon: Icon, children }: { title: string; icon: typeof 
   );
 }
 
-export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props) {
+export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved }: Props) {
+  // An existing item's kind is fixed: switching it would silently drop the
+  // fields that only that kind has. Only a brand-new item is free to change.
+  const kindLocked = lockKind || id !== null;
   const [kind, setKind] = useState<ItemKind>(initialKind ?? "login");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -82,6 +133,12 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
   const [dirty, setDirty] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
+  // Signing in through Google/GitHub/an app usually means there is no
+  // password to store — but plenty of accounts have both (an app login and a
+  // password set on the same account), so it stays one click away.
+  const [wantsPassword, setWantsPassword] = useState(false);
+  const passwordShown = login.method === "credentials" || wantsPassword || login.password !== "";
 
   const [favicon, setFavicon] = useState<string | null>(null);
   const [fetchingMeta, setFetchingMeta] = useState(false);
@@ -148,7 +205,9 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
       .listItems(undefined, "login")
       .then((all) => {
         if (cancelled) return;
-        const matches = all.filter((it) => it.username && accountMatchesProvider(it.username, login.method));
+        const matches = all.filter(
+          (it) => it.id !== id && it.username && accountMatchesProvider(it.username, login.method),
+        );
         const seen = new Set<string>();
         const unique = matches.filter((it) => {
           const key = (it.username || "").toLowerCase();
@@ -207,16 +266,39 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
   async function save() {
     const errors: Record<string, string> = {};
     if (!title.trim()) errors.title = "Title is required.";
-    if (kind === "login" && !isValidUrl(login.url)) {
-      errors.url = "URL must be a valid http(s) link (e.g. https://example.com).";
+    if (kind === "login") {
+      if (!isValidUrl(login.url)) {
+        errors.url = "URL must be a valid http(s) link (e.g. https://example.com).";
+      }
+      if (login.method === "credentials" && !login.password) {
+        errors.password = "Password is required.";
+      }
+    }
+    if (kind === "note" && !note.body.trim()) {
+      errors.body = "Note body is required.";
     }
     if (kind === "card") {
       const exp = card.exp.trim();
       if (!exp) errors.exp = "Card expiration is required.";
       else if (!isValidExp(exp)) errors.exp = "Card expiration must be MM/YY.";
+      else {
+        const problem = isExpiredOrBadMonth(exp);
+        if (problem === "month") errors.exp = "Month must be between 01 and 12.";
+        else if (problem === "expired") errors.exp = "This card has expired.";
+      }
+      const number = card.number.trim();
+      if (!number) errors.number = "Card number is required.";
+      else if (!isValidCardNumber(number)) {
+        errors.number = "Card number looks wrong — check the digits.";
+      }
+      const cvv = card.cvv.trim();
+      if (cvv && cvv.length < 3) errors.cvv = "CVV is 3 or 4 digits.";
     }
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+    if (Object.keys(errors).length > 0) {
+      logUi("warn", "item-editor", `save blocked kind=${kind} fields=${Object.keys(errors).join(",")}`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -228,6 +310,12 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
       else if (kind === "note") item = { type: "note", ...base, ...note };
       else item = { type: "card", ...base, ...card };
       await api.saveItem(item);
+      logUi(
+        "info",
+        "item-editor",
+        `saved ${id ? "existing" : "new"} kind=${kind}` +
+          (kind === "login" ? ` method=${login.method} hasPassword=${login.password !== ""}` : ""),
+      );
       onSaved?.();
       onClose();
     } catch (e: any) {
@@ -270,27 +358,34 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
 
         <div className="flex flex-col gap-4 px-6 pb-6">
           <Section title="Item" icon={SectionIcon}>
-            <div className="flex gap-2" role="group" aria-label="Item kind">
-              {(["login", "note", "card"] as ItemKind[]).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => {
-                    setKind(k);
-                    markDirty();
-                  }}
-                  className={`rounded-control px-3 py-1.5 text-body-sm font-medium capitalize transition-colors duration-150 ease-out ${
-                    kind === k ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-white/4"
-                  }`}
-                >
-                  {k}
-                </button>
-              ))}
-            </div>
+            {kindLocked ? (
+              <span className="self-start rounded-control bg-primary px-3 py-1.5 text-body-sm font-medium capitalize text-on-primary">
+                {kind}
+              </span>
+            ) : (
+              <div className="flex gap-2" role="group" aria-label="Item kind">
+                {(["login", "note", "card"] as ItemKind[]).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setKind(k);
+                      markDirty();
+                    }}
+                    className={`rounded-control px-3 py-1.5 text-body-sm font-medium capitalize transition-colors duration-150 ease-out ${
+                      kind === k ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-white/4"
+                    }`}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <p className="label-md">Title</p>
               <input
                 value={title}
+                maxLength={80}
                 onChange={(e) => {
                   setTitle(e.target.value);
                   markDirty();
@@ -366,7 +461,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
               </div>
               {login.method !== "credentials" ? (
                 <div className="flex flex-col gap-1.5">
-                  <p className="label-md">Account</p>
+                  <p className="label-md">{login.method === "other" ? "Sign in with" : "Account"}</p>
                   {accountSuggestions.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {accountSuggestions.map((s) => (
@@ -377,19 +472,22 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                             setLogin({ ...login, username: s.username || "" });
                             markDirty();
                           }}
-                          className={`rounded-chip border px-2.5 py-1 font-mono text-body-sm transition-colors duration-150 ease-out ${
+                          className={`flex max-w-full items-center gap-2 rounded-chip border px-2.5 py-1 text-body-sm transition-colors duration-150 ease-out ${
                             login.username === s.username
                               ? "border-primary bg-primary text-on-primary"
                               : "border-white/8 bg-surface-container-low text-on-surface hover:bg-white/4"
                           }`}
                         >
-                          {s.username}
+                          {login.method === "other" && <span className="truncate font-medium">{s.title}</span>}
+                          <span className="truncate font-mono">{s.username}</span>
                         </button>
                       ))}
                     </div>
                   ) : (
                     <p className="text-body-sm text-on-surface-variant">
-                      No {methodLabel(login.method)} account in your vault yet.
+                      {login.method === "other"
+                        ? "No other login in your vault to sign in with yet."
+                        : `No ${methodLabel(login.method)} account in your vault yet.`}
                     </p>
                   )}
                   <button
@@ -406,7 +504,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                   <input
                     value={login.username}
                     onChange={(e) => {
-                      setLogin({ ...login, username: e.target.value });
+                      setLogin({ ...login, username: normalizeAccount(e.target.value) });
                       markDirty();
                     }}
                     aria-label="Username"
@@ -428,7 +526,25 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
             </Section>
           )}
 
-          {kind === "login" && (
+          {kind === "login" && !passwordShown && (
+            <Section title="Password" icon={KeyIcon}>
+              <p className="text-body-sm text-on-surface-variant">
+                You sign in with {methodLabel(login.method)}, so there is no password to keep here.
+              </p>
+              <button
+                type="button"
+                className="btn-secondary self-start"
+                onClick={() => {
+                  setWantsPassword(true);
+                  logUi("info", "item-editor", `password field revealed method=${login.method}`);
+                }}
+              >
+                <KeyIcon size={14} /> Still have a password?
+              </button>
+            </Section>
+          )}
+
+          {kind === "login" && passwordShown && (
             <Section title="Password" icon={KeyIcon}>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -464,23 +580,57 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                   {copied === "password" ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
                   {copied === "password" ? "Copied" : "Copy"}
                 </button>
+                <button type="button" onClick={() => setShowGenerator(true)} className="btn-secondary">
+                  <KeyIcon size={14} /> Generate
+                </button>
               </div>
+              {fieldErrors.password && (
+                <p role="alert" className="text-body-sm text-error">
+                  {fieldErrors.password}
+                </p>
+              )}
+              {login.method !== "credentials" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogin({ ...login, password: "" });
+                    setWantsPassword(false);
+                    markDirty();
+                  }}
+                  className="self-start text-body-sm font-medium text-on-surface-variant hover:text-error"
+                >
+                  No password on this account
+                </button>
+              )}
             </Section>
+          )}
+
+          {showGenerator && (
+            <Generator
+              onClose={() => setShowGenerator(false)}
+              onUse={(pw) => {
+                setLogin({ ...login, password: pw });
+                markDirty();
+                setShowGenerator(false);
+              }}
+            />
           )}
 
           {kind === "note" && (
             <Section title="Note body" icon={NoteIcon}>
-              <textarea
-                rows={8}
+              <NoteEditor
+                label="Note body"
                 value={note.body}
-                onChange={(e) => {
-                  setNote({ body: e.target.value });
+                onChange={(body) => {
+                  setNote({ body });
                   markDirty();
                 }}
-                aria-label="Note body"
-                spellCheck={false}
-                className="field h-auto resize-y py-2.5"
               />
+              {fieldErrors.body && (
+                <p role="alert" className="text-body-sm text-error">
+                  {fieldErrors.body}
+                </p>
+              )}
             </Section>
           )}
 
@@ -491,7 +641,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                 <input
                   value={card.cardholder}
                   onChange={(e) => {
-                    setCard({ ...card, cardholder: e.target.value });
+                    setCard({ ...card, cardholder: sanitizeCardholder(e.target.value) });
                     markDirty();
                   }}
                   aria-label="Cardholder"
@@ -515,7 +665,7 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                     inputMode="numeric"
                     autoComplete="off"
                     placeholder="1234-5678-9012-3456"
-                    maxLength={19}
+                    maxLength={23}
                     className="field flex-1 font-mono"
                   />
                   <button
@@ -528,6 +678,11 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                     {copied === "number" ? "Copied" : "Copy"}
                   </button>
                 </div>
+                {fieldErrors.number && (
+                  <p role="alert" className="text-body-sm text-error">
+                    {fieldErrors.number}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-1.5">
                 <p className="label-md">Exp</p>
@@ -577,11 +732,19 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                     {copied === "cvv" ? "Copied" : "Copy"}
                   </button>
                 </div>
+                {fieldErrors.cvv && (
+                  <p role="alert" className="text-body-sm text-error">
+                    {fieldErrors.cvv}
+                  </p>
+                )}
               </div>
             </Section>
           )}
 
-          <Section title="Notes" icon={NoteIcon}>
+          {/* Stored as `notes` in the vault — renaming the field would mean a
+              migration for a label. "Comments" is what it has always been:
+              a remark about the item, not the item's own body. */}
+          <Section title="Comments" icon={NoteIcon}>
             <textarea
               rows={3}
               value={notes}
@@ -589,8 +752,9 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                 setNotes(e.target.value);
                 markDirty();
               }}
-              aria-label="Notes"
-              spellCheck={false}
+              aria-label="Comments"
+              placeholder="Anything worth remembering about this item"
+              spellCheck
               className="field h-auto resize-y py-2.5"
             />
           </Section>
@@ -621,6 +785,9 @@ export default function ItemEditor({ id, initialKind, onClose, onSaved }: Props)
                 method: login.method,
                 username: u,
                 card_bin: null,
+                host: null,
+                pinned: false,
+                icon_checked_at: 0,
               },
             ]);
           }}
@@ -678,32 +845,49 @@ function NewAccountModal({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const providerLabel = methods.find((m) => m.id === providerMethod)?.label ?? providerMethod;
+  // "Google" is the button you press; Gmail is the account you actually own,
+  // so that is what the saved item is called and linked to.
+  const account = providerAccount(providerMethod);
 
   useHotkey("escape", onClose);
 
   async function save() {
     const errors: Record<string, string> = {};
     if (!username.trim()) errors.account = "Account is required.";
+    else if (/\s/.test(username.trim())) errors.account = "Account cannot contain spaces.";
     if (!password) errors.password = "Password is required.";
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
     setBusy(true);
     setError(null);
     try {
+      const url = account?.url ?? "";
+      // Pull the real logo (Gmail's envelope, not Google's G) so the platform
+      // card in the vault shows what the user recognises.
+      let favicon = "";
+      if (url) {
+        try {
+          const meta = await api.fetchUrlMetadata(url);
+          favicon = meta.favicon_data_url ?? "";
+        } catch {
+          // offline or blocked — the provider chip is the fallback
+        }
+      }
       const item: Item = {
         type: "login",
         id: crypto.randomUUID(),
-        title: username.trim(),
+        title: account?.label ?? username.trim(),
         notes: "",
         created_at: 0,
         updated_at: Date.now(),
-        favicon: "",
+        favicon,
         method: providerMethod,
-        url: "",
-        username: username.trim(),
+        url,
+        username: normalizeAccount(username.trim()),
         password,
       };
       await api.saveItem(item);
+      logUi("info", "new-account", `created provider=${providerMethod}`);
       onCreated({ id: item.id, username: item.username });
     } catch (e: any) {
       setError(String(e));
@@ -731,7 +915,9 @@ function NewAccountModal({
             <MethodChip method={providerMethod} size={22} />
             <div>
               <p className="label-sm">New account</p>
-              <h2 className="text-headline-sm text-on-surface">Add {providerLabel} account</h2>
+              <h2 className="text-headline-sm text-on-surface">
+                Add {account?.label ?? providerLabel} account
+              </h2>
             </div>
           </div>
         </div>
@@ -740,7 +926,7 @@ function NewAccountModal({
             <p className="label-md">Account</p>
             <input
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => setUsername(normalizeAccount(e.target.value))}
               aria-label="Account"
               autoFocus
               spellCheck={false}
@@ -761,6 +947,7 @@ function NewAccountModal({
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoFocus={false}
                 aria-label="Password"
                 spellCheck={false}
                 autoComplete="new-password"

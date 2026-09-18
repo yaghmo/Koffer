@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, UrlMetadata, VaultStats } from "./types";
+import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, UrlMetadata, VaultStats, VaultStorage } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -23,6 +23,11 @@ export const api = {
   getItem: (id: string) => invoke<Item>("get_item", { id }),
   saveItem: (item: Item) => invoke<void>("save_item", { item }),
   deleteItem: (id: string) => invoke<void>("delete_item", { id }),
+  /** `favicon: null` records "checked, nothing new" without a write. */
+  setItemFavicon: (id: string, favicon: string | null) =>
+    invoke<void>("set_item_favicon", { id, favicon }),
+  setItemPinned: (id: string, pinned: boolean) =>
+    invoke<void>("set_item_pinned", { id, pinned }),
 
   generatePassword: (opts: GenOpts) => invoke<string>("generate_password", { opts }),
 
@@ -32,9 +37,23 @@ export const api = {
   getConfig: () => invoke<Config>("get_config"),
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
 
+  vaultStorage: () => invoke<VaultStorage>("vault_storage"),
+
   resetActivity: () => invoke<void>("reset_activity"),
+
+  logEvent: (level: "info" | "warn", scope: string, message: string) =>
+    invoke<void>("log_event", { level, scope, message }),
   resetVault: (password: string, accountId: string) =>
     invoke<void>("reset_vault", { password, accountId }),
+
+  securityState: () => invoke<SecurityState>("security_state"),
+  /** Returns the code, formatted in groups. Shown once and never stored. */
+  createRecoveryCode: (password: string) =>
+    invoke<string>("create_recovery_code", { password }),
+  recoverVault: (code: string, newPassword: string, accountId: string) =>
+    invoke<void>("recover_vault", { code, newPassword, accountId }),
+  changeMasterPassword: (current: string, newPassword: string) =>
+    invoke<void>("change_master_password", { current, newPassword }),
 
   exportVault: (dest: string) => invoke<void>("export_vault", { dest }),
   importVault: (src: string, name: string) =>

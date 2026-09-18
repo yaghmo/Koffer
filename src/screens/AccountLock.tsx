@@ -26,6 +26,11 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   const [importName, setImportName] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  // Recovery-code flow, reached from "Forgot your master password?".
+  const [recovering, setRecovering] = useState(false);
+  const [code, setCode] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [recoverBusy, setRecoverBusy] = useState(false);
   // Set right when we explicitly select a just-imported account, before the
   // parent's `accounts` prop has caught up (its refetch is an async IPC
   // round-trip). Cleared once `accounts` actually contains that id. Lets the
@@ -41,6 +46,25 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   accountsRef.current = accounts;
 
   useHotkey("escape", () => setSwitcherOpen(false), switcherOpen);
+  useHotkey("escape", () => setRecovering(false), recovering && !switcherOpen);
+
+  async function submitRecovery(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+    setError(null);
+    setRecoverBusy(true);
+    try {
+      await api.recoverVault(code, newPw, selected.id);
+      setCode("");
+      setNewPw("");
+      setRecovering(false);
+      onUnlocked(selected);
+    } catch (err: any) {
+      setError(String(err));
+    } finally {
+      setRecoverBusy(false);
+    }
+  }
 
   // After a delete (or any account list change), drop a selection that no
   // longer exists and reset the form. Without this the deleted vault keeps
@@ -146,6 +170,70 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
               <PlusIcon size={16} /> Create one
             </button>
           </div>
+        ) : recovering ? (
+          <form onSubmit={submitRecovery} className="flex w-full flex-col gap-4">
+            <div>
+              <p className="label-sm text-secondary">Recovery</p>
+              <h2 className="text-headline-sm text-on-surface">Unlock with your recovery code</h2>
+              <p className="mt-1 text-body-sm text-on-surface-variant">
+                Enter the code issued when this vault was created, then choose a new master
+                password. The recovery code itself keeps working afterwards.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Recovery code</p>
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                aria-label="Recovery code"
+                autoFocus
+                spellCheck={false}
+                autoComplete="off"
+                placeholder="K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"
+                className="field font-mono tracking-wider"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">New master password</p>
+              <input
+                type="password"
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+                aria-label="New master password"
+                spellCheck={false}
+                autoComplete="new-password"
+                className="field font-mono"
+              />
+            </div>
+
+            {error && (
+              <p role="alert" className="text-body-sm text-error">
+                {error}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn-secondary flex-1"
+                onClick={() => {
+                  setRecovering(false);
+                  setError(null);
+                }}
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                className="btn-primary flex-1"
+                disabled={recoverBusy || !code.trim() || newPw.length < 8}
+              >
+                {recoverBusy ? "Recovering…" : "Recover vault"}
+              </button>
+            </div>
+          </form>
         ) : (
           <form onSubmit={submit} className="flex w-full flex-col gap-4">
             <div className="flex flex-col gap-1.5">
@@ -203,6 +291,18 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
             <button type="submit" className="btn-primary w-full" disabled={busy || !pw}>
               <UnlockIcon size={16} />
               {busy ? "Unlocking…" : "Unlock"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setRecovering(true);
+                setError(null);
+              }}
+              disabled={busy}
+              className="self-center text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary disabled:opacity-50"
+            >
+              Forgot your master password?
             </button>
 
             <button

@@ -29,8 +29,18 @@ pub enum AccountError {
     NotFound(String),
     #[error("account name cannot be empty")]
     EmptyName,
+    #[error("an account named \"{0}\" already exists")]
+    DuplicateName(String),
     #[error("not a valid vault file")]
     InvalidVaultFile,
+}
+
+/// Case-insensitive so "Work" and "work" can't coexist and confuse the switcher.
+fn ensure_unique_name(existing: &[Account], name: &str) -> Result<(), AccountError> {
+    if existing.iter().any(|a| a.name.eq_ignore_ascii_case(name)) {
+        return Err(AccountError::DuplicateName(name.to_string()));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +164,8 @@ pub fn create_account(name: &str) -> Result<Account, AccountError> {
         return Err(AccountError::EmptyName);
     }
     migrate_legacy_if_needed()?;
+    let mut all = read_registry()?;
+    ensure_unique_name(&all, trimmed)?;
     let id = Uuid::new_v4();
     let account = Account {
         id,
@@ -161,7 +173,6 @@ pub fn create_account(name: &str) -> Result<Account, AccountError> {
         vault_filename: format!("vault-{}.enc", id),
         config_filename: format!("config-{}.json", id),
     };
-    let mut all = read_registry()?;
     all.push(account.clone());
     write_registry(&all)?;
     Ok(account)
@@ -195,6 +206,8 @@ pub fn import_account(src: &std::path::Path, name: &str) -> Result<Account, Acco
     }
     precheck_vault_header(src)?;
     migrate_legacy_if_needed()?;
+    let mut all = read_registry()?;
+    ensure_unique_name(&all, trimmed)?;
     let id = Uuid::new_v4();
     let vault_filename = format!("vault-{}.enc", id);
     let config_filename = format!("config-{}.json", id);
@@ -207,7 +220,6 @@ pub fn import_account(src: &std::path::Path, name: &str) -> Result<Account, Acco
         vault_filename,
         config_filename,
     };
-    let mut all = read_registry()?;
     all.push(account.clone());
     write_registry(&all)?;
     Ok(account)
@@ -269,6 +281,15 @@ mod tests {
     }
 
     #[test]
+    fn create_rejects_duplicate_name_case_insensitively() {
+        let _g = lock_env();
+        fresh_tmp();
+        create_account("Work").unwrap();
+        assert!(matches!(create_account("work"), Err(AccountError::DuplicateName(_))));
+        assert_eq!(list_accounts().unwrap().len(), 1);
+    }
+
+    #[test]
     fn create_rejects_empty_name() {
         let _g = lock_env();
         fresh_tmp();
@@ -319,6 +340,22 @@ mod tests {
         std::fs::write(&src, b"definitely not a vault file").unwrap();
         assert!(import_account(&src, "restored").is_err());
         assert!(list_accounts().unwrap().is_empty());
+    }
+
+    #[test]
+    fn import_account_rejects_duplicate_name_without_copying_file() {
+        let _g = lock_env();
+        fresh_tmp();
+        create_account("restored").unwrap();
+        let src_dir = std::env::temp_dir().join(format!("import-src-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let src = src_dir.join("backup.enc");
+        std::fs::write(&src, fixture_vault_bytes(b"x")).unwrap();
+        assert!(matches!(
+            import_account(&src, "restored"),
+            Err(AccountError::DuplicateName(_))
+        ));
+        assert_eq!(list_accounts().unwrap().len(), 1);
     }
 
     #[test]

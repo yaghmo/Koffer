@@ -4,6 +4,8 @@ import type { Item } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon, ExternalIcon, CardBrandIcon, NoteIcon } from "../components/Icon";
 import { methodLabel, MethodChip } from "../lib/methods";
 import { useHotkey } from "../lib/useHotkey";
+import ConfirmDialog from "../components/ConfirmDialog";
+import Markdown from "../components/Markdown";
 
 interface Props {
   id: string;
@@ -110,6 +112,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
   const [item, setItem] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     setItem(null);
@@ -158,6 +161,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
   }
 
   return (
+    <>
     <div role="dialog" aria-modal="true" className="dialog flex h-full w-[480px] flex-col gap-6 overflow-y-auto p-6">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -188,9 +192,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
           </button>
           <button
             type="button"
-            onClick={() => {
-              if (confirm(`Delete "${item.title}"?`)) onDelete(item.id);
-            }}
+            onClick={() => setConfirmingDelete(true)}
             aria-label="Delete item"
             className="rounded-control p-2 text-error transition-colors duration-150 ease-out hover:bg-error/12"
           >
@@ -254,7 +256,14 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
             ) : null}
           </>
         )}
-        {item.type === "note" && <Field label="Body" value={item.body} />}
+        {item.type === "note" && (
+          <div className="flex flex-col gap-1.5">
+            <p className="label-md">Body</p>
+            <div className="rounded-control border border-white/8 bg-surface-container-lowest p-3">
+              <Markdown source={item.body} />
+            </div>
+          </div>
+        )}
         {item.type === "card" && (
           <>
             <Field
@@ -271,9 +280,27 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
       </div>
       {item.notes && (
         <div className="card p-4">
-          <Field label="Notes" value={item.notes} />
+          <div className="flex flex-col gap-1.5">
+            <p className="label-md">Comments</p>
+            <p className="whitespace-pre-wrap rounded-control border border-white/8 bg-surface-container-lowest p-3 text-body-md text-on-surface-variant">
+              {item.notes}
+            </p>
+          </div>
         </div>
       )}
     </div>
+    {confirmingDelete && (
+      <ConfirmDialog
+        title="Delete item"
+        message={`Delete "${item.title}"? This can't be undone.`}
+        typeToConfirm="Delete"
+        onCancel={() => setConfirmingDelete(false)}
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          onDelete(item.id);
+        }}
+      />
+    )}
+    </>
   );
 }

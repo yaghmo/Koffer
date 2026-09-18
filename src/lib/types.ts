@@ -9,7 +9,7 @@ export interface ItemBase {
   favicon: string;
 }
 
-export type LoginMethod = "credentials" | "google" | "github" | "microsoft" | "apple" | "facebook";
+export type LoginMethod = "credentials" | "google" | "github" | "microsoft" | "apple" | "facebook" | "other";
 
 export interface LoginFields {
   method: LoginMethod;
@@ -43,7 +43,15 @@ export interface ItemMeta {
   method: LoginMethod | null;
   username: string | null;
   card_bin: string | null;
+  /** Bare domain of a login's URL, e.g. "twitch.tv". Null for notes/cards. */
+  host: string | null;
+  pinned: boolean;
+  /** Unix seconds of the last favicon check; 0 when never checked. */
+  icon_checked_at: number;
 }
+
+/** Mirrors the per-kind caps enforced in vault.rs. */
+export const PIN_LIMITS: Record<ItemKind, number> = { login: 10, note: 5, card: 5 };
 
 export interface GenOpts {
   length: number;
@@ -55,6 +63,18 @@ export interface GenOpts {
 
 export interface Config {
   autolock_mins: number;
+}
+
+export interface SecurityState {
+  has_recovery: boolean;
+  /** Unix seconds of the last export; 0 when never exported. */
+  last_export_secs: number;
+}
+
+export interface VaultStorage {
+  path: string;
+  bytes: number;
+  modified_secs: number;
 }
 
 export interface PersonalInfo {
