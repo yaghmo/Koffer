@@ -879,7 +879,13 @@ pub fn needs_upload(vault_path: &std::path::Path, last_backup_secs: i64) -> bool
         Ok(d) => d.as_secs() as i64,
         Err(_) => return false,
     };
-    secs > last_backup_secs
+    // `>=`, not `>`: both sides are whole seconds, so an upload that finishes
+    // in the same second as the save it uploaded stamps a time equal to the
+    // file's mtime. Treating equal as "already backed up" would permanently
+    // skip a later edit made in that same second. The cost of being wrong the
+    // other way is one redundant upload, which then stamps a later second and
+    // settles.
+    secs >= last_backup_secs
 }
 
 /// Upload the vault now, whether or not it has changed. Wired to the "Back up
@@ -1159,5 +1165,25 @@ mod tests {
         crate::test_env::override_data_dir_to_tmp("needs-upload-missing");
         let p = crate::storage::data_dir().join("nope.enc");
         assert!(!needs_upload(&p, 0));
+    }
+
+    #[test]
+    fn needs_upload_is_true_when_the_stamp_equals_the_file_mtime() {
+        // A same-second upload stamps a time equal to the mtime. That must not
+        // read as "already backed up", or an edit made in that same second is
+        // never uploaded.
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("needs-upload-equal");
+        let p = crate::storage::data_dir().join("v.enc");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, b"x").unwrap();
+        let mtime = std::fs::metadata(&p)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert!(needs_upload(&p, mtime));
     }
 }
