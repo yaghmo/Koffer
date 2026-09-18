@@ -13,10 +13,21 @@ pub const MAX_BYTES: usize = 25 * 1024 * 1024;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct BackupConfig {
     pub url: String,
     pub put_token: String,
+}
+
+// Hand-written so the token cannot reach a log or a panic message through a
+// Debug print of this struct or of the Vault that embeds it.
+impl std::fmt::Debug for BackupConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackupConfig")
+            .field("url", &"<redacted>")
+            .field("put_token", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Deliberately opaque. Every variant renders without the URL or the token,
@@ -65,6 +76,10 @@ fn endpoint(base: &str) -> String {
 fn client() -> Result<reqwest::Client, CloudError> {
     reqwest::Client::builder()
         .timeout(TIMEOUT)
+        // A single /vault endpoint has no legitimate reason to redirect, and
+        // following one would re-send the vault to a host validate_url never
+        // checked — including an http:// one.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| CloudError::Network)
 }
@@ -104,7 +119,7 @@ pub async fn upload(cfg: &BackupConfig, blob: Vec<u8>) -> Result<(), CloudError>
 
 pub async fn download(url: &str, get_token: &str) -> Result<Vec<u8>, CloudError> {
     validate_url(url)?;
-    let res = client()?
+    let mut res = client()?
         .get(endpoint(url))
         .bearer_auth(get_token)
         .send()
@@ -121,14 +136,17 @@ pub async fn download(url: &str, get_token: &str) -> Result<Vec<u8>, CloudError>
             return Err(CloudError::TooLarge);
         }
     }
-    let bytes = res.bytes().await.map_err(|_| CloudError::Network)?;
-    if bytes.len() > MAX_BYTES {
-        return Err(CloudError::TooLarge);
+    let mut out: Vec<u8> = Vec::new();
+    while let Some(chunk) = res.chunk().await.map_err(|_| CloudError::Network)? {
+        if out.len() + chunk.len() > MAX_BYTES {
+            return Err(CloudError::TooLarge);
+        }
+        out.extend_from_slice(&chunk);
     }
-    if bytes.is_empty() {
+    if out.is_empty() {
         return Err(CloudError::NotFound);
     }
-    Ok(bytes.to_vec())
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -190,7 +208,7 @@ mod tests {
             url: "https://w.example.dev".into(),
             put_token: "t".into(),
         };
-        // 127.0.0.1 with nothing listening: if this ever returns a network
+        // A URL with nothing listening: if this ever returns a network
         // error instead of TooLarge, the size check ran too late.
         let big = vec![0u8; MAX_BYTES + 1];
         let out = tauri::async_runtime::block_on(upload(&cfg, big));
@@ -211,5 +229,16 @@ mod tests {
     fn download_rejects_an_insecure_url_before_connecting() {
         let out = tauri::async_runtime::block_on(download("http://w.example.dev", "t"));
         assert!(matches!(out, Err(CloudError::InsecureUrl)));
+    }
+
+    #[test]
+    fn debug_output_redacts_the_token_and_url() {
+        let cfg = BackupConfig {
+            url: "https://private-worker.example.dev".into(),
+            put_token: "super-secret-token".into(),
+        };
+        let rendered = format!("{cfg:?}");
+        assert!(!rendered.contains("super-secret-token"));
+        assert!(!rendered.contains("private-worker"));
     }
 }
