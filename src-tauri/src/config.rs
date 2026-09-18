@@ -12,11 +12,14 @@ pub struct Config {
     /// Unix seconds of the last successful export; 0 when never exported.
     #[serde(default)]
     pub last_export_secs: i64,
+    /// Unix seconds of the last successful cloud upload; 0 when never uploaded.
+    #[serde(default)]
+    pub last_cloud_backup_secs: i64,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { autolock_mins: 15, last_export_secs: 0 }
+        Self { autolock_mins: 15, last_export_secs: 0, last_cloud_backup_secs: 0 }
     }
 }
 
@@ -111,5 +114,34 @@ mod tests {
         fs::write(config_path(&a), "not json").unwrap();
         let c = load(&a);
         assert_eq!(c.autolock_mins, 15);
+    }
+
+    #[test]
+    fn cloud_backup_stamp_defaults_to_zero() {
+        let c = Config::default();
+        assert_eq!(c.last_cloud_backup_secs, 0);
+    }
+
+    #[test]
+    fn cloud_backup_stamp_round_trips() {
+        let _g = lock_env();
+        fresh_tmp();
+        let a = fixture();
+        let mut c = Config::default();
+        c.last_cloud_backup_secs = 1_700_000_000;
+        save(&a, &c).unwrap();
+        assert_eq!(load(&a).last_cloud_backup_secs, 1_700_000_000);
+    }
+
+    #[test]
+    fn configs_written_before_the_field_existed_still_load() {
+        let _g = lock_env();
+        fresh_tmp();
+        let a = fixture();
+        std::fs::create_dir_all(crate::storage::config_path(&a).parent().unwrap()).unwrap();
+        std::fs::write(crate::storage::config_path(&a), r#"{"autolock_mins":20}"#).unwrap();
+        let c = load(&a);
+        assert_eq!(c.autolock_mins, 20);
+        assert_eq!(c.last_cloud_backup_secs, 0);
     }
 }

@@ -157,6 +157,12 @@ pub struct Vault {
     /// account with.
     #[serde(default)]
     pub icon_checked: std::collections::HashMap<Uuid, i64>,
+    /// Worker URL and PUT token for offsite backup. Lives in the vault rather
+    /// than `config.json` because that file is plaintext on disk and this is a
+    /// credential; it is only needed while unlocked, which is exactly when
+    /// uploads happen.
+    #[serde(default)]
+    pub backup: Option<crate::cloud::BackupConfig>,
 }
 
 /// How many items of each kind may be pinned at once.
@@ -223,6 +229,11 @@ pub fn zeroize_secrets(vault: &mut Vault) {
     ] {
         field.zeroize();
     }
+    // The URL is left intact: it is not a secret, and clearing it would turn
+    // backup off silently on the next unlock.
+    if let Some(b) = vault.backup.as_mut() {
+        b.put_token.zeroize();
+    }
 }
 
 pub fn is_pinned(vault: &Vault, id: Uuid) -> bool {
@@ -261,6 +272,7 @@ pub fn new_vault(salt: Vec<u8>) -> Vault {
         personal: PersonalInfo::default(),
         pinned: Vec::new(),
         icon_checked: std::collections::HashMap::new(),
+        backup: None,
     }
 }
 
@@ -803,5 +815,38 @@ mod tests {
         let bytes = serialize_vault(&v).unwrap();
         let v2 = deserialize_vault(&bytes).unwrap();
         assert_eq!(v2.personal, v.personal);
+    }
+
+    #[test]
+    fn vaults_without_a_backup_field_still_load() {
+        // Existing vaults predate the field; serde(default) must carry them.
+        let json = r#"{"version":3,"kdf_salt":[1,2,3],"items":[]}"#;
+        let v: Vault = serde_json::from_str(json).unwrap();
+        assert!(v.backup.is_none());
+    }
+
+    #[test]
+    fn zeroize_wipes_the_stored_put_token() {
+        let mut v = new_vault(vec![1, 2, 3]);
+        v.backup = Some(crate::cloud::BackupConfig {
+            url: "https://w.example.dev".into(),
+            put_token: "secret-token".into(),
+        });
+        zeroize_secrets(&mut v);
+        let token = &v.backup.as_ref().unwrap().put_token;
+        assert!(!token.contains("secret-token"), "token survived the wipe");
+    }
+
+    #[test]
+    fn zeroize_keeps_the_backup_url() {
+        // The URL is not a secret, and blanking it would silently disable
+        // backup on the next unlock.
+        let mut v = new_vault(vec![1, 2, 3]);
+        v.backup = Some(crate::cloud::BackupConfig {
+            url: "https://w.example.dev".into(),
+            put_token: "secret-token".into(),
+        });
+        zeroize_secrets(&mut v);
+        assert_eq!(v.backup.as_ref().unwrap().url, "https://w.example.dev");
     }
 }
