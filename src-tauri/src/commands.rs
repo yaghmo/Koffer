@@ -13,7 +13,7 @@ use crate::storage;
 use crate::vault::{self, Item, LoginFields, PersonalInfo, Vault};
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 pub struct AppState {
@@ -144,7 +144,7 @@ pub struct ItemMeta {
 
 /// "https://www.twitch.tv/login" -> "twitch.tv". Returns None for anything
 /// that isn't a usable http(s) host.
-fn host_of(url: &str) -> Option<String> {
+pub(crate) fn host_of(url: &str) -> Option<String> {
     let rest = url
         .trim()
         .strip_prefix("https://")
@@ -983,6 +983,123 @@ pub fn clear_backup_config(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Browser extension pairing
+// ---------------------------------------------------------------------------
+
+/// One paired browser, as Settings shows it. No token: it never goes up to
+/// the UI, the same way the cloud backup PUT token never does.
+#[derive(Serialize)]
+pub struct PairedInfo {
+    pub origin: String,
+    pub label: String,
+    pub paired_at: i64,
+}
+
+#[derive(Serialize)]
+pub struct BridgeState {
+    /// Empty when the listener came up; the reason it did not, otherwise.
+    pub listen_error: String,
+    pub port: u16,
+    pub clients: Vec<PairedInfo>,
+}
+
+/// Record a newly paired extension. Called from the bridge thread, which is
+/// why it lives here with the other writers rather than inline over there.
+pub(crate) fn add_paired_client(
+    state: &State<'_, AppState>,
+    client: crate::vault::PairedClient,
+) -> Result<(), String> {
+    let account = current_account(state)?;
+    let keys = {
+        let k = state.key.lock().unwrap();
+        k.as_ref().ok_or_else(|| "locked".to_string())?.clone()
+    };
+    let mut vault = state.vault.lock().unwrap();
+    let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
+    // Re-pairing the same extension replaces its token rather than stacking
+    // a second one, so "unpair" always means the browser really is cut off.
+    if let Some(old) = vault.paired.iter_mut().find(|c| c.origin == client.origin) {
+        use zeroize::Zeroize;
+        old.token.zeroize();
+        *old = client;
+    } else {
+        vault.paired.push(client);
+    }
+    storage::save_vault(&account, vault, &keys).map_err(|e| e.to_string())
+}
+
+/// Put a fresh pairing code on screen. Shown once, good for three minutes.
+#[tauri::command]
+pub fn bridge_pair_code(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    if !state.is_unlocked() {
+        return Err("locked".to_string());
+    }
+    // The code itself is never logged: it is the one thing standing between
+    // any local process and a paired extension.
+    crate::log_info!("bridge_pair_code", "pairing code issued");
+    Ok(app.state::<crate::bridge::Bridge>().new_code())
+}
+
+#[tauri::command]
+pub fn bridge_cancel_pairing(app: AppHandle) {
+    app.state::<crate::bridge::Bridge>().cancel_code();
+    crate::log_info!("bridge_cancel_pairing", "pairing cancelled");
+}
+
+#[tauri::command]
+pub fn bridge_state(app: AppHandle, state: State<'_, AppState>) -> Result<BridgeState, String> {
+    let vault = state.vault.lock().unwrap();
+    let clients = vault
+        .as_ref()
+        .map(|v| {
+            v.paired
+                .iter()
+                .map(|c| PairedInfo {
+                    origin: c.origin.clone(),
+                    label: c.label.clone(),
+                    paired_at: c.paired_at,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(BridgeState {
+        listen_error: app
+            .state::<crate::bridge::Bridge>()
+            .listen_error()
+            .unwrap_or_default(),
+        port: crate::bridge::PORT,
+        clients,
+    })
+}
+
+#[tauri::command]
+pub fn bridge_unpair(origin: String, state: State<'_, AppState>) -> Result<(), String> {
+    use zeroize::Zeroize;
+    let account = current_account(&state)?;
+    let keys = {
+        let k = state.key.lock().unwrap();
+        k.as_ref().ok_or_else(|| "locked".to_string())?.clone()
+    };
+    let mut vault = state.vault.lock().unwrap();
+    let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
+
+    let before = vault.paired.len();
+    for mut client in std::mem::take(&mut vault.paired) {
+        if client.origin == origin {
+            client.token.zeroize();
+        } else {
+            vault.paired.push(client);
+        }
+    }
+    if vault.paired.len() == before {
+        return Err("that extension is not paired".to_string());
+    }
+    storage::save_vault(&account, vault, &keys).map_err(|e| e.to_string())?;
+    crate::log_info!("bridge_unpair", "unpaired origin={origin}");
+    Ok(())
+}
+
 /// Whether the vault has been written since the last successful upload.
 ///
 /// This compares the file's mtime against a stored timestamp rather than
@@ -1234,7 +1351,7 @@ fn is_browser_url(url: &str) -> bool {
 /// own password, else (provider logins) the vault account saved for the same
 /// provider and username. Never an unrelated login that merely shares the
 /// username — one email is typically reused across many sites.
-fn login_password<'a>(vault: &'a Vault, fields: &'a LoginFields) -> Option<&'a str> {
+pub(crate) fn login_password<'a>(vault: &'a Vault, fields: &'a LoginFields) -> Option<&'a str> {
     if !fields.password.is_empty() {
         return Some(&fields.password);
     }

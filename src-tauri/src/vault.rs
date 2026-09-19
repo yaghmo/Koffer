@@ -163,6 +163,24 @@ pub struct Vault {
     /// uploads happen.
     #[serde(default)]
     pub backup: Option<crate::cloud::BackupConfig>,
+    /// Browser extensions allowed to ask this vault for credentials. In the
+    /// vault for the same reason `backup` is: each entry holds a bearer
+    /// token, and a plaintext `config.json` would hand a local attacker the
+    /// run of the vault for as long as it is unlocked.
+    #[serde(default)]
+    pub paired: Vec<PairedClient>,
+}
+
+/// A browser extension that has been paired with this vault.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PairedClient {
+    /// `chrome-extension://<id>` — the only `Origin` this token is honoured
+    /// from, pinned when the user typed the pairing code.
+    pub origin: String,
+    /// What to call it in Settings, e.g. "Chrome".
+    pub label: String,
+    pub token: String,
+    pub paired_at: i64,
 }
 
 /// How many items of each kind may be pinned at once.
@@ -246,6 +264,11 @@ pub fn zeroize_secrets(vault: &mut Vault) {
     if let Some(b) = vault.backup.as_mut() {
         b.put_token.zeroize();
     }
+    // Same treatment: the origin and label are not secrets and clearing them
+    // would look like an unpairing, but the token is a live credential.
+    for client in vault.paired.iter_mut() {
+        client.token.zeroize();
+    }
 }
 
 pub fn is_pinned(vault: &Vault, id: Uuid) -> bool {
@@ -285,6 +308,7 @@ pub fn new_vault(salt: Vec<u8>) -> Vault {
         pinned: Vec::new(),
         icon_checked: std::collections::HashMap::new(),
         backup: None,
+        paired: Vec::new(),
     }
 }
 

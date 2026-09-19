@@ -83,6 +83,21 @@ export interface VaultStorage {
   modified_secs: number;
 }
 
+/** A browser extension paired with this vault. Never carries its token. */
+export interface PairedInfo {
+  /** `chrome-extension://<id>` — the only origin its token is honoured from. */
+  origin: string;
+  label: string;
+  paired_at: number;
+}
+
+export interface BridgeState {
+  /** Empty when the listener came up; why it did not, otherwise. */
+  listen_error: string;
+  port: number;
+  clients: PairedInfo[];
+}
+
 export interface BackupState {
   configured: boolean;
   url: string;

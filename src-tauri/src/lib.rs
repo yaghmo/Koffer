@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod autolock;
+pub mod bridge;
 pub mod clipboard;
 pub mod cloud;
 pub mod commands;
@@ -25,9 +26,13 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
+        .manage(bridge::Bridge::default())
         .setup(|app| {
             crate::log_info!("app", "started version={}", env!("CARGO_PKG_VERSION"));
             tray::build(app.handle())?;
+            // Loopback only, and useless until the user pairs an extension
+            // by hand: see the module docs for why that ordering matters.
+            bridge::start(app.handle());
             // Idle watchdog: AutoLock only measures idle time; this enforces it.
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
@@ -88,6 +93,10 @@ pub fn run() {
             commands::open_login_url,
             commands::get_personal_info,
             commands::save_personal_info,
+            commands::bridge_pair_code,
+            commands::bridge_cancel_pairing,
+            commands::bridge_state,
+            commands::bridge_unpair,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

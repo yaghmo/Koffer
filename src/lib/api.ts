@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, BackupState, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, UrlMetadata, VaultStats, VaultStorage } from "./types";
+import type { Account, BackupState, BridgeState, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, UrlMetadata, VaultStats, VaultStorage } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -75,6 +75,13 @@ export const api = {
     invoke<UrlMetadata>("fetch_url_metadata", { url }),
 
   openLoginItem: (id: string) => invoke<void>("open_login_url", { id }),
+
+  bridgeState: () => invoke<BridgeState>("bridge_state"),
+  /** Returns the code to type into the extension. Shown once, good for
+   * three minutes, and burnt after three wrong guesses. */
+  bridgePairCode: () => invoke<string>("bridge_pair_code"),
+  bridgeCancelPairing: () => invoke<void>("bridge_cancel_pairing"),
+  bridgeUnpair: (origin: string) => invoke<void>("bridge_unpair", { origin }),
 
   getPersonalInfo: () => invoke<PersonalInfo>("get_personal_info"),
   savePersonalInfo: (info: PersonalInfo) =>

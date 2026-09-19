@@ -43,6 +43,10 @@ vi.mock("../lib/api", () => ({
     changeMasterPassword: vi.fn().mockResolvedValue(undefined),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
     getBackupConfig: vi.fn().mockResolvedValue({ configured: false, url: "", last_backup_secs: 0, last_backup_error: "" }),
+    bridgeState: vi.fn().mockResolvedValue({ listen_error: "", port: 38471, clients: [] }),
+    bridgePairCode: vi.fn().mockResolvedValue("K7F2Q9MR"),
+    bridgeCancelPairing: vi.fn().mockResolvedValue(undefined),
+    bridgeUnpair: vi.fn().mockResolvedValue(undefined),
     setBackupConfig: vi.fn().mockResolvedValue(undefined),
     clearBackupConfig: vi.fn().mockResolvedValue(undefined),
     backupNow: vi.fn().mockResolvedValue(undefined),
@@ -233,5 +237,60 @@ describe("Settings cloud backup card", () => {
     await waitFor(() =>
       expect(api.setBackupConfig).toHaveBeenCalledWith("https://new.example.dev", undefined)
     );
+  });
+});
+
+describe("Settings browser extension card", () => {
+  it("starts unpaired and says the bridge is local-only", async () => {
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    expect(await screen.findByText(/not paired/i)).toBeTruthy();
+    expect(screen.getByText(/127\.0\.0\.1:38471/)).toBeTruthy();
+    expect(screen.getByText(/never the network/i)).toBeTruthy();
+  });
+
+  it("shows a pairing code on request, and says it expires", async () => {
+    const { api } = await import("../lib/api");
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /pair a browser/i }));
+    expect(await screen.findByText("K7F2Q9MR")).toBeTruthy();
+    expect(screen.getByText(/three minutes, once/i)).toBeTruthy();
+    expect(api.bridgePairCode).toHaveBeenCalled();
+  });
+
+  it("cancels the pending code when pairing is dismissed", async () => {
+    const { api } = await import("../lib/api");
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /pair a browser/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^done$/i }));
+    await waitFor(() => expect(api.bridgeCancelPairing).toHaveBeenCalled());
+    expect(screen.queryByText("K7F2Q9MR")).toBeNull();
+  });
+
+  it("lists a paired browser and unpairs it by origin", async () => {
+    const { api } = await import("../lib/api");
+    vi.mocked(api.bridgeState).mockResolvedValue({
+      listen_error: "",
+      port: 38471,
+      clients: [{ origin: "chrome-extension://abcdef", label: "Chrome", paired_at: 1_700_000_000 }],
+    });
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    expect(await screen.findByText("Chrome")).toBeTruthy();
+    expect(screen.getByText("chrome-extension://abcdef")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /unpair/i }));
+    await waitFor(() =>
+      expect(api.bridgeUnpair).toHaveBeenCalledWith("chrome-extension://abcdef")
+    );
+  });
+
+  it("says so when the port was not available", async () => {
+    // Otherwise the extension just fails silently and nothing explains why.
+    const { api } = await import("../lib/api");
+    vi.mocked(api.bridgeState).mockResolvedValue({
+      listen_error: "port 38471 is not available: os error 10048",
+      port: 38471,
+      clients: [],
+    });
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    expect(await screen.findByText(/could not start.*10048/i)).toBeTruthy();
   });
 });

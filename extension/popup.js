@@ -5,7 +5,7 @@
  * because someone clicked the item they wanted, on the origin shown right
  * above it, and for no other reason.
  */
-import { NOT_PAIRED, status, matches, credentials } from "./vault.js";
+import { NOT_PAIRED, NO_APP, pair, status, matches, credentials } from "./vault.js";
 
 const pageEl = document.getElementById("page");
 const vaultEl = document.getElementById("vault");
@@ -46,6 +46,69 @@ function renderPage(state) {
   pageEl.replaceChildren(head, origin);
 }
 
+function renderPairing() {
+  const note = document.createElement("div");
+  note.className = "dim";
+  note.textContent =
+    "Open the vault app, go to Settings → Browser extension, and type the code it shows.";
+
+  const row = document.createElement("div");
+  row.className = "row";
+  const input = document.createElement("input");
+  input.className = "code";
+  input.placeholder = "PAIRING CODE";
+  input.maxLength = 8;
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.autofocus = true;
+  const go = document.createElement("button");
+  go.className = "primary";
+  go.type = "button";
+  go.textContent = "Pair";
+  row.append(input, go);
+
+  const error = document.createElement("div");
+  error.className = "dim";
+
+  async function submit() {
+    const code = input.value.trim().toUpperCase();
+    if (code.length === 0) return;
+    go.disabled = true;
+    error.textContent = "";
+    try {
+      await pair(code, browserLabel());
+      main();
+    } catch (e) {
+      error.textContent = describe(e);
+      go.disabled = false;
+      input.select();
+    }
+  }
+  go.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submit();
+  });
+
+  vaultEl.replaceChildren(note, row, error);
+  input.focus();
+}
+
+/** Something the user will recognise in the app's paired-extensions list. */
+function browserLabel() {
+  const ua = navigator.userAgent;
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/OPR\//.test(ua)) return "Opera";
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/Chrome\//.test(ua)) return "Chrome";
+  return "Browser";
+}
+
+function describe(e) {
+  if (e.message === NO_APP) return "The vault app is not running.";
+  if (e.message === NOT_PAIRED) return "This browser is not paired yet.";
+  return e.message;
+}
+
 function renderItems(items, tabId, origin) {
   if (items.length === 0) {
     text(vaultEl, `No saved login for ${origin}.`);
@@ -84,7 +147,7 @@ async function fill(button, item, tabId, origin) {
     }
     window.close();
   } catch (e) {
-    text(vaultEl, `Could not fill: ${e.message}`);
+    text(vaultEl, `Could not fill: ${describe(e)}`);
   }
 }
 
@@ -101,7 +164,7 @@ async function main() {
   try {
     const { unlocked } = await status();
     if (!unlocked) {
-      text(vaultEl, "The vault app is running but locked. Unlock it, then reopen this.");
+      text(vaultEl, "The vault is locked. Unlock it in the app, then reopen this.");
       return;
     }
     if (!state) {
@@ -110,12 +173,8 @@ async function main() {
     }
     renderItems(await matches(state.origin), tab.id, state.origin);
   } catch (e) {
-    text(
-      vaultEl,
-      e.message === NOT_PAIRED
-        ? "Not paired with the vault app yet — that is the next step."
-        : `Cannot reach the vault app: ${e.message}`,
-    );
+    if (e.message === NOT_PAIRED) renderPairing();
+    else text(vaultEl, describe(e));
   }
 }
 

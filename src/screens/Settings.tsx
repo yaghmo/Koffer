@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import { refreshSiteLogos } from "../lib/logos";
-import type { BackupState, SecurityState, VaultStorage } from "../lib/types";
+import type { BackupState, BridgeState, SecurityState, VaultStorage } from "../lib/types";
 import { SettingsIcon, ShieldIcon, ImageIcon, XIcon, DatabaseIcon, KeyIcon, CloudIcon } from "../components/Icon";
 import RecoveryCodeDialog from "../components/RecoveryCodeDialog";
 import { useHotkey } from "../lib/useHotkey";
@@ -65,6 +65,9 @@ export default function Settings({ accountId, onLock }: Props) {
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
   const [backupResult, setBackupResult] = useState<string | null>(null);
+  const [bridge, setBridge] = useState<BridgeState | null>(null);
+  const [pairCode, setPairCode] = useState<string | null>(null);
+  const [bridgeError, setBridgeError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getConfig().then((cfg) => {
@@ -80,7 +83,39 @@ export default function Settings({ accountId, onLock }: Props) {
         setBackupUrl(b.url);
       })
       .catch(() => {});
+    loadBridge();
   }, []);
+
+  function loadBridge() {
+    api.bridgeState().then(setBridge).catch(() => setBridge(null));
+  }
+
+  async function startPairing() {
+    setBridgeError(null);
+    try {
+      setPairCode(await api.bridgePairCode());
+    } catch (err: any) {
+      setBridgeError(String(err));
+    }
+  }
+
+  async function stopPairing() {
+    setPairCode(null);
+    await api.bridgeCancelPairing().catch(() => {});
+    // The extension pairs against the running app, not against this screen,
+    // so the list only learns about it when we re-read.
+    loadBridge();
+  }
+
+  async function unpair(origin: string) {
+    setBridgeError(null);
+    try {
+      await api.bridgeUnpair(origin);
+      loadBridge();
+    } catch (err: any) {
+      setBridgeError(String(err));
+    }
+  }
 
   function loadSecurity() {
     api
@@ -482,6 +517,78 @@ export default function Settings({ accountId, onLock }: Props) {
         {exportError && (
           <p role="alert" className="text-body-sm text-error">
             {exportError}
+          </p>
+        )}
+      </div>
+
+      <div className="card flex flex-col gap-3 p-5">
+        <div className="flex items-center gap-2 text-on-surface">
+          <KeyIcon size={16} />
+          <h2 className="text-body-md font-semibold">Browser extension</h2>
+          <span className="text-label-md text-on-surface-variant opacity-70">
+            {bridge && bridge.clients.length > 0
+              ? `· ${bridge.clients.length} paired`
+              : "· Not paired"}
+          </span>
+        </div>
+
+        <p className="text-body-sm text-on-surface-variant">
+          Lets the extension fill logins in your browser. The app listens on{" "}
+          <code>127.0.0.1:{bridge?.port ?? 38471}</code> — on this machine only, never the
+          network. A paired browser can read a login <strong>only for the site it is
+          actually on</strong>, and only while this vault is unlocked.
+        </p>
+
+        {bridge?.listen_error ? (
+          <p role="alert" className="text-body-sm text-error">
+            The bridge could not start: {bridge.listen_error}. The extension cannot reach the
+            vault until that port is free.
+          </p>
+        ) : null}
+
+        {pairCode ? (
+          <div className="flex flex-col gap-2">
+            <span className="label-md">Type this into the extension</span>
+            <code className="field flex items-center font-mono text-headline-sm tracking-[0.35em] text-primary">
+              {pairCode}
+            </code>
+            <p className="text-body-sm text-on-surface-variant">
+              Good for three minutes, once. Three wrong tries and it is dead — ask for another.
+            </p>
+            <button type="button" className="btn-secondary self-start" onClick={stopPairing}>
+              Done
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="btn-secondary self-start" onClick={startPairing}>
+            Pair a browser
+          </button>
+        )}
+
+        {bridge && bridge.clients.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {bridge.clients.map((c) => (
+              <li
+                key={c.origin}
+                className="flex items-center justify-between gap-3 rounded-control border border-white/8 px-3 py-2"
+              >
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-body-sm text-on-surface">{c.label}</span>
+                  <span className="truncate font-mono text-label-md text-on-surface-variant">
+                    {c.origin}
+                  </span>
+                </span>
+                <button type="button" className="btn-secondary" onClick={() => unpair(c.origin)}>
+                  Unpair
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {bridgeError && (
+          <p role="alert" className="text-body-sm text-error">
+            {bridgeError}
           </p>
         )}
       </div>

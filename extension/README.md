@@ -7,6 +7,8 @@ page from the vault when you pick an item.
 
 1. `chrome://extensions` → turn on **Developer mode**.
 2. **Load unpacked** → select this folder.
+3. In the vault app: **Settings → Browser extension → Pair a browser**.
+4. Click the extension's toolbar icon and type the code it shows.
 
 Firefox and Safari are not packaged yet; the manifest is Chrome MV3.
 
@@ -22,12 +24,32 @@ Firefox and Safari are not packaged yet; the manifest is Chrome MV3.
 | `vault.js` | The one seam that talks to the desktop app. |
 | `demo.html` | Open directly in a browser to exercise `autofill.js` by hand. |
 
-## Not wired up yet
+## How it reaches the vault
 
-`vault.js` rejects every call with `not-paired`, so the popup can show the
-page state but has no items to offer. Choosing the transport — a localhost
-socket with a pairing key, or a native-messaging host — replaces that one
-file plus its counterpart in the Rust app, and nothing else.
+The app listens on `127.0.0.1:38471` and answers nothing useful until a
+human pairs this extension: the app shows an eight-character code, you type
+it in here once, and the app hands back a token it stores **inside the
+encrypted vault**. Four rules hold it up, and `src-tauri/src/bridge.rs` is
+where they are enforced:
+
+- **Loopback only.** It binds `127.0.0.1`, never `0.0.0.0`.
+- **A human pairs it.** No other process on the machine can read a code off
+  your screen, so no other process can pair itself. The code lasts three
+  minutes, works once, and dies after three wrong guesses.
+- **The token lives in the vault.** Encrypted at rest, and unverifiable the
+  moment the vault locks — which is exactly when the extension should stop
+  being able to ask for anything.
+- **Rust decides what an origin may see.** This extension says which origin
+  it is acting for; the app filters every lookup by it. Naming an item id is
+  not enough — the origin has to own it. A bug up here cannot turn into one
+  site's password being handed to another.
+
+No response carries an `Access-Control-Allow-Origin` header and every
+request must arrive with a `chrome-extension://` `Origin`, so a web page
+that guesses the port still cannot read a thing.
+
+Unpair from **Settings → Browser extension**; that revokes the token
+immediately, whatever the browser still has stored.
 
 ## Why the popup, and not an automatic fill
 

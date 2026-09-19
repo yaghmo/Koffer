@@ -31,6 +31,10 @@ base64 = "0.22"
 tauri-plugin-dialog = "2"
 zeroize = "1"
 tokio = { version = "1", features = ["net"] }
+# Serves the loopback bridge the browser extension talks to. Chosen over
+# axum/hyper because the endpoint is four routes on 127.0.0.1 and hand-rolled
+# HTTP parsing is exactly the wrong corner to cut.
+tiny_http = "0.12"
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5"
