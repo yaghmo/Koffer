@@ -127,8 +127,7 @@ mod tests {
         let _g = lock_env();
         fresh_tmp();
         let a = fixture();
-        let mut c = Config::default();
-        c.last_cloud_backup_secs = 1_700_000_000;
+        let c = Config { last_cloud_backup_secs: 1_700_000_000, ..Default::default() };
         save(&a, &c).unwrap();
         assert_eq!(load(&a).last_cloud_backup_secs, 1_700_000_000);
     }
