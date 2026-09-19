@@ -48,7 +48,7 @@ impl AppState {
             vault.as_ref()?.backup.clone()?
         };
         let path = storage::vault_path(&account);
-        let last = config::load(&account).last_cloud_backup_secs;
+        let last = config::load(&account).last_cloud_backup_mtime_ms;
         if !needs_upload(&path, last) {
             return None;
         }
@@ -661,7 +661,6 @@ pub fn log_event(level: String, scope: String, message: String) {
 pub struct SecurityState {
     pub has_recovery: bool,
     pub last_export_secs: i64,
-    pub last_cloud_backup_secs: i64,
 }
 
 /// What the Security card in Settings shows: whether a recovery code exists
@@ -673,7 +672,6 @@ pub fn security_state(state: State<'_, AppState>) -> Result<SecurityState, Strin
     Ok(SecurityState {
         has_recovery: storage::has_recovery_slot(&account),
         last_export_secs: cfg.last_export_secs,
-        last_cloud_backup_secs: cfg.last_cloud_backup_secs,
     })
 }
 
@@ -842,6 +840,10 @@ pub struct BackupState {
     pub configured: bool,
     pub url: String,
     pub last_backup_secs: i64,
+    /// The last auto/manual upload's failure message, empty when it
+    /// succeeded or none has run yet. This is the *last* attempt, not
+    /// necessarily the vault's current backup status.
+    pub last_backup_error: String,
 }
 
 #[tauri::command]
@@ -850,34 +852,54 @@ pub fn get_backup_config(state: State<'_, AppState>) -> Result<BackupState, Stri
     let vault = state.vault.lock().unwrap();
     let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
     let cfg = vault.backup.as_ref();
+    let saved = config::load(&account);
     Ok(BackupState {
         configured: cfg.is_some(),
         url: cfg.map(|c| c.url.clone()).unwrap_or_default(),
-        last_backup_secs: config::load(&account).last_cloud_backup_secs,
+        last_backup_secs: saved.last_cloud_backup_secs,
+        last_backup_error: saved.last_cloud_backup_error,
     })
 }
 
+/// `put_token: None` (or blank) keeps the currently stored token — used when
+/// the user only wants to change the URL, since `get_backup_config` never
+/// hands the token back for them to re-enter. Rejected only when there is no
+/// existing config to fall back on.
 #[tauri::command]
 pub fn set_backup_config(
     url: String,
-    put_token: String,
+    put_token: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    use zeroize::Zeroize;
     cloud::validate_url(&url).map_err(|e| e.to_string())?;
-    if put_token.trim().is_empty() {
-        return Err("token cannot be empty".into());
-    }
     let account = current_account(&state)?;
-    let keys = state.key.lock().unwrap();
-    let keys = keys.as_ref().ok_or_else(|| "locked".to_string())?;
+    // Cloned and the guard dropped before the vault guard is taken, matching
+    // save_item's pattern — this is the only pair of commands that used to
+    // hold both guards at once.
+    let keys = {
+        let k = state.key.lock().unwrap();
+        k.as_ref().ok_or_else(|| "locked".to_string())?.clone()
+    };
     let mut vault = state.vault.lock().unwrap();
     let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
 
+    let new_token = match put_token.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => t.to_string(),
+        None => match vault.backup.as_ref() {
+            Some(existing) => existing.put_token.clone(),
+            None => return Err("token cannot be empty".into()),
+        },
+    };
+
+    if let Some(mut old) = vault.backup.take() {
+        old.put_token.zeroize();
+    }
     vault.backup = Some(cloud::BackupConfig {
         url: url.trim().trim_end_matches('/').to_string(),
-        put_token: put_token.trim().to_string(),
+        put_token: new_token,
     });
-    storage::save_vault(&account, vault, keys).map_err(|e| e.to_string())?;
+    storage::save_vault(&account, vault, &keys).map_err(|e| e.to_string())?;
     // The URL is as sensitive as the domain list the vault protects, so it is
     // absent here on purpose.
     crate::log_info!("set_backup_config", "cloud backup configured");
@@ -886,14 +908,19 @@ pub fn set_backup_config(
 
 #[tauri::command]
 pub fn clear_backup_config(state: State<'_, AppState>) -> Result<(), String> {
+    use zeroize::Zeroize;
     let account = current_account(&state)?;
-    let keys = state.key.lock().unwrap();
-    let keys = keys.as_ref().ok_or_else(|| "locked".to_string())?;
+    let keys = {
+        let k = state.key.lock().unwrap();
+        k.as_ref().ok_or_else(|| "locked".to_string())?.clone()
+    };
     let mut vault = state.vault.lock().unwrap();
     let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
 
-    vault.backup = None;
-    storage::save_vault(&account, vault, keys).map_err(|e| e.to_string())?;
+    if let Some(mut old) = vault.backup.take() {
+        old.put_token.zeroize();
+    }
+    storage::save_vault(&account, vault, &keys).map_err(|e| e.to_string())?;
     crate::log_info!("clear_backup_config", "cloud backup disabled");
     Ok(())
 }
@@ -905,22 +932,34 @@ pub fn clear_backup_config(state: State<'_, AppState>) -> Result<(), String> {
 /// wrapper, so a flag would mean nine edits today and a missed one the first
 /// time a tenth call site appears. The mtime is the same signal with none of
 /// that surface, and it survives a restart.
-pub fn needs_upload(vault_path: &std::path::Path, last_backup_secs: i64) -> bool {
+///
+/// Millisecond precision with strict `>`: whole-second precision cannot tell
+/// two saves in the same second apart, and `>=` (the earlier fix for that)
+/// would make the stamp equal the mtime on every subsequent lock once the
+/// caller starts stamping the file's own mtime instead of wall-clock time —
+/// uploading forever. Milliseconds make an exact-equal stamp mean "this exact
+/// file version was already uploaded", so `>` is then the correct read.
+pub fn needs_upload(vault_path: &std::path::Path, last_uploaded_mtime_ms: i64) -> bool {
     let modified = match std::fs::metadata(vault_path).and_then(|m| m.modified()) {
         Ok(t) => t,
         Err(_) => return false,
     };
-    let secs = match modified.duration_since(std::time::UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as i64,
+    let ms = match modified.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_millis() as i64,
         Err(_) => return false,
     };
-    // `>=`, not `>`: both sides are whole seconds, so an upload that finishes
-    // in the same second as the save it uploaded stamps a time equal to the
-    // file's mtime. Treating equal as "already backed up" would permanently
-    // skip a later edit made in that same second. The cost of being wrong the
-    // other way is one redundant upload, which then stamps a later second and
-    // settles.
-    secs >= last_backup_secs
+    ms > last_uploaded_mtime_ms
+}
+
+/// The vault file's mtime in milliseconds, read before the blob so the
+/// caller stamps the version it actually uploaded. Capturing it here (before
+/// the read) rather than after is what makes a save landing mid-upload safe:
+/// the newer bytes go up, but the OLDER mtime gets stamped, so the next lock
+/// re-uploads instead of wrongly skipping the save that snuck in.
+fn mtime_ms(path: &std::path::Path) -> Option<i64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let ms = modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis();
+    Some(ms as i64)
 }
 
 /// Fire the upload without blocking the caller.
@@ -931,6 +970,9 @@ pub fn needs_upload(vault_path: &std::path::Path, last_backup_secs: i64) -> bool
 /// mtime stays newer and the next lock tries again.
 pub fn spawn_backup(cfg: cloud::BackupConfig, path: std::path::PathBuf, account: Account) {
     tauri::async_runtime::spawn(async move {
+        // Captured before the read — see `mtime_ms`'s doc comment for why.
+        let stamp = mtime_ms(&path);
+
         let blob = match std::fs::read(&path) {
             Ok(b) => b,
             Err(e) => {
@@ -941,11 +983,21 @@ pub fn spawn_backup(cfg: cloud::BackupConfig, path: std::path::PathBuf, account:
         match cloud::upload(&cfg, blob).await {
             Ok(()) => {
                 let mut c = config::load(&account);
+                // Display-only; does not drive the upload decision.
                 c.last_cloud_backup_secs = chrono::Utc::now().timestamp();
+                if let Some(ms) = stamp {
+                    c.last_cloud_backup_mtime_ms = ms;
+                }
+                c.last_cloud_backup_error = String::new();
                 let _ = config::save(&account, &c);
                 crate::log_info!("auto_backup", "cloud backup uploaded on lock");
             }
-            Err(e) => crate::log_warn!("auto_backup", "failed: {e}"),
+            Err(e) => {
+                let mut c = config::load(&account);
+                c.last_cloud_backup_error = e.to_string();
+                let _ = config::save(&account, &c);
+                crate::log_warn!("auto_backup", "failed: {e}");
+            }
         }
     });
 }
@@ -967,15 +1019,25 @@ pub async fn backup_now(state: State<'_, AppState>) -> Result<(), String> {
 
     // The on-disk file is already ciphertext, so the upload needs no key.
     let path = storage::vault_path(&account);
+    // Captured before the read — see `mtime_ms`'s doc comment for why.
+    let stamp = mtime_ms(&path);
     let blob = std::fs::read(&path).map_err(|e| e.to_string())?;
 
-    cloud::upload(&cfg, blob).await.map_err(|e| {
+    if let Err(e) = cloud::upload(&cfg, blob).await {
         crate::log_warn!("backup_now", "failed: {e}");
-        e.to_string()
-    })?;
+        let mut c = config::load(&account);
+        c.last_cloud_backup_error = e.to_string();
+        let _ = config::save(&account, &c);
+        return Err(e.to_string());
+    }
 
     let mut c = config::load(&account);
+    // Display-only; does not drive the upload decision.
     c.last_cloud_backup_secs = chrono::Utc::now().timestamp();
+    if let Some(ms) = stamp {
+        c.last_cloud_backup_mtime_ms = ms;
+    }
+    c.last_cloud_backup_error = String::new();
     let _ = config::save(&account, &c);
     crate::log_info!("backup_now", "cloud backup uploaded");
     Ok(())
@@ -1007,7 +1069,12 @@ pub async fn restore_from_cloud(
     // A temp file, because import_account copies from a path. Removed on every
     // path out, including the error ones.
     let tmp = std::env::temp_dir().join(format!("vault-restore-{}.enc", Uuid::new_v4()));
-    std::fs::write(&tmp, &blob).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::write(&tmp, &blob) {
+        // A failed write can still leave a partial file behind; removed on
+        // every path out, including this one.
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.to_string());
+    }
 
     let result = accounts::import_account(&tmp, &name);
     let _ = std::fs::remove_file(&tmp);
@@ -1109,15 +1176,21 @@ mod tests {
 
     #[test]
     fn backup_state_never_carries_the_token() {
-        // The UI only ever needs to know that a token exists. Returning it
-        // would push a live credential across IPC on every Settings render.
+        // Exact key-set check, not a substring scan: a leak through a field
+        // named e.g. "secret" or "credential" would slip past a "token"
+        // substring match but must still fail this test.
         let s = BackupState {
             configured: true,
             url: "https://w.example.dev".into(),
             last_backup_secs: 42,
+            last_backup_error: String::new(),
         };
-        let json = serde_json::to_string(&s).unwrap();
-        assert!(!json.contains("token"), "BackupState exposes a token field: {json}");
+        let v = serde_json::to_value(&s).unwrap();
+        let keys: std::collections::BTreeSet<&str> =
+            v.as_object().unwrap().keys().map(String::as_str).collect();
+        let expected: std::collections::BTreeSet<&str> =
+            ["configured", "url", "last_backup_secs", "last_backup_error"].into_iter().collect();
+        assert_eq!(keys, expected, "BackupState field set changed unexpectedly");
     }
 
     #[test]
@@ -1273,8 +1346,8 @@ mod tests {
         let p = crate::storage::data_dir().join("v.enc");
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(&p, b"x").unwrap();
-        let future = chrono::Utc::now().timestamp() + 3600;
-        assert!(!needs_upload(&p, future));
+        let future_ms = (chrono::Utc::now().timestamp() + 3600) * 1000;
+        assert!(!needs_upload(&p, future_ms));
     }
 
     #[test]
@@ -1284,8 +1357,8 @@ mod tests {
         let p = crate::storage::data_dir().join("v.enc");
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(&p, b"x").unwrap();
-        let ancient = chrono::Utc::now().timestamp() - 86_400;
-        assert!(needs_upload(&p, ancient));
+        let ancient_ms = (chrono::Utc::now().timestamp() - 86_400) * 1000;
+        assert!(needs_upload(&p, ancient_ms));
     }
 
     #[test]
@@ -1296,24 +1369,41 @@ mod tests {
         assert!(!needs_upload(&p, 0));
     }
 
-    #[test]
-    fn needs_upload_is_true_when_the_stamp_equals_the_file_mtime() {
-        // A same-second upload stamps a time equal to the mtime. That must not
-        // read as "already backed up", or an edit made in that same second is
-        // never uploaded.
-        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
-        crate::test_env::override_data_dir_to_tmp("needs-upload-equal");
-        let p = crate::storage::data_dir().join("v.enc");
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(&p, b"x").unwrap();
-        let mtime = std::fs::metadata(&p)
+    fn file_mtime_ms(p: &std::path::Path) -> i64 {
+        std::fs::metadata(p)
             .unwrap()
             .modified()
             .unwrap()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() as i64;
-        assert!(needs_upload(&p, mtime));
+            .as_millis() as i64
+    }
+
+    #[test]
+    fn needs_upload_is_false_when_the_stamp_equals_the_file_mtime() {
+        // Under millisecond precision, an equal stamp means "this exact file
+        // version was already uploaded" — the opposite of the old
+        // whole-second `>=` boundary, which had to treat equal as "still
+        // needs upload" because it could not tell two same-second saves
+        // apart. Renamed and re-asserted for the new semantics.
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("needs-upload-equal");
+        let p = crate::storage::data_dir().join("v.enc");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, b"x").unwrap();
+        let mtime_ms = file_mtime_ms(&p);
+        assert!(!needs_upload(&p, mtime_ms));
+    }
+
+    #[test]
+    fn needs_upload_is_true_when_the_file_is_a_millisecond_newer_than_the_stamp() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("needs-upload-1ms-newer");
+        let p = crate::storage::data_dir().join("v.enc");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, b"x").unwrap();
+        let mtime_ms = file_mtime_ms(&p);
+        assert!(needs_upload(&p, mtime_ms - 1));
     }
 
     #[test]
@@ -1334,6 +1424,32 @@ mod tests {
     }
 
     #[test]
+    fn take_backup_job_is_some_when_unlocked_configured_and_never_uploaded() {
+        // Both existing take_backup_job tests return at the `backup.clone()?`
+        // short-circuit and never reach needs_upload; this exercises the
+        // positive path so inverting that condition can't silently pass.
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("take-job-positive");
+        let account = crate::accounts::create_account("job-positive").unwrap();
+        let keys = storage::KeySet::new("test-master-pw");
+        let mut vault = crate::vault::new_vault(keys.master_salt.clone());
+        vault.backup = Some(cloud::BackupConfig {
+            url: "https://w.example.dev".into(),
+            put_token: "t".into(),
+        });
+        // Written to disk so needs_upload's mtime check has a real file to
+        // read — take_backup_job compares against storage::vault_path.
+        storage::save_vault(&account, &vault, &keys).unwrap();
+
+        let st = AppState::new();
+        *st.current_account.lock().unwrap() = Some(account);
+        *st.vault.lock().unwrap() = Some(vault);
+
+        let job = st.take_backup_job();
+        assert!(job.is_some(), "expected a job: unlocked, configured, never uploaded");
+    }
+
+    #[test]
     fn resetting_a_vault_does_not_back_it_up() {
         // A reset destroys the vault on purpose. Uploading it on the way out
         // would leave in the cloud exactly what the user asked to erase.
@@ -1346,6 +1462,20 @@ mod tests {
         assert!(
             !body.contains("lock_and_backup"),
             "reset_vault must lock without backing up"
+        );
+
+        // This alone only proves reset_vault's own body is clean. Moving the
+        // spawn INTO lock_and_clear itself — which reset_vault also calls —
+        // would upload on reset too and still pass the assertion above, so
+        // pin lock_and_clear's body separately.
+        let clear = src
+            .split("fn lock_and_clear")
+            .nth(1)
+            .expect("lock_and_clear not found");
+        let clear_body = &clear[..clear.find("\n    fn ").unwrap_or(clear.len())];
+        assert!(
+            !clear_body.contains("spawn_backup"),
+            "lock_and_clear must not itself call spawn_backup"
         );
     }
 }

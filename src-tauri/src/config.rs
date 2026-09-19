@@ -12,14 +12,37 @@ pub struct Config {
     /// Unix seconds of the last successful export; 0 when never exported.
     #[serde(default)]
     pub last_export_secs: i64,
-    /// Unix seconds of the last successful cloud upload; 0 when never uploaded.
+    /// Unix seconds of the last successful cloud upload. **Display only** —
+    /// drives the "last upload N days ago" text in Settings and nothing else.
+    /// Whole seconds can't tell two same-second saves apart, which is why the
+    /// upload decision lives in `last_cloud_backup_mtime_ms` instead. Do not
+    /// wire this field back into that decision.
     #[serde(default)]
     pub last_cloud_backup_secs: i64,
+    /// Modification time, in **milliseconds**, of the vault file that was
+    /// actually uploaded on the last successful backup. This is the field
+    /// `needs_upload` compares against; `last_cloud_backup_secs` above is
+    /// display-only. Keeping them separate is what lets the upload decision
+    /// use millisecond precision while the display stays in whole seconds.
+    #[serde(default)]
+    pub last_cloud_backup_mtime_ms: i64,
+    /// Human-readable reason the last cloud backup attempt (auto or manual)
+    /// failed. Empty when the last attempt succeeded, or none has run yet.
+    /// Reflects the *last* attempt only, not necessarily the vault's current
+    /// backup status.
+    #[serde(default)]
+    pub last_cloud_backup_error: String,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { autolock_mins: 15, last_export_secs: 0, last_cloud_backup_secs: 0 }
+        Self {
+            autolock_mins: 15,
+            last_export_secs: 0,
+            last_cloud_backup_secs: 0,
+            last_cloud_backup_mtime_ms: 0,
+            last_cloud_backup_error: String::new(),
+        }
     }
 }
 
@@ -142,5 +165,7 @@ mod tests {
         let c = load(&a);
         assert_eq!(c.autolock_mins, 20);
         assert_eq!(c.last_cloud_backup_secs, 0);
+        assert_eq!(c.last_cloud_backup_mtime_ms, 0);
+        assert_eq!(c.last_cloud_backup_error, "");
     }
 }
