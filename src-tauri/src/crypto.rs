@@ -164,8 +164,11 @@ mod tests {
     #[test]
     fn encrypt_uses_fresh_nonce_each_time() {
         let key = derive_key("password", &random_bytes(16));
-        let (_, n1) = encrypt(&key, b"x");
-        let (_, n2) = encrypt(&key, b"x");
+        // encrypt returns (nonce, ciphertext) — binding the second element
+        // here only proved the ciphertext differed, which a hardcoded nonce
+        // would also satisfy.
+        let (n1, _) = encrypt(&key, b"x");
+        let (n2, _) = encrypt(&key, b"x");
         assert_ne!(n1, n2);
     }
 }

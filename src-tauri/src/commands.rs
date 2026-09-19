@@ -58,14 +58,10 @@ impl AppState {
     fn lock_and_clear(&self) {
         if let Ok(mut k) = self.key.lock() {
             if let Some(keys) = k.as_mut() {
-                for b in keys.data_key.iter_mut() {
-                    *b = 0;
-                }
-                if let Some(kek) = keys.master_kek.as_mut() {
-                    for b in kek.iter_mut() {
-                        *b = 0;
-                    }
-                }
+                // Covers the recovery KEK too, which also unwraps the data
+                // key. `KeySet` wipes itself on drop as well; this stays
+                // explicit so locking does not depend on when the drop runs.
+                keys.wipe();
             }
             *k = None;
         }
@@ -100,7 +96,9 @@ impl AppState {
     /// unlocked vault paired with the previous session's expired timer.
     fn start_autolock(&self, account: &Account) {
         let mut al = self.autolock.lock().unwrap();
-        al.set_timeout(config::load(account).autolock_mins.clamp(15, 30));
+        // Same range `set_autolock_mins` accepts, or Settings would show a
+        // timeout the watchdog silently ignores.
+        al.set_timeout(config::load(account).autolock_mins.clamp(15, 90));
         al.reset();
     }
 
@@ -568,7 +566,9 @@ pub fn copy_to_clipboard(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let ttl = std::time::Duration::from_secs(ttl_secs.unwrap_or(30) as u64);
-    crate::log_info!("copy_to_clipboard", "chars={} ttl_secs={}", text.chars().count(), ttl.as_secs());
+    // No length: the log file is plaintext beside the vault, and a per-copy
+    // character count is an exact inventory of your password lengths.
+    crate::log_info!("copy_to_clipboard", "ttl_secs={}", ttl.as_secs());
     crate::clipboard::copy_with_ttl(&text, ttl).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
@@ -612,6 +612,17 @@ pub fn set_autolock_mins(mins: u8, state: State<'_, AppState>) -> Result<(), Str
     config::save(&account, &c).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().set_timeout(mins);
     Ok(())
+}
+
+/// Turn the unlock-time favicon refresh on or off. Off by default — see
+/// `Config::auto_refresh_icons`.
+#[tauri::command]
+pub fn set_auto_refresh_icons(on: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let account = current_account(&state)?;
+    crate::log_info!("set_auto_refresh_icons", "on={on}");
+    let mut c = config::load(&account);
+    c.auto_refresh_icons = on;
+    config::save(&account, &c).map_err(|e| e.to_string())
 }
 
 /// On-disk footprint of the active vault, for the Settings storage card.
@@ -685,12 +696,16 @@ pub fn create_recovery_code(
     let account = current_account(&state)?;
     // Re-authenticate: a recovery code is a second key to the vault, so an
     // unattended unlocked window must not be enough to mint one.
-    let (vault, mut keys) = storage::load_vault(&account, &password)
+    let (mut vault, mut keys) = storage::load_vault(&account, &password)
         .map_err(|_| "invalid password".to_string())?;
 
     let (secret, code) = crate::recovery::generate();
     keys.set_recovery_secret(&secret);
-    storage::save_vault(&account, &vault, &keys).map_err(|e| e.to_string())?;
+    let saved = storage::save_vault(&account, &vault, &keys);
+    // A second fully decrypted vault, separate from the one in AppState and
+    // dropped here — wipe it rather than leave it in freed memory.
+    vault::zeroize_secrets(&mut vault);
+    saved.map_err(|e| e.to_string())?;
     *state.key.lock().unwrap() = Some(keys);
     crate::log_warn!("create_recovery_code", "new recovery code issued");
     Ok(crate::recovery::format_for_display(&code))
@@ -744,7 +759,7 @@ pub fn change_master_password(
         return Err("password must be at least 8 characters".to_string());
     }
     let account = current_account(&state)?;
-    let (vault, mut keys) = storage::load_vault(&account, &current).map_err(|_| {
+    let (mut vault, mut keys) = storage::load_vault(&account, &current).map_err(|_| {
         crate::log_warn!("change_master_password", "refused (bad current password)");
         "current password is not correct".to_string()
     })?;
@@ -752,7 +767,14 @@ pub fn change_master_password(
     // The recovery slot rides along sealed, so an existing recovery code
     // keeps opening the vault after the password changes.
     keys.set_master_password(&new_password);
-    storage::save_vault(&account, &vault, &keys).map_err(|e| e.to_string())?;
+    let saved = storage::save_vault(&account, &vault, &keys);
+    // Second decrypted copy, dropped here; the AppState one is untouched.
+    vault::zeroize_secrets(&mut vault);
+    saved.map_err(|e| e.to_string())?;
+    // Every retained copy is still wrapped under the password being rotated
+    // away from — often the reason for the change. Keeping them would leave
+    // the old password opening ten full vaults.
+    storage::delete_backups(&account);
     *state.key.lock().unwrap() = Some(keys);
     crate::log_warn!("change_master_password", "master password changed");
     Ok(())
@@ -778,10 +800,14 @@ pub fn reset_vault(
     let account = accounts::get_account_legacy_fallback(id).map_err(|e| e.to_string())?;
 
     // Verify by attempting a full unlock cycle against the existing vault.
-    storage::load_vault(&account, &password).map_err(|_| {
+    // The decrypted copy is only proof the password is right; wipe it instead
+    // of dropping a whole plaintext vault into freed memory.
+    let (mut proof, _keys) = storage::load_vault(&account, &password).map_err(|_| {
         crate::log_warn!("reset_vault", "refused account={account_id} (bad password)");
         "invalid password".to_string()
     })?;
+    vault::zeroize_secrets(&mut proof);
+    drop(proof);
 
     // Wipe the in-memory key first, then delete the files. If the
     // currently unlocked account is the one being reset, also clear
@@ -1163,6 +1189,12 @@ pub fn open_login_url(
     if url.is_empty() {
         return Err("item has no URL".to_string());
     }
+    // Checked before the clipboard is primed, not just before the open: a
+    // refused URL must not leave the password sitting on the clipboard.
+    if !is_browser_url(&url) {
+        crate::log_warn!("open_login_url", "refused id={id}: not an http(s) URL");
+        return Err("that item's URL is not a web address (http or https)".to_string());
+    }
 
     if let Item::Login { fields, .. } = &item {
         if let Some(pw) = login_password(vault, fields) {
@@ -1175,6 +1207,19 @@ pub fn open_login_url(
     app.shell().open(&url, None).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
+}
+
+/// Whether a stored URL may be handed to the OS's default handler.
+///
+/// `shell().open(.., None)` skips the plugin's own scheme allow-list when it
+/// is called from Rust, so `open::that_detached` — `ShellExecuteExW` on
+/// Windows — would happily launch `file:///…`, `ms-msdt:` or a UNC path as a
+/// program. Nothing else in the app checks: `host_of` is display-only and
+/// `metadata::is_public_http` guards favicon fetching, not this.
+fn is_browser_url(url: &str) -> bool {
+    reqwest::Url::parse(url.trim())
+        .map(|u| matches!(u.scheme(), "http" | "https"))
+        .unwrap_or(false)
 }
 
 /// Password to prime the clipboard with when opening a login: the item's
@@ -1275,6 +1320,33 @@ mod tests {
             "   ".into(),
         ));
         assert!(out.is_err());
+    }
+
+    #[test]
+    fn only_http_urls_may_reach_the_os_handler() {
+        // These open in a browser.
+        for ok in [
+            "https://example.com/login",
+            "http://example.com",
+            "  https://example.com  ",
+            "HTTPS://example.com",
+        ] {
+            assert!(is_browser_url(ok), "should be allowed: {ok}");
+        }
+        // These would hand ShellExecuteExW something to *run*. The password is
+        // already on the clipboard by the time the user clicks Open.
+        for bad in [
+            "file:///C:/Windows/System32/calc.exe",
+            "ms-msdt:-id PCWDiagnostic",
+            r"\\10.0.0.5\share\update.exe",
+            "example.com",
+            "javascript:alert(1)",
+            "vbscript:msgbox(1)",
+            "C:\\Windows\\System32\\calc.exe",
+            "",
+        ] {
+            assert!(!is_browser_url(bad), "should be refused: {bad}");
+        }
     }
 
     fn login(method: &str, username: &str, password: &str) -> LoginFields {

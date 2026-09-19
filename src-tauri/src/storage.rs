@@ -129,6 +129,10 @@ pub fn delete_vault_and_config(account: &Account) -> Result<(), StorageError> {
     if cp.exists() {
         fs::remove_file(&cp)?;
     }
+    // The rotating copies are full ciphertext vaults. A user who resets
+    // believes the vault is gone; leaving ten of them behind is exactly the
+    // thing they asked not to happen.
+    delete_backups(account);
     Ok(())
 }
 
@@ -189,6 +193,42 @@ impl KeySet {
             &hex(secret),
             &self.recovery_salt,
         )));
+    }
+
+    /// Clear every key this set holds. Runs on drop too, so the clones the
+    /// command handlers take clean up after themselves instead of leaving a
+    /// data key in freed memory (and from there in a swap or dump file).
+    pub fn wipe(&mut self) {
+        self.data_key.zeroize();
+        if let Some(kek) = self.master_kek.as_mut() {
+            kek.zeroize();
+        }
+        if let Some(slot) = self.recovery.as_mut() {
+            slot.wipe();
+        }
+    }
+}
+
+impl RecoverySlot {
+    fn wipe(&mut self) {
+        match self {
+            // Unwraps the data key: as good as the master key.
+            RecoverySlot::Kek(kek) => kek.zeroize(),
+            // Ciphertext that already sits on disk, not key material.
+            RecoverySlot::Sealed { .. } => {}
+        }
+    }
+}
+
+impl Drop for RecoverySlot {
+    fn drop(&mut self) {
+        self.wipe();
+    }
+}
+
+impl Drop for KeySet {
+    fn drop(&mut self) {
+        self.wipe();
     }
 }
 
@@ -256,6 +296,52 @@ pub fn backups_dir() -> PathBuf {
     data_dir().join("backups")
 }
 
+/// Timestamp part of a backup filename: `20260919-143000`, always 15 chars.
+const STAMP_LEN: usize = 15;
+
+/// Whether `name` is a backup copy of `stem`'s vault.
+///
+/// The suffix has to be checked, not just the prefix: the legacy account's
+/// stem is `vault`, which is a prefix of every `vault-<uuid>` account, so a
+/// prefix-only match would let one account's rotation — or reset — reach
+/// another account's copies.
+fn is_backup_of(name: &str, stem: &str) -> bool {
+    name.strip_prefix(stem)
+        .and_then(|r| r.strip_prefix('-'))
+        .and_then(|r| r.strip_suffix(".enc"))
+        .map(|s| s.len() == STAMP_LEN && s.bytes().all(|b| b.is_ascii_digit() || b == b'-'))
+        .unwrap_or(false)
+}
+
+/// Every rotating copy of this account's vault, oldest first (the names sort
+/// chronologically by construction).
+fn backup_copies(account: &Account) -> Vec<PathBuf> {
+    let stem = account.vault_filename.trim_end_matches(".enc");
+    let mut mine: Vec<PathBuf> = match fs::read_dir(backups_dir()) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| is_backup_of(n, stem))
+                    .unwrap_or(false)
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    mine.sort();
+    mine
+}
+
+/// Drop every rotating copy of this account's vault. Best-effort: a copy that
+/// cannot be removed must not fail the caller, which is always destroying or
+/// re-keying the vault anyway.
+pub fn delete_backups(account: &Account) {
+    for p in backup_copies(account) {
+        let _ = fs::remove_file(p);
+    }
+}
+
 fn write_backup(account: &Account, blob: &[u8]) -> Result<(), StorageError> {
     let dir = backups_dir();
     fs::create_dir_all(&dir)?;
@@ -263,17 +349,7 @@ fn write_backup(account: &Account, blob: &[u8]) -> Result<(), StorageError> {
     let stem = account.vault_filename.trim_end_matches(".enc");
     fs::write(dir.join(format!("{stem}-{stamp}.enc")), blob)?;
 
-    // Keep the newest few; filenames sort chronologically by construction.
-    let mut mine: Vec<PathBuf> = fs::read_dir(&dir)?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.starts_with(stem))
-                .unwrap_or(false)
-        })
-        .collect();
-    mine.sort();
+    let mut mine = backup_copies(account);
     while mine.len() > BACKUP_COPIES {
         let oldest = mine.remove(0);
         let _ = fs::remove_file(oldest);
@@ -490,6 +566,110 @@ mod tests {
         assert!(vault_exists(&acct));
         let (v2, _) = load_vault(&acct, "master").unwrap();
         assert_eq!(v2.items.len(), 1);
+    }
+
+    /// Names of the rotating copies that exist for an account right now.
+    fn backup_names(acct: &Account) -> Vec<String> {
+        backup_copies(acct)
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn resetting_a_vault_leaves_no_rotating_copy_behind() {
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
+        let keys = KeySet::new("master");
+        let v = new_vault(keys.master_salt.clone());
+        // Several saves, so there is more than one copy to miss.
+        for _ in 0..3 {
+            save_vault(&acct, &v, &keys).unwrap();
+        }
+        assert!(!backup_names(&acct).is_empty(), "no backup was written to begin with");
+
+        delete_vault_and_config(&acct).unwrap();
+
+        assert!(!vault_exists(&acct));
+        assert_eq!(
+            backup_names(&acct),
+            Vec::<String>::new(),
+            "a reset must not leave full ciphertext copies on disk"
+        );
+        // And nothing matching the stem survives, however it got named.
+        let stem = acct.vault_filename.trim_end_matches(".enc");
+        let leftovers: Vec<String> = fs::read_dir(backups_dir())
+            .map(|rd| {
+                rd.filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .filter(|n| n.starts_with(stem))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(leftovers, Vec::<String>::new());
+    }
+
+    #[test]
+    fn deleting_one_accounts_backups_leaves_the_others_alone() {
+        // The legacy account's stem ("vault") is a prefix of every
+        // "vault-<uuid>" account, so a prefix-only match would wipe a
+        // bystander's copies on reset — or rotate them away on save.
+        let _g = lock_env();
+        fresh_tmp();
+        let legacy = Account {
+            id: uuid::Uuid::new_v4(),
+            name: "Legacy".into(),
+            vault_filename: "vault.enc".into(),
+            config_filename: "config.json".into(),
+        };
+        let other = fixture_account();
+        let keys = KeySet::new("master");
+        let v = new_vault(keys.master_salt.clone());
+        save_vault(&legacy, &v, &keys).unwrap();
+        save_vault(&other, &v, &keys).unwrap();
+        assert_eq!(backup_names(&other).len(), 1);
+
+        delete_backups(&legacy);
+
+        assert!(backup_names(&legacy).is_empty());
+        assert_eq!(backup_names(&other).len(), 1, "another account's copies were deleted");
+    }
+
+    #[test]
+    fn wiping_a_key_set_clears_every_key_it_holds() {
+        // Clones of a KeySet are handed to the command handlers; each one
+        // carries a data key that opens the vault with no password at all.
+        let _g = lock_env();
+        fresh_tmp();
+        let mut keys = KeySet::new("master");
+        keys.set_recovery_secret(b"recovery-secret");
+        assert_ne!(keys.data_key, [0u8; 32]);
+
+        keys.wipe();
+
+        assert_eq!(keys.data_key, [0u8; 32]);
+        assert_eq!(keys.master_kek, Some([0u8; 32]));
+        match keys.recovery.as_ref() {
+            Some(RecoverySlot::Kek(kek)) => assert_eq!(*kek, [0u8; 32]),
+            other => panic!("recovery slot changed shape: {}", other.is_some()),
+        }
+    }
+
+    #[test]
+    fn a_sealed_recovery_slot_survives_a_wipe_intact() {
+        // Sealed halves are ciphertext already on disk, and `save_vault`
+        // copies them through byte for byte — zeroizing them would silently
+        // destroy a working recovery code.
+        let mut slot = RecoverySlot::Sealed { nonce: vec![1; 12], wrap: vec![2; WRAPPED_KEY_LEN] };
+        slot.wipe();
+        match &slot {
+            RecoverySlot::Sealed { nonce, wrap } => {
+                assert_eq!(*nonce, vec![1; 12]);
+                assert_eq!(*wrap, vec![2; WRAPPED_KEY_LEN]);
+            }
+            _ => panic!("slot changed variant"),
+        }
     }
 
     #[test]

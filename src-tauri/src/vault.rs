@@ -209,9 +209,14 @@ pub fn zeroize_secrets(vault: &mut Vault) {
                 fields.number.zeroize();
                 fields.cvv.zeroize();
                 fields.cardholder.zeroize();
+                // Card number plus expiry is most of a usable card.
+                fields.exp.zeroize();
                 base.notes.zeroize();
             }
         }
+        // The title alone names the site or the bank — the inventory the
+        // vault exists to hide.
+        item.base_mut().title.zeroize();
     }
     let p = &mut vault.personal;
     for field in [
@@ -219,12 +224,19 @@ pub fn zeroize_secrets(vault: &mut Vault) {
         &mut p.username,
         &mut p.email,
         &mut p.phone,
+        &mut p.website,
+        &mut p.github,
+        &mut p.linkedin,
         &mut p.address,
         &mut p.city,
         &mut p.state,
         &mut p.zip,
         &mut p.country,
         &mut p.date_of_birth,
+        &mut p.current_title,
+        &mut p.current_company,
+        &mut p.school,
+        &mut p.degree,
         &mut p.desired_salary,
     ] {
         field.zeroize();
