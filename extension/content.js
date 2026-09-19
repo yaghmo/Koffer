@@ -23,7 +23,11 @@
 
   function report() {
     try {
-      var sent = ext.runtime.sendMessage({ type: "detect", login: isLoginPage() });
+      var sent = ext.runtime.sendMessage({
+        type: "detect",
+        login: isLoginPage(),
+        origin: location.origin,
+      });
       // MV3 hands back a promise in both browsers, and it rejects whenever
       // the worker is asleep or gone. Unhandled, that fills the page's own
       // console with our noise.

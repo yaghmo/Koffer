@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Fills logins from your local Password Manager vault.",
   "minimum_chrome_version": "102",
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "storage", "contextMenus"],
   "host_permissions": ["http://127.0.0.1/*"],
   "browser_specific_settings": {
     "gecko": {

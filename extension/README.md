@@ -37,8 +37,8 @@ is Windows-only, so it is not on the list.
 | `manifest.json` | MV3 manifest, Chromium and Firefox from one file. |
 | `autofill.js` | Dependency-free DOM library: `detect`, `isLogin`, `fill`. No browser APIs, so it is unit-tested in `src/__tests__/autofillDetect.test.ts`. |
 | `content.js` | Runs `autofill.js` on every page, reports the verdict, fills on request. |
-| `background.js` | Service worker. Turns a verdict into a per-tab badge. |
-| `popup.js` / `popup.html` | The only place a fill can be started. |
+| `background.js` | Service worker. Per-tab badge, and the right-click menu. |
+| `popup.js` / `popup.html` | Where a fill is normally started. |
 | `vault.js` | The one seam that talks to the desktop app. |
 | `demo.html` | Open directly in a browser to exercise `autofill.js` by hand. |
 
@@ -86,6 +86,23 @@ asks whether to stay unlocked — only an answer there extends it.
 - **A forged `Origin` header.** Browsers will not let a page forge it, so
   pages really are shut out — but any local process can set it to anything.
   The pairing code and the token are what actually hold the door.
+
+## Windows with no toolbar
+
+"Sign in with Google" usually opens a `window.open` popup: a real browser
+window with no toolbar, so there is no extension icon to click. The content
+script still runs there and still detects the form — the *UI* is what is
+missing, in exactly the window that needs it.
+
+So the accounts for that page are also on the **right-click menu** of any
+text field, under "Password Manager". Same rules as the popup: only
+fillable accounts are clickable, and a provider login appears greyed out
+naming the account you used.
+
+Context menus are global rather than per-tab, so the menu can go stale if
+you switch tabs without navigating. That is safe, not just unlikely: the
+origin the menu was built for travels with the fill, and the content script
+drops it when it no longer matches the page it is running in.
 
 ## Why the popup, and not an automatic fill
 
