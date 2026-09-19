@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Password Manager",
+  "version": "0.1.0",
+  "description": "Fills logins from your local Password Manager vault.",
+  "minimum_chrome_version": "102",
+  "permissions": ["activeTab"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["autofill.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Password Manager",
+    "default_icon": { "32": "icons/32.png", "128": "icons/128.png" }
+  },
+  "icons": { "32": "icons/32.png", "128": "icons/128.png" }
+}

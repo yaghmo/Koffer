@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Password Manager</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface: #0b0e15;
+    --raised: #191b23;
+    --line: #464554;
+    --text: #e1e2ec;
+    --muted: #c7c4d7;
+    --dim: #908fa0;
+    --accent: #c0c1ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    width: 320px;
+    margin: 0;
+    padding: 14px;
+    background: var(--surface);
+    color: var(--text);
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: var(--raised);
+  }
+  .card + .card { margin-top: 8px; }
+  .origin {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    color: var(--accent);
+    overflow-wrap: anywhere;
+  }
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); font-size: 12px; }
+  ul { list-style: none; margin: 8px 0 0; padding: 0; }
+  li + li { margin-top: 6px; }
+  button.item {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  button.item:hover:not(:disabled) { border-color: var(--accent); }
+  button.item:disabled { cursor: not-allowed; opacity: .55; }
+  .title { font-weight: 600; }
+  .sub { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <h1>Password Manager</h1>
+  <div id="page" class="card"><span class="dim">Checking this page…</span></div>
+  <div id="vault" class="card"><span class="dim">Checking the vault…</span></div>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

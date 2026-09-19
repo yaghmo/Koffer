@@ -10,6 +10,9 @@
  *     missing:  [field],
  *   }
  *
+ *   Autofill.detect(scope)        => { passwords: number, identifier: boolean }
+ *   Autofill.isLogin(result, href) => boolean
+ *
  * `data` uses the vault's personal-info keys plus `password`:
  *   { name, username, email, phone, website, github, linkedin, password }
  *
@@ -108,6 +111,45 @@
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  /**
+   * What kind of credential form, if any, is on this page right now.
+   *
+   *   { passwords: <visible password boxes>, identifier: <bool> }
+   *
+   * Counts only. `isLogin` turns them into a verdict, because that needs
+   * the page URL and this function deliberately only looks at the DOM.
+   */
+  function detect(scope) {
+    var inputs = collectInputs(scope);
+    var passwords = inputs.filter(function (el) {
+      return String(el.type || "").toLowerCase() === "password";
+    });
+    var identifier = inputs.some(function (el) {
+      if (String(el.type || "").toLowerCase() === "password") return false;
+      return !!(roleMatches(ROLES.username, el) || roleMatches(ROLES.email, el));
+    });
+    return { passwords: passwords.length, identifier: identifier };
+  }
+
+  var LOGIN_URL = /(^|[^a-z])(sign[-_]?in|signin|log[-_]?in|login|auth|session|account)([^a-z]|$)/i;
+
+  /**
+   * Is a `detect` result, seen at this URL, a login worth offering to fill?
+   *
+   * Exactly one visible password box is a sign-in. Two or more is a sign-up
+   * or a change-password form, where filling a saved login is wrong, so
+   * those say no rather than nagging on every registration page.
+   *
+   * No password box at all is step one of a two-step login (Google,
+   * Microsoft) — but an identifier box on its own is also every newsletter
+   * signup on the web, so that case only counts when the URL admits what
+   * the page is.
+   */
+  function isLogin(result, href) {
+    if (result.passwords === 1) return true;
+    return result.passwords === 0 && result.identifier && LOGIN_URL.test(String(href || ""));
+  }
+
   function fill(scope, data) {
     var inputs = collectInputs(scope);
     var claimed = [];
@@ -143,5 +185,5 @@
     };
   }
 
-  global.Autofill = { fill: fill };
+  global.Autofill = { fill: fill, detect: detect, isLogin: isLogin };
 })(typeof window !== "undefined" ? window : this);
