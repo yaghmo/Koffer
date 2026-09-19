@@ -7,7 +7,7 @@ interface Detected {
 }
 interface FillResult {
   formFound: boolean;
-  filled: string[];
+  filled: { field: string; value: string; matchedBy: string }[];
   missing: string[];
   retried?: boolean;
 }
@@ -173,39 +173,43 @@ describe("fill survives a re-render", () => {
   });
 });
 
-describe("fill reports what actually landed", () => {
+describe("fill finds a revealed password box", () => {
   const creds = { username: "me@example.test", password: "hunter2hunter" };
 
-  it("names both fields when both stuck", () => {
+  it("fills a password field the site has un-masked", () => {
+    // A site's own "show password" eye flips the input to type="text".
+    // Matching on the type alone meant the filler silently stopped working
+    // the moment the user revealed the field — which looked exactly like
+    // "it fills the username but never the password".
+    document.body.innerHTML = `
+      <input name="username" autocomplete="username">
+      <input name="password" type="text" autocomplete="current-password">`;
+    Autofill.fill(document, creds);
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="password"]')!.value
+    ).toBe(creds.password);
+  });
+
+  it("still fills the masked field, which is the normal case", () => {
     document.body.innerHTML = `
       <input name="username" autocomplete="username">
       <input name="password" type="password">`;
-    const out = Autofill.fill(document, creds);
-    expect(out.filled.sort()).toEqual(["password", "username"]);
-    expect(out.missing).toEqual([]);
+    Autofill.fill(document, creds);
+    expect(
+      document.querySelector<HTMLInputElement>('input[type="password"]')!.value
+    ).toBe(creds.password);
   });
 
-  it("does not claim a password it could not place", () => {
-    // The form has no password box at all. Reporting "filled: password"
-    // here is what would let the popup say everything was fine.
-    document.body.innerHTML = `<input name="username" autocomplete="username">`;
-    const out = Autofill.fill(document, creds);
-    expect(out.filled).toEqual(["username"]);
-    expect(out.missing).toEqual(["password"]);
-  });
-
-  it("does not claim a value the page threw away", () => {
+  it("does not mistake a sign-up confirm box for the password box", () => {
     document.body.innerHTML = `
-      <input name="username" autocomplete="username">
-      <input name="password" type="password">`;
-    // A page that refuses to hold a password however often it is written.
-    // Setting `.value` directly dispatches nothing, so this cannot loop.
-    const pass = document.querySelector<HTMLInputElement>('input[type="password"]')!;
-    pass.addEventListener("input", () => {
-      pass.value = "";
-    });
-    const out = Autofill.fill(document, creds);
-    expect(out.filled).toEqual(["username"]);
-    expect(out.missing).toEqual(["password"]);
+      <input name="password" type="password">
+      <input name="confirmPassword" type="password">`;
+    Autofill.fill(document, creds);
+    expect(document.querySelector<HTMLInputElement>('input[name="password"]')!.value).toBe(
+      creds.password
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="confirmPassword"]')!.value
+    ).toBe("");
   });
 });

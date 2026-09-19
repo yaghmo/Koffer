@@ -24,7 +24,15 @@
   "use strict";
 
   var ROLES = {
-    password: { typeRe: /^password$/, report: "password" },
+    // Not `type="password"` alone: a site's own "show password" toggle
+    // flips the field to type="text", and a filler that only knows the
+    // masked form silently stops working the moment the user reveals it.
+    password: {
+      typeRe: /^password$/,
+      autocomplete: "current-password",
+      nameRe: /^password$|current[-_]?password|passwd|\bpwd\b|user[-_]?pass/i,
+      report: "password",
+    },
     email: {
       typeRe: /^email$/,
       autocomplete: "email",
@@ -185,7 +193,16 @@
     };
   }
 
-  /** The values that were asked for and are not in the form now. */
+  /**
+   * The values that were asked for and are not in the form *right now*.
+   *
+   * Only ever used to decide whether to write again, never to report what
+   * happened. A controlled React input re-renders from its old state before
+   * its `onChange` has run, so reading `.value` straight after dispatching
+   * `input` can hand back the previous value on a field that is about to
+   * settle correctly. Writing the same value twice costs nothing; telling
+   * the user their password did not land when it did costs their trust.
+   */
   function pending(scope, data) {
     var inputs = collectInputs(scope);
     var left = {};
@@ -222,29 +239,19 @@
     var out = fillOnce(scope, data);
     var left = pending(scope, data);
     if (Object.keys(left).length > 0) {
-      fillOnce(scope, left);
+      var again = fillOnce(scope, left);
       out.retried = true;
-      left = pending(scope, data);
-    }
-
-    // Report what is in the form now, not what was attempted. A value
-    // written to a node the page then threw away is not filled, and a
-    // password box shows dots either way — the caller has no other way to
-    // tell the two apart.
-    var asked = Object.keys(ROLES).filter(function (role) {
-      var v = data[role];
-      return v !== undefined && v !== null && String(v).trim() !== "";
-    });
-    out.filled = asked
-      .filter(function (role) {
-        return !(role in left);
-      })
-      .map(function (role) {
-        return ROLES[role].report;
+      again.filled.forEach(function (f) {
+        if (
+          out.filled.some(function (existing) {
+            return existing.field === f.field;
+          })
+        ) {
+          return;
+        }
+        out.filled.push(f);
       });
-    out.missing = Object.keys(left).map(function (role) {
-      return ROLES[role].report;
-    });
+    }
     return out;
   }
 

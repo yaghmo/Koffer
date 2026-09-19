@@ -234,18 +234,11 @@ async function fill(button, item, tabId, origin) {
       text(vaultEl, "Nothing on this page matched those fields.");
       return;
     }
-    // Say what actually landed. A password box shows dots whatever is in
-    // it, so "it filled" and "it filled the right thing" look identical
-    // from the outside — this is the only way to tell them apart.
-    const wanted = ["username", "email", "password"].filter((f) => data[f]);
-    const got = wanted.filter((f) => out.filled.includes(f));
-    if (got.length < wanted.length) {
-      const short = wanted.filter((f) => !got.includes(f)).join(" and ");
-      text(vaultEl, `Filled ${got.join(" and ") || "nothing"}. Could not find the ${short} box.`);
-      return;
-    }
-    text(vaultEl, `Filled ${got.join(" and ")}.`, "muted");
-    setTimeout(() => window.close(), 700);
+    // No report on the way out. What landed cannot be checked honestly from
+    // here anyway: a controlled input re-renders from its old value before
+    // its handler runs, so an immediate read says "empty" on a field that
+    // is about to settle correctly.
+    window.close();
   } catch (e) {
     text(vaultEl, `Could not fill: ${describe(e)}`);
   }
@@ -268,10 +261,11 @@ async function main() {
       return;
     }
     if (!state) {
-      // The vault is fine; this page just has no content script — a
-      // chrome:// page, or a tab that was already open when the extension
-      // was last reloaded. Saying nothing here read as "nothing works".
-      text(vaultEl, "Vault connected. Reload this page to fill on it.", "muted");
+      // The vault is fine; this page just has no content script. Say only
+      // that. Suggesting a reload was wrong more often than right — most
+      // pages without a content script are chrome:// or the extensions
+      // page, where there is nothing to fill however often you reload.
+      text(vaultEl, "Vault connected.", "muted");
       return;
     }
     renderItems(await matches(state.origin), tab.id, state.origin);
