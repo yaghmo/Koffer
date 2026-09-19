@@ -114,16 +114,32 @@ ext.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || msg.type !== "detect") return false;
   const tabId = sender.tab && sender.tab.id;
   if (tabId === undefined) return false;
-  // Only ever set. A `login:false` here is usually the page rebuilding its
-  // own form, not the form going away, and acting on it made the badge
-  // flicker out while the user was looking at a login box.
   if (msg.login) {
     ext.action.setBadgeText({ tabId, text: BADGE });
     ext.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOUR });
     onDetectedLogin(tabId, msg.origin);
+    return false;
   }
+  // A `login:false` on the *same* origin is usually the page rebuilding its
+  // own form rather than the form going away, and acting on it made the
+  // badge flicker out while the user was looking at a login box. A
+  // `login:false` from a different origin is a navigation, which is the one
+  // moment the old verdict is certainly stale.
+  //
+  // `tabs.onUpdated` covers that too, but its payload is trimmed without the
+  // "tabs" permission, so this does not lean on it: a menu left showing the
+  // last site's usernames is a leak even when it cannot fill anything.
+  forgetIfMoved(tabId, msg.origin);
   return false;
 });
+
+async function forgetIfMoved(tabId, origin) {
+  const known = (await allTabState())[tabId];
+  if (!known || known.origin === origin) return;
+  ext.action.setBadgeText({ tabId, text: "" });
+  await setTabState(tabId, null);
+  ext.contextMenus.removeAll().catch(() => {});
+}
 
 /** A real navigation is the one moment the old verdict is certainly stale. */
 ext.tabs.onUpdated.addListener((tabId, changeInfo) => {
