@@ -150,7 +150,7 @@
     return result.passwords === 0 && result.identifier && LOGIN_URL.test(String(href || ""));
   }
 
-  function fill(scope, data) {
+  function fillOnce(scope, data) {
     var inputs = collectInputs(scope);
     var claimed = [];
     var filled = [];
@@ -183,6 +183,53 @@
       filled: filled,
       missing: missing,
     };
+  }
+
+  /** The values that were asked for and are not in the form now. */
+  function pending(scope, data) {
+    var inputs = collectInputs(scope);
+    var left = {};
+    Object.keys(ROLES).forEach(function (role) {
+      var value = data[role];
+      if (value === undefined || value === null || String(value).trim() === "") return;
+      var wanted = String(value).trim();
+      var landed = inputs.some(function (el) {
+        return roleMatches(ROLES[role], el) && el.value === wanted;
+      });
+      if (!landed) left[role] = value;
+    });
+    return left;
+  }
+
+  /**
+   * Fill, check, and write again whatever failed to land.
+   *
+   * The first `input` event makes React (and Vue, and Angular) re-render,
+   * which can replace the very nodes still waiting to be written to. The
+   * classic symptom is switching accounts on a form and watching the
+   * username change while the password keeps its old value: the password
+   * element the first pass was holding got thrown away before it was used.
+   *
+   * The second pass carries only the values that are still missing. Writing
+   * the whole set again would re-fire the event that caused the re-render in
+   * the first place, and on a form that rebuilds on every keystroke that is
+   * a race the filler cannot win.
+   *
+   * One extra pass, never a loop. If a page is actively clearing the field,
+   * retrying harder does not beat it.
+   */
+  function fill(scope, data) {
+    var out = fillOnce(scope, data);
+    var left = pending(scope, data);
+    if (Object.keys(left).length > 0) {
+      var again = fillOnce(scope, left);
+      out.retried = true;
+      again.filled.forEach(function (f) {
+        if (out.filled.indexOf(f) === -1) out.filled.push(f);
+      });
+      out.missing = Object.keys(pending(scope, data));
+    }
+    return out;
   }
 
   global.Autofill = { fill: fill, detect: detect, isLogin: isLogin };

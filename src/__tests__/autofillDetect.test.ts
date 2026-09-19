@@ -5,9 +5,16 @@ interface Detected {
   passwords: number;
   identifier: boolean;
 }
+interface FillResult {
+  formFound: boolean;
+  filled: string[];
+  missing: string[];
+  retried?: boolean;
+}
 interface AutofillApi {
   detect: (scope?: Element | Document) => Detected;
   isLogin: (result: Detected, href: string) => boolean;
+  fill: (scope: Element | Document, data: Record<string, string>) => FillResult;
 }
 const Autofill = (window as unknown as { Autofill: AutofillApi }).Autofill;
 
@@ -107,5 +114,61 @@ describe("isLogin", () => {
 
   it("refuses a page with neither, whatever the URL", () => {
     expect(Autofill.isLogin({ passwords: 0, identifier: false }, "https://x.com/login")).toBe(false);
+  });
+});
+
+describe("fill survives a re-render", () => {
+  const creds = { username: "me@example.test", password: "hunter2hunter" };
+
+  function form() {
+    document.body.innerHTML = `
+      <form>
+        <input name="username" autocomplete="username">
+        <input name="password" type="password">
+      </form>`;
+    return {
+      user: document.querySelector<HTMLInputElement>('input[name="username"]')!,
+      pass: document.querySelector<HTMLInputElement>('input[name="password"]')!,
+    };
+  }
+
+  it("fills both fields on a form that stays put", () => {
+    const { user, pass } = form();
+    Autofill.fill(document, creds);
+    expect(user.value).toBe(creds.username);
+    expect(pass.value).toBe(creds.password);
+  });
+
+  it("still fills the password when the first keystroke replaces the node", () => {
+    // Exactly the Twitch symptom: switching accounts updated the username
+    // and left the old password. React re-renders on the username's `input`
+    // event and throws away the password element the fill was holding.
+    const { user } = form();
+    user.addEventListener("input", () => {
+      const old = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+      const fresh = document.createElement("input");
+      fresh.type = "password";
+      fresh.name = "password";
+      old.replaceWith(fresh);
+    });
+
+    const out = Autofill.fill(document, creds);
+    const pass = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+    expect(pass.value).toBe(creds.password);
+    expect(out.retried).toBe(true);
+  });
+
+  it("does not retry when the first pass already worked", () => {
+    form();
+    expect(Autofill.fill(document, creds).retried).toBeUndefined();
+  });
+
+  it("gives up rather than looping when the page keeps clearing the field", () => {
+    const { user } = form();
+    user.addEventListener("input", () => {
+      document.querySelector<HTMLInputElement>('input[type="password"]')!.value = "";
+    });
+    // The point is that this returns at all.
+    expect(() => Autofill.fill(document, creds)).not.toThrow();
   });
 });

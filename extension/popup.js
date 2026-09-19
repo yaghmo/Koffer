@@ -91,7 +91,7 @@ function renderPairing() {
       // permission prompt while the user gesture is still live.
       await ensureHostPermission();
       await pair(code, browserLabel());
-      main();
+      paired();
     } catch (e) {
       error.textContent = describe(e);
       go.disabled = false;
@@ -105,6 +105,24 @@ function renderPairing() {
 
   vaultEl.replaceChildren(note, row, error);
   input.focus();
+}
+
+/**
+ * Say it worked, then get out of the way.
+ *
+ * Re-rendering the normal view here looked fine in theory and read as a
+ * failure in practice: the code field just sat there greyed out with no
+ * word about whether anything had happened.
+ */
+function paired() {
+  const done = document.createElement("div");
+  done.className = "muted";
+  done.textContent = `Paired with ${browserLabel()}.`;
+  const note = document.createElement("div");
+  note.className = "dim";
+  note.textContent = "Open this again on a login page to fill from your vault.";
+  vaultEl.replaceChildren(done, note);
+  setTimeout(() => window.close(), 1200);
 }
 
 /** Something the user will recognise in the app's paired-extensions list. */
