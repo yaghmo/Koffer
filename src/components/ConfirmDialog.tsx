@@ -7,6 +7,9 @@ interface Props {
   confirmLabel?: string;
   /** When set, the confirm button stays disabled until the user types this word exactly. */
   typeToConfirm?: string;
+  /** "danger" (the default) for destructive answers; "primary" when saying
+   *  yes is the ordinary thing to do, so the button does not read as a warning. */
+  tone?: "danger" | "primary";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -16,6 +19,7 @@ export default function ConfirmDialog({
   message,
   confirmLabel = "Delete",
   typeToConfirm,
+  tone = "danger",
   onConfirm,
   onCancel,
 }: Props) {
@@ -54,7 +58,12 @@ export default function ConfirmDialog({
           <button type="button" className="btn-secondary" onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className="btn-danger" onClick={onConfirm} disabled={locked}>
+          <button
+            type="button"
+            className={tone === "danger" ? "btn-danger" : "btn-primary"}
+            onClick={onConfirm}
+            disabled={locked}
+          >
             {confirmLabel}
           </button>
         </div>

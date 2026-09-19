@@ -45,6 +45,16 @@
       return false;
     }
     if (msg && msg.type === "fill") {
+      // The popup read this tab's origin when it opened and the app checked
+      // the item against *that* origin. If the tab has navigated since --
+      // a slow redirect, a meta refresh -- filling now would type the
+      // password into a different site. Only this script knows where the
+      // page actually is at the moment of the fill, so the check belongs
+      // here and nowhere else.
+      if (msg.origin !== location.origin) {
+        respond({ formFound: false, filled: [], missing: [], wrongOrigin: location.origin });
+        return false;
+      }
       var out = window.Autofill.fill(document, msg.data);
       // Only field names and counts go back — never the values that were
       // written, which would put the password back on the message channel

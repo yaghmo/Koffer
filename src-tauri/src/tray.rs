@@ -56,7 +56,7 @@ fn icons(app: &AppHandle) -> tauri::Result<(Image<'static>, Image<'static>)> {
 }
 
 /// Show and focus the main window, restoring it if it was minimized.
-fn reveal(app: &AppHandle) {
+pub fn reveal(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();

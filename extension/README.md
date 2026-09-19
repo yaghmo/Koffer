@@ -69,6 +69,24 @@ that guesses the port still cannot read a thing.
 Unpair from **Settings → Browser extension**; that revokes the token
 immediately, whatever the browser still has stored.
 
+A fill deliberately does **not** extend the unlocked session. If it did,
+anything holding a token could poll the bridge and keep the vault open for
+ever. When a fill lands close to the auto-lock, the app comes forward and
+asks whether to stay unlocked — only an answer there extends it.
+
+## What this does not defend against
+
+- **A local process running as you.** The token lives in
+  `chrome.storage.local`, a file in the browser profile, so malware can read
+  it and use these routes directly. It needs the vault unlocked, and
+  unpairing kills it, but it is a shorter path to plaintext than existed
+  before. This is a deliberate trade for one-click autofill.
+- **A compromised extension.** Pairing grants the whole vault, not one site:
+  whoever holds the token picks which origin to ask about.
+- **A forged `Origin` header.** Browsers will not let a page forge it, so
+  pages really are shut out — but any local process can set it to anything.
+  The pairing code and the token are what actually hold the door.
+
 ## Why the popup, and not an automatic fill
 
 Detection badges a tab. It never fills. A password is written into a page

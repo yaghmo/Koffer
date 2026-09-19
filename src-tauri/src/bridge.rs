@@ -20,17 +20,41 @@
 //!
 //! No response ever carries an `Access-Control-Allow-Origin` header, so even
 //! a page that guesses the port cannot read what comes back.
+//!
+//! # What this does not defend against
+//!
+//! **The `Origin` header is not a guarantee.** A browser will not let a
+//! *page* forge it, so pages really are shut out. Any other local process
+//! can set it to whatever it likes — `curl -H 'Origin: chrome-extension://x'`
+//! reaches these routes. The header narrows the surface; the pairing code
+//! and the token are what actually hold it.
+//!
+//! **A paired browser holds the whole vault, not one site.** The extension
+//! names the origin it is acting for, so whoever holds a token can walk a
+//! list of domains, harvest every title and username, and then ask for any
+//! password. Per-site scoping protects a *page* from another page's
+//! secrets; it does not scope the extension itself.
+//!
+//! **The token is only as private as the browser's profile.** It is kept in
+//! `chrome.storage.local`, a file under the browser's user-data directory,
+//! readable by anything running as the same user. Malware with that file can
+//! use these routes directly instead of dumping this process's memory. The
+//! vault must be unlocked for it to work, and revoking the pairing in
+//! Settings kills it immediately — but on a machine that is already
+//! compromised, this is a shorter path to the plaintext than existed before
+//! the bridge, and that is a deliberate trade for one-click autofill.
 
 use crate::commands::{host_of, AppState};
 use crate::crypto::random_bytes;
-use crate::vault::{Item, PairedClient, Vault};
+use crate::vault::{Item, LoginFields, PairedClient, Vault};
 use serde::Serialize;
 use std::io::Read;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Header, Request, Response, StatusCode};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// ponytail: one fixed port, no discovery protocol. If something else is
 /// already on it the bridge simply does not come up and Settings says so.
@@ -46,6 +70,12 @@ const MAX_BODY: u64 = 8 * 1024;
 /// Threads serving the endpoint. One browser needs one; the rest are so a
 /// stalled connection cannot take the bridge down with it.
 const BRIDGE_WORKERS: usize = 4;
+/// Longest `Origin` kept. An extension id is ~50 characters; this only stops
+/// a paired client writing kilobytes into the vault on every re-pair.
+const MAX_ORIGIN: usize = 128;
+/// When a fill lands with less than this left on the idle timer, ask whether
+/// to stay unlocked. Long enough that the prompt is not a race.
+const EXTEND_PROMPT_SECS: u64 = 120;
 /// Unambiguous: no O/0, no I/1, no letters that look like each other in the
 /// app's font, because this is read off one screen and typed into another.
 const CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -55,6 +85,17 @@ struct PairCode {
     code: String,
     issued: Instant,
     tries: u8,
+}
+
+/// Hand-written rather than derived: `#[derive(Debug)]` would print the code
+/// itself into any log line or test failure that ever formats one.
+impl std::fmt::Debug for PairCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PairCode")
+            .field("code", &"<redacted>")
+            .field("tries", &self.tries)
+            .finish()
+    }
 }
 
 #[derive(Default)]
@@ -90,7 +131,11 @@ impl Bridge {
 
     /// Check a submitted code, consuming it on success and burning it after
     /// `CODE_TRIES` failures.
-    fn redeem(&self, submitted: &str) -> Result<(), &'static str> {
+    ///
+    /// On success the code is handed back so the caller can return it if the
+    /// pairing does not actually get written. A disk error must not cost the
+    /// user their code.
+    fn redeem(&self, submitted: &str) -> Result<PairCode, &'static str> {
         let mut slot = self.pending.lock().unwrap();
         let pending = slot.as_mut().ok_or("no pairing in progress")?;
         if pending.issued.elapsed() > CODE_TTL {
@@ -105,8 +150,15 @@ impl Bridge {
             }
             return Err("that pairing code is not right");
         }
-        *slot = None;
-        Ok(())
+        Ok(slot.take().expect("checked above"))
+    }
+
+    /// Put a redeemed code back after a failed pairing.
+    fn restore(&self, code: PairCode) {
+        let mut slot = self.pending.lock().unwrap();
+        if slot.is_none() {
+            *slot = Some(code);
+        }
     }
 }
 
@@ -124,15 +176,24 @@ fn ct_eq(a: &str, b: &str) -> bool {
 // Origin matching
 // ---------------------------------------------------------------------------
 
-/// Suffixes under which two hosts sharing the tail are still strangers:
-/// `a.co.uk` and `b.co.uk` are unrelated sites.
-///
 /// ponytail: the correct answer is the Public Suffix List. This is the
 /// handful that actually turns up; swap in `publicsuffix` if a real miss
 /// ever shows up.
+///
+/// Suffixes under which two hosts sharing the tail are still strangers:
+/// `a.co.uk` and `b.co.uk` are unrelated sites, and so are two apps on
+/// `vercel.app` or two blogs on `blogspot.com`.
 const MULTI_LABEL_SUFFIXES: &[&str] = &[
+    // Country-code second-level domains.
     "co.uk", "org.uk", "ac.uk", "gov.uk", "co.jp", "or.jp", "com.au", "net.au", "org.au",
     "com.br", "com.mx", "com.ar", "co.in", "co.za", "co.nz", "com.tr", "com.cn", "com.sg",
+    // Private suffixes: one company owns the domain, but every subdomain
+    // belongs to a different person, which is the same problem.
+    "github.io", "gitlab.io", "herokuapp.com", "vercel.app", "netlify.app", "pages.dev",
+    "workers.dev", "blogspot.com", "wordpress.com", "tumblr.com", "myshopify.com",
+    "azurewebsites.net", "cloudfront.net", "amazonaws.com", "s3.amazonaws.com",
+    "firebaseapp.com", "web.app", "glitch.me", "repl.co", "onrender.com", "fly.dev",
+    "ngrok.io", "serveo.net", "githubusercontent.com", "translate.goog",
 ];
 
 /// `https` or `http` from a URL, lowercased. None for anything else.
@@ -193,15 +254,90 @@ pub(crate) struct Match {
     pub title: String,
     pub username: String,
     /// "credentials", or the provider this account signs in through
-    /// ("google", "microsoft", …). The popup offers a fill for the first and
-    /// only a reminder for the rest.
+    /// ("google", "microsoft", …).
     pub method: String,
+    /// Whether a fill would actually be granted here. Decided in Rust so the
+    /// popup cannot offer a button that the next call refuses.
+    pub fillable: bool,
 }
 
 /// Does this login sign in through a provider rather than with a password
 /// typed into the site itself?
 fn is_provider_login(method: &str) -> bool {
     method != "credentials"
+}
+
+/// The domains that *are* each provider, sign-in pages included.
+///
+/// Base domains only: `host_covers` already reaches every subdomain, so
+/// "google.com" takes in `accounts.google.com` and `mail.google.com` alike.
+///
+/// ponytail: a hand-written table. It only ever widens a provider's own
+/// account item onto that provider's own domains, so a missing entry costs
+/// a fill that has to be done by hand, not a wrong one.
+const PROVIDER_DOMAINS: &[(&str, &[&str])] = &[
+    ("google", &["google.com", "gmail.com", "googlemail.com"]),
+    (
+        "microsoft",
+        &["microsoft.com", "microsoftonline.com", "live.com", "outlook.com", "hotmail.com"],
+    ),
+    ("apple", &["apple.com", "icloud.com"]),
+    ("github", &["github.com"]),
+    ("facebook", &["facebook.com"]),
+];
+
+fn provider_domains(method: &str) -> Option<&'static [&'static str]> {
+    PROVIDER_DOMAINS.iter().find(|(m, _)| *m == method).map(|(_, d)| *d)
+}
+
+/// Is this the provider's *own* account item, being asked for on one of the
+/// provider's own pages?
+///
+/// "Gmail" is saved at `mail.google.com`, because that is where the user
+/// goes. Google asks for the password at `accounts.google.com`, which is a
+/// sibling, not a subdomain — so plain host matching misses it and the
+/// chain breaks exactly where it matters: the popup says "click the Google
+/// button", the button lands on the sign-in page, and the vault offers
+/// nothing.
+///
+/// Only an item already living on the provider's own domain is widened. A
+/// Twitch item marked `method=google` stays pinned to twitch.tv, because
+/// its password is Google's and Twitch must never see it.
+fn provider_account_covers(method: &str, item_url: &str, origin: &str) -> bool {
+    if !is_provider_login(method) {
+        return false;
+    }
+    // Sign-in is https everywhere here, and matching schemes is the rule
+    // the rest of this module keeps.
+    if scheme_of(item_url) != Some("https") || scheme_of(origin) != Some("https") {
+        return false;
+    }
+    let Some(domains) = provider_domains(method) else {
+        return false;
+    };
+    let (Some(item_host), Some(origin_host)) = (host_of(item_url), host_of(origin)) else {
+        return false;
+    };
+    domains.iter().any(|d| host_covers(d, &item_host))
+        && domains.iter().any(|d| host_covers(d, &origin_host))
+}
+
+/// Why this item must not be typed into this origin's form, if it must not.
+///
+/// One place, so the list the popup draws and the call that hands over a
+/// password can never disagree about what is fillable.
+fn refuse_fill(fields: &LoginFields, origin: &str) -> Option<&'static str> {
+    let on_provider_page = provider_account_covers(&fields.method, &fields.url, origin);
+    if !url_covers(&fields.url, origin) && !on_provider_page {
+        return Some("that item does not belong to this site");
+    }
+    if is_provider_login(&fields.method) && !on_provider_page {
+        return Some("that account signs in through a provider, so there is no site password to fill");
+    }
+    if fields.password.is_empty() {
+        return Some("that item has no password");
+    }
+    None
 }
 
 /// Every login in the vault that this origin is allowed to see.
@@ -214,7 +350,9 @@ pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
         .iter()
         .filter_map(|item| match item {
             Item::Login { base, fields } => {
-                if !url_covers(&fields.url, origin) {
+                if !url_covers(&fields.url, origin)
+                    && !provider_account_covers(&fields.method, &fields.url, origin)
+                {
                     return None;
                 }
                 Some(Match {
@@ -222,6 +360,7 @@ pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
                     title: base.title.clone(),
                     username: fields.username.clone(),
                     method: fields.method.clone(),
+                    fillable: refuse_fill(fields, origin).is_none(),
                 })
             }
             _ => None,
@@ -257,14 +396,8 @@ pub(crate) fn credentials_for(
     let Item::Login { fields, .. } = item else {
         return Err("not a login item");
     };
-    if !url_covers(&fields.url, origin) {
-        return Err("that item does not belong to this site");
-    }
-    if is_provider_login(&fields.method) {
-        return Err("that account signs in through a provider, so there is no site password to fill");
-    }
-    if fields.password.is_empty() {
-        return Err("that item has no password");
+    if let Some(why) = refuse_fill(fields, origin) {
+        return Err(why);
     }
     Ok((fields.username.clone(), fields.password.clone()))
 }
@@ -274,11 +407,15 @@ pub(crate) fn credentials_for(
 // ---------------------------------------------------------------------------
 
 fn json(status: u16, body: serde_json::Value) -> Response<std::io::Cursor<Vec<u8>>> {
+    json_raw(status, &body.to_string())
+}
+
+fn json_raw(status: u16, body: &str) -> Response<std::io::Cursor<Vec<u8>>> {
     let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
         .expect("static header");
     // Deliberately no Access-Control-Allow-Origin: a page that guesses the
     // port may reach the socket, but it may never read the answer.
-    Response::from_string(body.to_string())
+    Response::from_string(body)
         .with_status_code(StatusCode(status))
         .with_header(header)
 }
@@ -311,14 +448,19 @@ fn field(body: &serde_json::Value, key: &str) -> String {
 }
 
 /// Only an extension may talk to this, and pairing pins which one.
+/// The length cap is not about parsing: it stops a paired client writing
+/// kilobytes into the vault on every re-pair. An extension id is ~50 chars.
+fn is_extension_origin(origin: &str) -> bool {
+    if origin.len() > MAX_ORIGIN {
+        return false;
+    }
+    // moz-extension:// is here for the Firefox port; Chrome is what ships.
+    origin.starts_with("chrome-extension://") || origin.starts_with("moz-extension://")
+}
+
 fn extension_origin(req: &Request) -> Option<String> {
     let origin = header_value(req, "Origin")?;
-    // moz-extension:// is here for the Firefox port; Chrome is what ships.
-    if origin.starts_with("chrome-extension://") || origin.starts_with("moz-extension://") {
-        Some(origin.to_string())
-    } else {
-        None
-    }
+    is_extension_origin(origin).then(|| origin.to_string())
 }
 
 fn bearer(req: &Request) -> Option<String> {
@@ -397,10 +539,13 @@ fn pair(
     if !state.is_unlocked() {
         return fail(423, "unlock the vault before pairing");
     }
-    if let Err(e) = app.state::<Bridge>().redeem(&field(body, "code")) {
-        crate::log_warn!("bridge", "pairing refused: {e}");
-        return fail(403, e);
-    }
+    let redeemed = match app.state::<Bridge>().redeem(&field(body, "code")) {
+        Ok(code) => code,
+        Err(e) => {
+            crate::log_warn!("bridge", "pairing refused: {e}");
+            return fail(403, e);
+        }
+    };
     let label = {
         let l = field(body, "label");
         let l = l.trim();
@@ -421,7 +566,14 @@ fn pair(
             crate::log_info!("bridge", "paired origin={origin}");
             json(200, serde_json::json!({ "token": token }))
         }
-        Err(e) => fail(500, &e),
+        Err(e) => {
+            // The code was good; only the write failed. Give it back rather
+            // than making the user fetch a new one, and keep the reason (it
+            // can carry a filesystem path) in the log instead of the reply.
+            app.state::<Bridge>().restore(redeemed);
+            crate::log_warn!("bridge", "pairing could not be saved: {e}");
+            fail(500, "the pairing could not be saved")
+        }
     }
 }
 
@@ -499,12 +651,25 @@ fn credentials(
     };
     match out {
         Ok((username, password)) => {
-            // A fill is the user acting, so it counts against the idle lock
-            // the same way clicking in the app does. `/status` deliberately
-            // does not, or an open browser would hold the vault open.
-            state.autolock.lock().unwrap().reset();
+            // A fill deliberately does NOT reset the idle timer. It used to,
+            // and that quietly disabled auto-lock: anything holding a token
+            // could poll this route every few minutes and keep the vault
+            // open forever. Only a human at the app extends the session, so
+            // when a fill lands near the end of the timer we ask for one.
+            let remaining = state.autolock.lock().unwrap().remaining_secs();
+            if remaining <= EXTEND_PROMPT_SECS {
+                let _ = app.emit("vault://extend-request", remaining);
+                crate::tray::reveal(app);
+                crate::log_info!("bridge", "fill near auto-lock, asked to extend");
+            }
             crate::log_info!("bridge", "filled one login");
-            json(200, serde_json::json!({ "username": username, "password": password }))
+            // Zeroized on the way out. The response buffer tiny_http builds
+            // is still its own copy that this cannot reach, so this narrows
+            // the window rather than closing it.
+            let body = Zeroizing::new(
+                serde_json::json!({ "username": username, "password": password }).to_string(),
+            );
+            json_raw(200, &body)
         }
         Err(e) => {
             crate::log_warn!("bridge", "credentials refused: {e}");
@@ -687,6 +852,105 @@ mod tests {
     }
 
     #[test]
+    fn a_provider_account_reaches_the_page_that_asks_for_its_password() {
+        // "Gmail" is saved at mail.google.com; Google asks for the password
+        // at accounts.google.com, a sibling host. Without the widening the
+        // popup sends you to the Google button and then has nothing to give
+        // you when you arrive.
+        let mut v = new_vault(vec![0; 16]);
+        let gmail = provider_login("Gmail", "https://mail.google.com", "google", "me@gmail.test", "hunter2");
+        let id = gmail.id();
+        crate::vault::add_item(&mut v, gmail);
+
+        for origin in [
+            "https://accounts.google.com",
+            "https://google.com",
+            "https://mail.google.com",
+        ] {
+            let out = matches_for(&v, origin);
+            assert_eq!(out.len(), 1, "not offered on {origin}");
+            assert!(out[0].fillable, "offered but not fillable on {origin}");
+            let (user, pass) = credentials_for(&v, id, origin).unwrap();
+            assert_eq!((user.as_str(), pass.as_str()), ("me@gmail.test", "hunter2"));
+        }
+    }
+
+    #[test]
+    fn the_widening_reaches_only_that_providers_own_domains() {
+        let mut v = new_vault(vec![0; 16]);
+        let gmail = provider_login("Gmail", "https://mail.google.com", "google", "me@gmail.test", "hunter2");
+        let id = gmail.id();
+        crate::vault::add_item(&mut v, gmail);
+
+        for origin in [
+            "https://twitch.tv",
+            "https://google.com.evil.test",
+            "https://notgoogle.com",
+            "https://login.microsoftonline.com",
+            "http://accounts.google.com", // plaintext: sign-in is https
+        ] {
+            assert!(matches_for(&v, origin).is_empty(), "leaked onto {origin}");
+            assert_eq!(
+                credentials_for(&v, id, origin).unwrap_err(),
+                "that item does not belong to this site",
+                "granted on {origin}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_site_item_using_a_provider_is_not_widened_onto_that_provider() {
+        // The Twitch item is method=google but lives on twitch.tv. It must
+        // not become offerable on Google's sign-in page, where its borrowed
+        // identity would mean nothing and its presence would only confuse.
+        let mut v = new_vault(vec![0; 16]);
+        crate::vault::add_item(
+            &mut v,
+            provider_login("Twitch", "https://twitch.tv/", "google", "me@gmail.test", ""),
+        );
+        assert!(matches_for(&v, "https://accounts.google.com").is_empty());
+    }
+
+    #[test]
+    fn microsoft_sign_in_hosts_are_covered_too() {
+        let mut v = new_vault(vec![0; 16]);
+        crate::vault::add_item(
+            &mut v,
+            provider_login("Outlook", "https://outlook.live.com", "microsoft", "me@outlook.test", "pw"),
+        );
+        for origin in ["https://login.microsoftonline.com", "https://login.live.com"] {
+            let out = matches_for(&v, origin);
+            assert_eq!(out.len(), 1, "not offered on {origin}");
+            assert!(out[0].fillable);
+        }
+    }
+
+    #[test]
+    fn the_list_and_the_fill_never_disagree() {
+        // Anything the popup draws a button for must actually be granted,
+        // and anything it draws as a hint must actually be refused.
+        let mut v = new_vault(vec![0; 16]);
+        crate::vault::add_item(&mut v, login("Site", "https://site.test/", "me", "pw"));
+        crate::vault::add_item(&mut v, login("NoPassword", "https://site.test/", "me", ""));
+        crate::vault::add_item(
+            &mut v,
+            provider_login("Twitch", "https://site.test/", "google", "me@gmail.test", ""),
+        );
+        crate::vault::add_item(
+            &mut v,
+            provider_login("Gmail", "https://mail.google.com", "google", "me@gmail.test", "pw"),
+        );
+
+        for origin in ["https://site.test", "https://accounts.google.com", "https://other.test"] {
+            for m in matches_for(&v, origin) {
+                let id = Uuid::parse_str(&m.id).unwrap();
+                let granted = credentials_for(&v, id, origin).is_ok();
+                assert_eq!(m.fillable, granted, "{} disagreed on {origin}", m.title);
+            }
+        }
+    }
+
+    #[test]
     fn a_provider_login_is_refused_even_with_a_password_of_its_own() {
         // The stored password is still the provider's, not the site's.
         let mut v = new_vault(vec![0; 16]);
@@ -733,6 +997,56 @@ mod tests {
     }
 
     #[test]
+    fn a_redeemed_code_can_be_put_back_when_the_pairing_is_not_saved() {
+        // A disk error must not cost the user their code.
+        let b = Bridge::default();
+        let code = b.new_code();
+        let held = b.redeem(&code).unwrap();
+        assert!(b.redeem(&code).is_err(), "consumed while held");
+        b.restore(held);
+        assert!(b.redeem(&code).is_ok(), "not usable again after restore");
+    }
+
+    #[test]
+    fn restoring_never_clobbers_a_newer_code() {
+        // The user may have asked for a fresh code in the meantime; that one
+        // is the live one and the stale code must not displace it.
+        let b = Bridge::default();
+        let first = b.new_code();
+        let held = b.redeem(&first).unwrap();
+        let second = b.new_code();
+        b.restore(held);
+        assert!(b.redeem(&second).is_ok(), "newer code was clobbered");
+    }
+
+    #[test]
+    fn a_private_suffix_covers_nothing() {
+        // Two apps on vercel.app, or two blogs on blogspot.com, are as much
+        // strangers as two sites on co.uk.
+        for suffix in ["github.io", "vercel.app", "blogspot.com", "herokuapp.com", "pages.dev"] {
+            assert!(
+                !host_covers(suffix, &format!("someoneelse.{suffix}")),
+                "{suffix} wrongly covered a subdomain"
+            );
+        }
+        // A normal domain under one of them is still fine.
+        assert!(host_covers("mysite.github.io", "www.mysite.github.io"));
+    }
+
+    #[test]
+    fn only_an_extension_origin_of_a_sane_length_is_accepted() {
+        assert!(is_extension_origin("chrome-extension://abcdefghijklmnopabcdefghijklmnop"));
+        assert!(is_extension_origin("moz-extension://abcdefghijklmnopabcdefghijklmnop"));
+        // A page never reaches the routes behind this.
+        for origin in ["https://evil.test", "http://localhost:3000", "file://", ""] {
+            assert!(!is_extension_origin(origin), "{origin} was accepted");
+        }
+        // Kilobytes of "origin" would otherwise land in the vault on pairing.
+        let long = format!("chrome-extension://{}", "a".repeat(MAX_ORIGIN));
+        assert!(!is_extension_origin(&long));
+    }
+
+    #[test]
     fn a_pairing_code_burns_after_three_wrong_guesses() {
         let b = Bridge::default();
         let code = b.new_code();
@@ -760,6 +1074,47 @@ mod tests {
         for _ in 0..50 {
             assert!(seen.insert(b.new_code()), "pairing code repeated");
         }
+    }
+
+    /// Return one function's body, delimited by brace matching. Same trick as
+    /// `commands.rs` uses, and for the same reason: some invariants live in
+    /// which call a function does *not* make.
+    fn body_of<'a>(src: &'a str, sig: &str) -> &'a str {
+        let from = src.find(sig).unwrap_or_else(|| panic!("{sig} not found"));
+        let rest = &src[from..];
+        let open = rest.find('{').expect("function has no body");
+        let mut depth = 0usize;
+        for (i, c) in rest[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &rest[open..open + i + 1];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unbalanced braces after {sig}");
+    }
+
+    #[test]
+    fn a_fill_never_resets_the_idle_timer_by_itself() {
+        // It used to, and that silently disabled auto-lock: anything holding
+        // a pairing token could poll /credentials every few minutes and keep
+        // the vault open indefinitely. Only a person at the app extends the
+        // session, which is what the extend prompt is for.
+        let src = std::fs::read_to_string(file!()).unwrap();
+        let body = body_of(&src, "fn credentials(");
+        assert!(
+            !body.contains("reset()"),
+            "the fill route must not reset the idle timer"
+        );
+        assert!(
+            body.contains("vault://extend-request"),
+            "the fill route must ask the user instead"
+        );
     }
 
     #[test]

@@ -138,9 +138,12 @@ function providerLabel(method) {
 }
 
 /**
- * A provider login has no password that belongs on this site — "Sign in
+ * A provider login has no password that belongs on *this* site — "Sign in
  * with Google" hands the site a token, never a password. So it is shown as
  * a reminder of which account to pick, not as something to fill.
+ *
+ * On the provider's own sign-in page the same item becomes fillable, and
+ * the app says so with `fillable`; this is only the other case.
  */
 function renderProviderHint(item) {
   const row = document.createElement("div");
@@ -150,11 +153,17 @@ function renderProviderHint(item) {
   title.textContent = item.title;
   const sub = document.createElement("span");
   sub.className = "sub";
-  sub.textContent = `Signs in with ${providerLabel(item.method)}`;
-  const who = document.createElement("span");
-  who.className = "who";
-  who.textContent = item.username || "account not recorded";
-  row.append(title, sub, who);
+  sub.textContent =
+    item.method && item.method !== "credentials"
+      ? `Signs in with ${providerLabel(item.method)}`
+      : "No password saved";
+  row.append(title, sub);
+  if (item.username) {
+    const who = document.createElement("span");
+    who.className = "who";
+    who.textContent = item.username;
+    row.append(who);
+  }
   return row;
 }
 
@@ -166,7 +175,9 @@ function renderItems(items, tabId, origin) {
   const list = document.createElement("ul");
   for (const item of items) {
     const li = document.createElement("li");
-    if (item.method && item.method !== "credentials") {
+    // The app decides what is fillable, not this file: a button the next
+    // call would refuse is worse than no button.
+    if (!item.fillable) {
       li.append(renderProviderHint(item));
       list.append(li);
       continue;
@@ -194,7 +205,13 @@ async function fill(button, item, tabId, origin) {
     // Fetched at the moment of the click and handed straight to the page:
     // the popup keeps no copy, and closing it takes the values with it.
     const data = await credentials(item.id, origin);
-    const out = await ext.tabs.sendMessage(tabId, { type: "fill", data });
+    // The origin travels with the fill so the content script can refuse if
+    // the tab moved between the popup opening and this click.
+    const out = await ext.tabs.sendMessage(tabId, { type: "fill", data, origin });
+    if (out && out.wrongOrigin) {
+      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
+      return;
+    }
     if (!out || out.filled.length === 0) {
       text(vaultEl, "Nothing on this page matched those fields.");
       return;

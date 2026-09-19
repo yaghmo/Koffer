@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-import { onVaultLocked } from "./lib/events";
+import { onExtendRequest, onVaultLocked } from "./lib/events";
 import { refreshSiteLogos } from "./lib/logos";
 import { logUi } from "./lib/log";
 import Setup from "./screens/Setup";
@@ -11,6 +11,7 @@ import PersonalInfoScreen from "./screens/PersonalInfo";
 import ItemViewer from "./screens/ItemViewer";
 import Stats from "./screens/Stats";
 import Sidebar from "./components/Sidebar";
+import ConfirmDialog from "./components/ConfirmDialog";
 import type { Account, ItemKind } from "./lib/types";
 
 type Status = "loading" | "no-accounts" | "locked" | "unlocked";
@@ -38,6 +39,9 @@ export default function App() {
   // Bumped after viewer-side delete so the vault list refetches.
   const [vaultRefresh, setVaultRefresh] = useState(0);
   const [autolock, setAutolock] = useState<{ remainingSecs: number; timeoutSecs: number } | null>(null);
+  // Set when the browser extension filled a login with the idle timer almost
+  // up, and cleared when the vault locks or the user answers.
+  const [extendAsk, setExtendAsk] = useState<number | null>(null);
 
   useEffect(() => {
     api.listAccounts().then((list) => {
@@ -54,9 +58,15 @@ export default function App() {
       setEditing(null);
       setViewingId(null);
       setReturnView(null);
+      setExtendAsk(null);
+    });
+    const unlistenExtend = onExtendRequest((remaining) => {
+      logUi("info", "app", `extension filled a login with ${remaining}s left`);
+      setExtendAsk(remaining);
     });
     return () => {
       unlisten.then((fn) => fn());
+      unlistenExtend.then((fn) => fn());
     };
   }, []);
 
@@ -270,6 +280,26 @@ export default function App() {
         )}
         {view === "personal" && <PersonalInfoScreen />}
         {view === "stats" && <Stats onViewItem={(id) => setViewingId(id)} />}
+        {/* Only a person here may extend the session. The fill itself does
+            not touch the idle timer, or a pairing token would be enough to
+            hold the vault open indefinitely. */}
+        {extendAsk !== null && status === "unlocked" && (
+          <ConfirmDialog
+            title="Keep the vault unlocked?"
+            message={`The browser extension just filled a login, and the vault locks in about ${Math.max(
+              1,
+              Math.round(extendAsk / 60)
+            )} minute${Math.round(extendAsk / 60) === 1 ? "" : "s"}. Filling does not extend the session on its own.`}
+            confirmLabel="Keep unlocked"
+            tone="primary"
+            onConfirm={() => {
+              api.resetActivity().catch(() => {});
+              logUi("info", "app", "session extended from the extension prompt");
+              setExtendAsk(null);
+            }}
+            onCancel={() => setExtendAsk(null)}
+          />
+        )}
         {/* Viewer overlays both views so the user can pop in from anywhere */}
         {viewingId && (
           <ItemViewerOverlay
