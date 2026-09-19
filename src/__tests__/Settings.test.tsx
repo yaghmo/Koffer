@@ -257,11 +257,11 @@ describe("Settings browser extension card", () => {
     expect(api.bridgePairCode).toHaveBeenCalled();
   });
 
-  it("cancels the pending code when pairing is dismissed", async () => {
+  it("cancels the pending code when pairing is explicitly cancelled", async () => {
     const { api } = await import("../lib/api");
     render(<Settings accountId="a1" onLock={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: /pair a browser/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^done$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /cancel pairing/i }));
     await waitFor(() => expect(api.bridgeCancelPairing).toHaveBeenCalled());
     expect(screen.queryByText("K7F2Q9MR")).toBeNull();
   });
@@ -292,5 +292,27 @@ describe("Settings browser extension card", () => {
     });
     render(<Settings accountId="a1" onLock={() => {}} />);
     expect(await screen.findByText(/could not start.*10048/i)).toBeTruthy();
+  });
+});
+
+describe("Settings pairing panel closes itself", () => {
+  it("dismisses the code once a browser has paired, without cancelling it", async () => {
+    // The bug this covers: the only way out used to be a button that
+    // silently killed the code, so a user who read the code and clicked it
+    // could never pair.
+    const { api } = await import("../lib/api");
+    vi.mocked(api.bridgeState).mockResolvedValue({ listen_error: "", port: 38471, clients: [] });
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /pair a browser/i }));
+    expect(await screen.findByText("K7F2Q9MR")).toBeTruthy();
+
+    vi.mocked(api.bridgeState).mockResolvedValue({
+      listen_error: "",
+      port: 38471,
+      clients: [{ origin: "chrome-extension://abcdef", label: "Chrome", paired_at: 1 }],
+    });
+    await waitFor(() => expect(screen.queryByText("K7F2Q9MR")).toBeNull(), { timeout: 4000 });
+    expect(screen.getByText("Chrome")).toBeTruthy();
+    expect(api.bridgeCancelPairing).not.toHaveBeenCalled();
   });
 });

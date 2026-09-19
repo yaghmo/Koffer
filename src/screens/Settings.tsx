@@ -102,10 +102,27 @@ export default function Settings({ accountId, onLock }: Props) {
   async function stopPairing() {
     setPairCode(null);
     await api.bridgeCancelPairing().catch(() => {});
-    // The extension pairs against the running app, not against this screen,
-    // so the list only learns about it when we re-read.
     loadBridge();
   }
+
+  // The extension pairs against the running app, not against this screen, so
+  // nothing here would ever notice it worked. Poll while a code is on
+  // display and dismiss it the moment a new browser turns up, otherwise the
+  // only way out of this panel is a button that silently kills the code.
+  useEffect(() => {
+    if (!pairCode) return;
+    const before = bridge?.clients.length ?? 0;
+    const id = window.setInterval(async () => {
+      try {
+        const next = await api.bridgeState();
+        setBridge(next);
+        if (next.clients.length > before) setPairCode(null);
+      } catch {
+        // transient IPC hiccup; next tick retries
+      }
+    }, 1500);
+    return () => window.clearInterval(id);
+  }, [pairCode]);
 
   async function unpair(origin: string) {
     setBridgeError(null);
@@ -554,9 +571,10 @@ export default function Settings({ accountId, onLock }: Props) {
             </code>
             <p className="text-body-sm text-on-surface-variant">
               Good for three minutes, once. Three wrong tries and it is dead — ask for another.
+              This panel closes itself as soon as the browser pairs.
             </p>
             <button type="button" className="btn-secondary self-start" onClick={stopPairing}>
-              Done
+              Cancel pairing
             </button>
           </div>
         ) : (

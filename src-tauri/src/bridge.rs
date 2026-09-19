@@ -135,6 +135,38 @@ const MULTI_LABEL_SUFFIXES: &[&str] = &[
     "com.br", "com.mx", "com.ar", "co.in", "co.za", "co.nz", "com.tr", "com.cn", "com.sg",
 ];
 
+/// `https` or `http` from a URL, lowercased. None for anything else.
+fn scheme_of(url: &str) -> Option<&'static str> {
+    let url = url.trim();
+    let lower = url.to_lowercase();
+    if lower.starts_with("https://") {
+        Some("https")
+    } else if lower.starts_with("http://") {
+        Some("http")
+    } else {
+        None
+    }
+}
+
+/// Does a login saved at `item_url` belong to a page served from `origin`?
+///
+/// Host has to match by `host_covers`, and the scheme has to be identical.
+/// The scheme check is what stops a password saved for `https://bank.test`
+/// from being handed to a page at `http://bank.test`: same host, but anyone
+/// between the browser and the server can serve that page and read what is
+/// typed into it. A login genuinely saved as `http://` (a router on the
+/// LAN, say) still matches its own `http://` origin.
+pub(crate) fn url_covers(item_url: &str, origin: &str) -> bool {
+    match (scheme_of(item_url), scheme_of(origin)) {
+        (Some(a), Some(b)) if a == b => {}
+        _ => return false,
+    }
+    match (host_of(item_url), host_of(origin)) {
+        (Some(item_host), Some(origin_host)) => host_covers(&item_host, &origin_host),
+        _ => false,
+    }
+}
+
 /// Does a login saved for `item_host` belong to a page served from
 /// `origin_host`?
 ///
@@ -167,16 +199,12 @@ pub(crate) struct Match {
 /// The filter is here rather than in the extension on purpose: it is the one
 /// thing standing between "a page asked" and "a password left the vault".
 pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
-    let Some(origin_host) = host_of(origin) else {
-        return Vec::new();
-    };
     vault
         .items
         .iter()
         .filter_map(|item| match item {
             Item::Login { base, fields } => {
-                let item_host = host_of(&fields.url)?;
-                if !host_covers(&item_host, &origin_host) {
+                if !url_covers(&fields.url, origin) {
                     return None;
                 }
                 Some(Match {
@@ -200,7 +228,9 @@ pub(crate) fn credentials_for(
     id: Uuid,
     origin: &str,
 ) -> Result<(String, String), &'static str> {
-    let origin_host = host_of(origin).ok_or("not a web origin")?;
+    if host_of(origin).is_none() {
+        return Err("not a web origin");
+    }
     let item = vault
         .items
         .iter()
@@ -209,8 +239,7 @@ pub(crate) fn credentials_for(
     let Item::Login { fields, .. } = item else {
         return Err("not a login item");
     };
-    let item_host = host_of(&fields.url).ok_or("that item has no web address")?;
-    if !host_covers(&item_host, &origin_host) {
+    if !url_covers(&fields.url, origin) {
         return Err("that item does not belong to this site");
     }
     let password = login_password(vault, fields).ok_or("that item has no password")?;
@@ -509,6 +538,49 @@ mod tests {
         assert!(!host_covers("com.au", "anz.com.au"));
         // And a bare TLD is not a domain either.
         assert!(!host_covers("com", "github.com"));
+    }
+
+    #[test]
+    fn a_plaintext_origin_does_not_get_an_https_login() {
+        // Found live: host matched, scheme was ignored, and a page at
+        // http://twitch.tv was handed the password saved for https://.
+        // Anyone on the network can serve that page.
+        let mut v = new_vault(vec![0; 16]);
+        let item = login("Bank", "https://bank.test/", "me", "hunter2");
+        let id = item.id();
+        crate::vault::add_item(&mut v, item);
+
+        assert!(!url_covers("https://bank.test/", "http://bank.test"));
+        assert!(matches_for(&v, "http://bank.test").is_empty());
+        assert_eq!(
+            credentials_for(&v, id, "http://bank.test").unwrap_err(),
+            "that item does not belong to this site"
+        );
+    }
+
+    #[test]
+    fn a_login_saved_as_plain_http_still_matches_its_own_origin() {
+        // A router on the LAN has no certificate; refusing it outright would
+        // make the item unusable rather than safer.
+        let mut v = new_vault(vec![0; 16]);
+        crate::vault::add_item(&mut v, login("Router", "http://router.lan/", "admin", "pw"));
+        assert!(url_covers("http://router.lan/", "http://router.lan"));
+        assert_eq!(matches_for(&v, "http://router.lan").len(), 1);
+        // And the upgrade does not match either: a stored http item says
+        // nothing about who answers on https.
+        assert!(matches_for(&v, "https://router.lan").is_empty());
+    }
+
+    #[test]
+    fn a_non_web_scheme_never_covers_anything() {
+        for (item, origin) in [
+            ("file:///c:/secrets.html", "file:///c:/secrets.html"),
+            ("https://bank.test/", "chrome-extension://abc"),
+            ("javascript:alert(1)", "https://bank.test"),
+            ("https://bank.test/", "ftp://bank.test"),
+        ] {
+            assert!(!url_covers(item, origin), "{item} must not cover {origin}");
+        }
     }
 
     #[test]
