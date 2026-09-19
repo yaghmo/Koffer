@@ -172,3 +172,40 @@ describe("fill survives a re-render", () => {
     expect(() => Autofill.fill(document, creds)).not.toThrow();
   });
 });
+
+describe("fill reports what actually landed", () => {
+  const creds = { username: "me@example.test", password: "hunter2hunter" };
+
+  it("names both fields when both stuck", () => {
+    document.body.innerHTML = `
+      <input name="username" autocomplete="username">
+      <input name="password" type="password">`;
+    const out = Autofill.fill(document, creds);
+    expect(out.filled.sort()).toEqual(["password", "username"]);
+    expect(out.missing).toEqual([]);
+  });
+
+  it("does not claim a password it could not place", () => {
+    // The form has no password box at all. Reporting "filled: password"
+    // here is what would let the popup say everything was fine.
+    document.body.innerHTML = `<input name="username" autocomplete="username">`;
+    const out = Autofill.fill(document, creds);
+    expect(out.filled).toEqual(["username"]);
+    expect(out.missing).toEqual(["password"]);
+  });
+
+  it("does not claim a value the page threw away", () => {
+    document.body.innerHTML = `
+      <input name="username" autocomplete="username">
+      <input name="password" type="password">`;
+    // A page that refuses to hold a password however often it is written.
+    // Setting `.value` directly dispatches nothing, so this cannot loop.
+    const pass = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+    pass.addEventListener("input", () => {
+      pass.value = "";
+    });
+    const out = Autofill.fill(document, creds);
+    expect(out.filled).toEqual(["username"]);
+    expect(out.missing).toEqual(["password"]);
+  });
+});

@@ -234,7 +234,18 @@ async function fill(button, item, tabId, origin) {
       text(vaultEl, "Nothing on this page matched those fields.");
       return;
     }
-    window.close();
+    // Say what actually landed. A password box shows dots whatever is in
+    // it, so "it filled" and "it filled the right thing" look identical
+    // from the outside — this is the only way to tell them apart.
+    const wanted = ["username", "email", "password"].filter((f) => data[f]);
+    const got = wanted.filter((f) => out.filled.includes(f));
+    if (got.length < wanted.length) {
+      const short = wanted.filter((f) => !got.includes(f)).join(" and ");
+      text(vaultEl, `Filled ${got.join(" and ") || "nothing"}. Could not find the ${short} box.`);
+      return;
+    }
+    text(vaultEl, `Filled ${got.join(" and ")}.`, "muted");
+    setTimeout(() => window.close(), 700);
   } catch (e) {
     text(vaultEl, `Could not fill: ${describe(e)}`);
   }
@@ -257,7 +268,10 @@ async function main() {
       return;
     }
     if (!state) {
-      text(vaultEl, "");
+      // The vault is fine; this page just has no content script — a
+      // chrome:// page, or a tab that was already open when the extension
+      // was last reloaded. Saying nothing here read as "nothing works".
+      text(vaultEl, "Vault connected. Reload this page to fill on it.", "muted");
       return;
     }
     renderItems(await matches(state.origin), tab.id, state.origin);

@@ -222,13 +222,29 @@
     var out = fillOnce(scope, data);
     var left = pending(scope, data);
     if (Object.keys(left).length > 0) {
-      var again = fillOnce(scope, left);
+      fillOnce(scope, left);
       out.retried = true;
-      again.filled.forEach(function (f) {
-        if (out.filled.indexOf(f) === -1) out.filled.push(f);
-      });
-      out.missing = Object.keys(pending(scope, data));
+      left = pending(scope, data);
     }
+
+    // Report what is in the form now, not what was attempted. A value
+    // written to a node the page then threw away is not filled, and a
+    // password box shows dots either way — the caller has no other way to
+    // tell the two apart.
+    var asked = Object.keys(ROLES).filter(function (role) {
+      var v = data[role];
+      return v !== undefined && v !== null && String(v).trim() !== "";
+    });
+    out.filled = asked
+      .filter(function (role) {
+        return !(role in left);
+      })
+      .map(function (role) {
+        return ROLES[role].report;
+      });
+    out.missing = Object.keys(left).map(function (role) {
+      return ROLES[role].report;
+    });
     return out;
   }
 
