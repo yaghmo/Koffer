@@ -981,6 +981,45 @@ pub async fn backup_now(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Download the newest backup and register it as a **new** account.
+///
+/// Never overwrites an existing vault: the restored copy lands beside whatever
+/// is already there, so a bad restore is discarded with the vault switcher
+/// rather than being a data-loss event. Reuses `import_account`, which already
+/// owns registration, name collisions, and the malformed-vault precheck.
+#[tauri::command]
+pub async fn restore_from_cloud(
+    url: String,
+    get_token: String,
+    name: String,
+) -> Result<AccountMeta, String> {
+    cloud::validate_url(&url).map_err(|e| e.to_string())?;
+    if name.trim().is_empty() {
+        return Err("name cannot be empty".into());
+    }
+    crate::log_info!("restore_from_cloud", "requested");
+
+    let blob = cloud::download(&url, &get_token).await.map_err(|e| {
+        crate::log_warn!("restore_from_cloud", "download failed: {e}");
+        e.to_string()
+    })?;
+
+    // A temp file, because import_account copies from a path. Removed on every
+    // path out, including the error ones.
+    let tmp = std::env::temp_dir().join(format!("vault-restore-{}.enc", Uuid::new_v4()));
+    std::fs::write(&tmp, &blob).map_err(|e| e.to_string())?;
+
+    let result = accounts::import_account(&tmp, &name);
+    let _ = std::fs::remove_file(&tmp);
+
+    let account = result.map_err(|e| {
+        crate::log_warn!("restore_from_cloud", "import failed: {e}");
+        e.to_string()
+    })?;
+    crate::log_info!("restore_from_cloud", "restored account={}", account.id);
+    Ok(AccountMeta::from(&account))
+}
+
 /// Fetch URL metadata: title + favicon.
 /// Returns None fields when scrape fails (not an error).
 #[tauri::command]
@@ -1079,6 +1118,34 @@ mod tests {
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("token"), "BackupState exposes a token field: {json}");
+    }
+
+    #[test]
+    fn restore_rejects_an_insecure_url_before_touching_the_disk() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("restore-insecure");
+        let out = tauri::async_runtime::block_on(restore_from_cloud(
+            "http://w.example.dev".into(),
+            "token".into(),
+            "Restored".into(),
+        ));
+        assert!(out.is_err());
+        let msg = out.unwrap_err();
+        assert!(msg.contains("https"), "unexpected error: {msg}");
+        // Nothing may have been registered.
+        assert!(crate::accounts::list_accounts().unwrap().is_empty());
+    }
+
+    #[test]
+    fn restore_rejects_an_empty_name() {
+        let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
+        crate::test_env::override_data_dir_to_tmp("restore-empty-name");
+        let out = tauri::async_runtime::block_on(restore_from_cloud(
+            "https://w.example.dev".into(),
+            "token".into(),
+            "   ".into(),
+        ));
+        assert!(out.is_err());
     }
 
     fn login(method: &str, username: &str, password: &str) -> LoginFields {
