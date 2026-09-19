@@ -123,6 +123,41 @@ function describe(e) {
   return e.message;
 }
 
+/** Matches the app's own naming in src/lib/methods.tsx. */
+const PROVIDER_LABELS = {
+  google: "Google",
+  github: "GitHub",
+  microsoft: "Microsoft",
+  apple: "Apple",
+  facebook: "Facebook",
+  other: "another app",
+};
+
+function providerLabel(method) {
+  return PROVIDER_LABELS[method] || method;
+}
+
+/**
+ * A provider login has no password that belongs on this site — "Sign in
+ * with Google" hands the site a token, never a password. So it is shown as
+ * a reminder of which account to pick, not as something to fill.
+ */
+function renderProviderHint(item) {
+  const row = document.createElement("div");
+  row.className = "hint";
+  const title = document.createElement("span");
+  title.className = "title";
+  title.textContent = item.title;
+  const sub = document.createElement("span");
+  sub.className = "sub";
+  sub.textContent = `Signs in with ${providerLabel(item.method)}`;
+  const who = document.createElement("span");
+  who.className = "who";
+  who.textContent = item.username || "account not recorded";
+  row.append(title, sub, who);
+  return row;
+}
+
 function renderItems(items, tabId, origin) {
   if (items.length === 0) {
     text(vaultEl, `No saved login for ${origin}.`);
@@ -130,6 +165,12 @@ function renderItems(items, tabId, origin) {
   }
   const list = document.createElement("ul");
   for (const item of items) {
+    const li = document.createElement("li");
+    if (item.method && item.method !== "credentials") {
+      li.append(renderProviderHint(item));
+      list.append(li);
+      continue;
+    }
     const button = document.createElement("button");
     button.className = "item";
     button.type = "button";
@@ -141,7 +182,6 @@ function renderItems(items, tabId, origin) {
     sub.textContent = item.username || "no username saved";
     button.append(title, sub);
     button.addEventListener("click", () => fill(button, item, tabId, origin));
-    const li = document.createElement("li");
     li.append(button);
     list.append(li);
   }

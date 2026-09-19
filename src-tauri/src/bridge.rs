@@ -21,7 +21,7 @@
 //! No response ever carries an `Access-Control-Allow-Origin` header, so even
 //! a page that guesses the port cannot read what comes back.
 
-use crate::commands::{host_of, login_password, AppState};
+use crate::commands::{host_of, AppState};
 use crate::crypto::random_bytes;
 use crate::vault::{Item, PairedClient, Vault};
 use serde::Serialize;
@@ -192,6 +192,16 @@ pub(crate) struct Match {
     pub id: String,
     pub title: String,
     pub username: String,
+    /// "credentials", or the provider this account signs in through
+    /// ("google", "microsoft", …). The popup offers a fill for the first and
+    /// only a reminder for the rest.
+    pub method: String,
+}
+
+/// Does this login sign in through a provider rather than with a password
+/// typed into the site itself?
+fn is_provider_login(method: &str) -> bool {
+    method != "credentials"
 }
 
 /// Every login in the vault that this origin is allowed to see.
@@ -211,6 +221,7 @@ pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
                     id: base.id.to_string(),
                     title: base.title.clone(),
                     username: fields.username.clone(),
+                    method: fields.method.clone(),
                 })
             }
             _ => None,
@@ -223,6 +234,13 @@ pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
 /// Re-checks the origin rather than trusting that it was checked when the
 /// list was built: this is the call that actually hands over a password, and
 /// it is reachable on its own.
+///
+/// A provider login gets nothing. "Sign in with Google" never sends a
+/// password to the site — it hands the site a token from Google. So the only
+/// password such an item could offer is the *provider's*, and typing that
+/// into the site's own form would post a Google password to Twitch. The app
+/// may still show it (clipboard, user watching); a one-click fill is a
+/// different risk and is refused here.
 pub(crate) fn credentials_for(
     vault: &Vault,
     id: Uuid,
@@ -242,8 +260,13 @@ pub(crate) fn credentials_for(
     if !url_covers(&fields.url, origin) {
         return Err("that item does not belong to this site");
     }
-    let password = login_password(vault, fields).ok_or("that item has no password")?;
-    Ok((fields.username.clone(), password.to_string()))
+    if is_provider_login(&fields.method) {
+        return Err("that account signs in through a provider, so there is no site password to fill");
+    }
+    if fields.password.is_empty() {
+        return Err("that item has no password");
+    }
+    Ok((fields.username.clone(), fields.password.clone()))
 }
 
 // ---------------------------------------------------------------------------
@@ -640,7 +663,10 @@ mod tests {
     }
 
     #[test]
-    fn a_provider_login_borrows_the_providers_password() {
+    fn a_provider_login_never_hands_the_providers_password_to_the_site() {
+        // Found live: the Twitch item is method=google with no password of
+        // its own, and it borrowed the Google one for twitch.tv. Filling
+        // that into Twitch's own form posts a Google password to Twitch.
         let mut v = new_vault(vec![0; 16]);
         let twitch = provider_login("Twitch", "https://twitch.tv/", "google", "me@gmail.test", "");
         let id = twitch.id();
@@ -650,35 +676,41 @@ mod tests {
             provider_login("Google", "https://google.com/", "google", "me@gmail.test", "hunter2"),
         );
 
-        let (user, pass) = credentials_for(&v, id, "https://twitch.tv").unwrap();
-        assert_eq!((user.as_str(), pass.as_str()), ("me@gmail.test", "hunter2"));
+        let err = credentials_for(&v, id, "https://twitch.tv").unwrap_err();
+        assert!(err.contains("signs in through a provider"), "unexpected: {err}");
+
+        // The Google item itself is what covers Google's own pages, so the
+        // borrow was never needed to sign in there.
+        let on_google = matches_for(&v, "https://accounts.google.com");
+        assert_eq!(on_google.len(), 1);
+        assert_eq!(on_google[0].title, "Google");
     }
 
     #[test]
-    fn a_provider_login_whose_provider_is_gone_is_refused_not_guessed() {
-        // Delete the Google entry and the Twitch item that leaned on it has
-        // nothing left to give. It must say so rather than hand back an
-        // empty password, or the page gets silently filled with nothing.
+    fn a_provider_login_is_refused_even_with_a_password_of_its_own() {
+        // The stored password is still the provider's, not the site's.
         let mut v = new_vault(vec![0; 16]);
-        let twitch = provider_login("Twitch", "https://twitch.tv/", "google", "me@gmail.test", "");
-        let id = twitch.id();
-        crate::vault::add_item(&mut v, twitch);
+        let item = provider_login("Router", "http://router.lan/", "microsoft", "me", "hunter2");
+        let id = item.id();
+        crate::vault::add_item(&mut v, item);
+        assert!(credentials_for(&v, id, "http://router.lan")
+            .unwrap_err()
+            .contains("signs in through a provider"));
+    }
 
-        assert_eq!(
-            credentials_for(&v, id, "https://twitch.tv").unwrap_err(),
-            "that item has no password"
-        );
-
-        // A same-provider entry under a different username is not a match
-        // either: one person's Google password is not another's.
+    #[test]
+    fn a_provider_login_is_still_listed_so_the_popup_can_name_it() {
+        // Refusing to fill is not the same as hiding it: the whole point is
+        // reminding the user which account they used.
+        let mut v = new_vault(vec![0; 16]);
         crate::vault::add_item(
             &mut v,
-            provider_login("Google", "https://google.com/", "google", "someoneelse@gmail.test", "hunter2"),
+            provider_login("Twitch", "https://twitch.tv/", "google", "me@gmail.test", ""),
         );
-        assert_eq!(
-            credentials_for(&v, id, "https://twitch.tv").unwrap_err(),
-            "that item has no password"
-        );
+        let out = matches_for(&v, "https://twitch.tv");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].method, "google");
+        assert_eq!(out[0].username, "me@gmail.test");
     }
 
     #[test]
