@@ -18,6 +18,11 @@ use tauri::{
 
 pub const TRAY_ID: &str = "main";
 
+/// Menu items that change with the lock state, kept so `sync` can reach them.
+struct TrayMenu {
+    lock: MenuItem<Wry>,
+}
+
 const UNLOCKED_TIP: &str = "Password Manager — unlocked";
 const LOCKED_TIP: &str = "Password Manager — locked";
 
@@ -73,17 +78,24 @@ pub fn sync(app: &AppHandle) {
     };
     let _ = tray.set_icon(Some(if unlocked { open_icon } else { shut_icon }));
     let _ = tray.set_tooltip(Some(if unlocked { UNLOCKED_TIP } else { LOCKED_TIP }));
+    // Nothing to lock when it is already locked, and a live menu entry that
+    // does nothing reads as a broken one.
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        let _ = menu.lock.set_enabled(unlocked);
+    }
 }
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
+    let start_unlocked = app.state::<AppState>().is_unlocked();
+
     let open = MenuItem::with_id(app, "tray_open", "Open", true, None::<&str>)?;
-    let lock = MenuItem::with_id(app, "tray_lock", "Lock now", true, None::<&str>)?;
+    let lock = MenuItem::with_id(app, "tray_lock", "Lock now", start_unlocked, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "tray_quit", "Exit app", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &lock, &sep, &quit])?;
+    app.manage(TrayMenu { lock: lock.clone() });
 
     let (unlocked_icon, locked_icon) = icons(app)?;
-    let start_unlocked = app.state::<AppState>().is_unlocked();
 
     TrayIconBuilder::<Wry>::with_id(TRAY_ID)
         .icon(if start_unlocked { unlocked_icon } else { locked_icon })
@@ -94,7 +106,9 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "tray_open" => reveal(app),
-            "tray_lock" => {
+            // Guarded as well as disabled: the item is greyed out when locked,
+            // but the menu's enabled state is only as fresh as the last sync.
+            "tray_lock" if app.state::<AppState>().is_unlocked() => {
                 app.state::<AppState>().lock_and_backup();
                 let _ = app.emit("vault://locked", ());
                 crate::log_info!("tray", "locked from tray");
