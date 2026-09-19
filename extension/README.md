@@ -10,13 +10,31 @@ page from the vault when you pick an item.
 3. In the vault app: **Settings → Browser extension → Pair a browser**.
 4. Click the extension's toolbar icon and type the code it shows.
 
-Firefox and Safari are not packaged yet; the manifest is Chrome MV3.
+Edge, Brave, Opera and Vivaldi are the same steps — same MV3, same APIs.
+
+### Firefox
+
+`about:debugging` → **This Firefox** → **Load Temporary Add-on** → pick
+`manifest.json`. Then pair exactly as above.
+
+Two things differ, and both are handled:
+
+- Firefox has no background service worker, so the manifest declares
+  `background.scripts` next to `background.service_worker`. Each browser
+  reads its own key. Chrome logs a warning about `scripts` needing manifest
+  v2 and then loads the extension anyway — that warning is expected.
+- Firefox treats `host_permissions` as *optional*, so the fetch to
+  `127.0.0.1` is blocked until the user agrees. Pairing asks for it on the
+  click, which is the only moment the prompt is allowed.
+
+Safari needs an Xcode conversion and a macOS host app, and the vault itself
+is Windows-only, so it is not on the list.
 
 ## What is here
 
 | File | Does |
 | --- | --- |
-| `manifest.json` | MV3 manifest. One permission, `activeTab`. |
+| `manifest.json` | MV3 manifest, Chromium and Firefox from one file. |
 | `autofill.js` | Dependency-free DOM library: `detect`, `isLogin`, `fill`. No browser APIs, so it is unit-tested in `src/__tests__/autofillDetect.test.ts`. |
 | `content.js` | Runs `autofill.js` on every page, reports the verdict, fills on request. |
 | `background.js` | Service worker. Turns a verdict into a per-tab badge. |

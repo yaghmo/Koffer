@@ -7,16 +7,19 @@
  * anything actually happens.
  */
 
+/** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
+const ext = globalThis.browser ?? globalThis.chrome;
+
 const BADGE = "●";
 const BADGE_COLOUR = "#7C9CFF";
 
-chrome.runtime.onMessage.addListener((msg, sender) => {
+ext.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || msg.type !== "detect") return false;
   const tabId = sender.tab && sender.tab.id;
   if (tabId === undefined) return false;
-  chrome.action.setBadgeText({ tabId, text: msg.login ? BADGE : "" });
+  ext.action.setBadgeText({ tabId, text: msg.login ? BADGE : "" });
   if (msg.login) {
-    chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOUR });
+    ext.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOUR });
   }
   return false;
 });

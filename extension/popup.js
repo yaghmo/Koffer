@@ -5,7 +5,18 @@
  * because someone clicked the item they wanted, on the origin shown right
  * above it, and for no other reason.
  */
-import { NOT_PAIRED, NO_APP, pair, status, matches, credentials } from "./vault.js";
+import {
+  NOT_PAIRED,
+  NO_APP,
+  ensureHostPermission,
+  pair,
+  status,
+  matches,
+  credentials,
+} from "./vault.js";
+
+/** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
+const ext = globalThis.browser ?? globalThis.chrome;
 
 const pageEl = document.getElementById("page");
 const vaultEl = document.getElementById("vault");
@@ -18,7 +29,7 @@ function text(el, str, cls = "dim") {
 }
 
 async function activeTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
 
@@ -26,7 +37,7 @@ async function activeTab() {
  *  already open when the extension was installed. */
 async function pageState(tabId) {
   try {
-    return await chrome.tabs.sendMessage(tabId, { type: "state" });
+    return await ext.tabs.sendMessage(tabId, { type: "state" });
   } catch {
     return null;
   }
@@ -76,6 +87,9 @@ function renderPairing() {
     go.disabled = true;
     error.textContent = "";
     try {
+      // First await in the click handler on purpose: Firefox only allows the
+      // permission prompt while the user gesture is still live.
+      await ensureHostPermission();
       await pair(code, browserLabel());
       main();
     } catch (e) {
@@ -140,7 +154,7 @@ async function fill(button, item, tabId, origin) {
     // Fetched at the moment of the click and handed straight to the page:
     // the popup keeps no copy, and closing it takes the values with it.
     const data = await credentials(item.id, origin);
-    const out = await chrome.tabs.sendMessage(tabId, { type: "fill", data });
+    const out = await ext.tabs.sendMessage(tabId, { type: "fill", data });
     if (!out || out.filled.length === 0) {
       text(vaultEl, "Nothing on this page matched those fields.");
       return;

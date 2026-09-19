@@ -16,20 +16,42 @@
  * into one site's password being handed to another.
  */
 
+/** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
+const ext = globalThis.browser ?? globalThis.chrome;
+
 const PORT = 38471;
 const BASE = `http://127.0.0.1:${PORT}`;
+const HOST_PERMISSION = "http://127.0.0.1/*";
 const TOKEN_KEY = "vaultToken";
 
 export const NOT_PAIRED = "not-paired";
 export const NO_APP = "no-app";
 
 async function storedToken() {
-  const got = await chrome.storage.local.get(TOKEN_KEY);
+  const got = await ext.storage.local.get(TOKEN_KEY);
   return got[TOKEN_KEY] || null;
 }
 
 async function forgetToken() {
-  await chrome.storage.local.remove(TOKEN_KEY);
+  await ext.storage.local.remove(TOKEN_KEY);
+}
+
+/**
+ * Make sure we may actually reach the loopback port.
+ *
+ * Chrome grants a declared `host_permissions` entry at install time. Firefox
+ * treats the same entry as optional and blocks the fetch until the user says
+ * yes, so pairing has to ask — from a click, which is the only place the
+ * prompt is allowed.
+ */
+export async function ensureHostPermission() {
+  try {
+    if (await ext.permissions.contains({ origins: [HOST_PERMISSION] })) return;
+    await ext.permissions.request({ origins: [HOST_PERMISSION] });
+  } catch {
+    // No permissions API, or the browser refused to be asked. Let the fetch
+    // itself be the thing that reports a real failure.
+  }
 }
 
 async function post(path, body, token) {
@@ -62,7 +84,7 @@ async function post(path, body, token) {
 /** Exchange the code shown in the app for a token, and remember it. */
 export async function pair(code, label) {
   const { token } = await post("/pair", { code, label });
-  await chrome.storage.local.set({ [TOKEN_KEY]: token });
+  await ext.storage.local.set({ [TOKEN_KEY]: token });
 }
 
 export async function unpair() {

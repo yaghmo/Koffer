@@ -6,8 +6,15 @@
   "minimum_chrome_version": "102",
   "permissions": ["activeTab", "storage"],
   "host_permissions": ["http://127.0.0.1/*"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "password-manager@localhost",
+      "strict_min_version": "115.0"
+    }
+  },
   "background": {
     "service_worker": "background.js",
+    "scripts": ["background.js"],
     "type": "module"
   },
   "content_scripts": [

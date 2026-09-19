@@ -11,6 +11,9 @@
 (function () {
   "use strict";
 
+  /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
+  var ext = globalThis.browser || globalThis.chrome;
+
   /** SPAs mount the form after load, so detection has to re-run on change. */
   var SETTLE_MS = 400;
 
@@ -20,7 +23,11 @@
 
   function report() {
     try {
-      chrome.runtime.sendMessage({ type: "detect", login: isLoginPage() });
+      var sent = ext.runtime.sendMessage({ type: "detect", login: isLoginPage() });
+      // MV3 hands back a promise in both browsers, and it rejects whenever
+      // the worker is asleep or gone. Unhandled, that fills the page's own
+      // console with our noise.
+      if (sent && typeof sent.catch === "function") sent.catch(function () {});
     } catch (e) {
       // The worker restarts on its own schedule; the next report catches up.
     }
@@ -32,7 +39,7 @@
     timer = setTimeout(report, SETTLE_MS);
   }
 
-  chrome.runtime.onMessage.addListener(function (msg, _sender, respond) {
+  ext.runtime.onMessage.addListener(function (msg, _sender, respond) {
     if (msg && msg.type === "state") {
       respond({ login: isLoginPage(), origin: location.origin });
       return false;
