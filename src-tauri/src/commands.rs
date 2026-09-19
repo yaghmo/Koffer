@@ -81,7 +81,12 @@ impl AppState {
     /// Separate from `lock_and_clear` because `reset_vault` also locks, and a
     /// reset means the user is destroying this vault — uploading it on the way
     /// out would hand the cloud a copy of exactly what they asked to erase.
-    fn lock_and_backup(&self) {
+    /// Whether a key is currently held. Drives the tray's lock indicator.
+    pub fn is_unlocked(&self) -> bool {
+        self.key.lock().map(|k| k.is_some()).unwrap_or(false)
+    }
+
+    pub(crate) fn lock_and_backup(&self) {
         // Captured before the wipe: afterwards the vault's backup config is
         // gone from memory. The upload itself runs from the on-disk file.
         let job = self.take_backup_job();
@@ -242,6 +247,7 @@ pub fn unlock_vault(
     password: String,
     account_id: String,
     state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     crate::log_info!("unlock_vault", "attempt account={account_id}");
     let id = Uuid::parse_str(&account_id).map_err(|e| e.to_string())?;
@@ -255,6 +261,7 @@ pub fn unlock_vault(
     *state.vault.lock().unwrap() = Some(vault);
     *state.current_account.lock().unwrap() = Some(account);
     crate::log_info!("unlock_vault", "unlocked account={account_id}");
+    crate::tray::sync(&app);
     Ok(())
 }
 
@@ -263,6 +270,7 @@ pub fn lock_vault(state: State<'_, AppState>, app: AppHandle) -> Result<(), Stri
     crate::log_info!("lock_vault", "locked");
     state.lock_and_backup();
     let _ = app.emit("vault://locked", ());
+    crate::tray::sync(&app);
     Ok(())
 }
 
@@ -1582,13 +1590,8 @@ mod tests {
         // A reset destroys the vault on purpose. Uploading it on the way out
         // would leave in the cloud exactly what the user asked to erase.
         let src = std::fs::read_to_string(file!()).unwrap();
-        let reset = src
-            .split("pub fn reset_vault")
-            .nth(1)
-            .expect("reset_vault not found");
-        let body = &reset[..reset.find("\npub fn ").unwrap_or(reset.len())];
         assert!(
-            !body.contains("lock_and_backup"),
+            !body_of(&src, "fn reset_vault").contains("lock_and_backup"),
             "reset_vault must lock without backing up"
         );
 
@@ -1596,14 +1599,45 @@ mod tests {
         // spawn INTO lock_and_clear itself — which reset_vault also calls —
         // would upload on reset too and still pass the assertion above, so
         // pin lock_and_clear's body separately.
-        let clear = src
-            .split("fn lock_and_clear")
-            .nth(1)
-            .expect("lock_and_clear not found");
-        let clear_body = &clear[..clear.find("\n    fn ").unwrap_or(clear.len())];
         assert!(
-            !clear_body.contains("spawn_backup"),
+            !body_of(&src, "fn lock_and_clear").contains("spawn_backup"),
             "lock_and_clear must not itself call spawn_backup"
         );
+    }
+
+    /// Return one function's body, delimited by brace matching.
+    ///
+    /// Bounding by "the next `fn`" looked simpler and was wrong: adding
+    /// `pub(crate)` to the following method silently widened the slice to the
+    /// rest of the file, and the assertion then read a body it was never
+    /// meant to see. Counting braces survives visibility changes, reordering
+    /// and renames of neighbours. `sig` is matched without a visibility
+    /// prefix for the same reason.
+    fn body_of<'a>(src: &'a str, sig: &str) -> &'a str {
+        let from = src.find(sig).unwrap_or_else(|| panic!("{sig} not found"));
+        let rest = &src[from..];
+        let open = rest.find('{').expect("function has no body");
+        let mut depth = 0usize;
+        for (i, c) in rest[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &rest[open..open + i + 1];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unbalanced braces after {sig}");
+    }
+
+    #[test]
+    fn body_of_stops_at_the_functions_own_closing_brace() {
+        let src = "fn a() {\n    let x = Foo { y: 1 };\n}\nfn b() {\n    poison();\n}\n";
+        let body = body_of(src, "fn a");
+        assert!(body.contains("let x"), "must include the real body");
+        assert!(!body.contains("poison"), "must not bleed into the next fn");
     }
 }
