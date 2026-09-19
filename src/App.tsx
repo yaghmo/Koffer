@@ -62,6 +62,12 @@ export default function App() {
 
   // Re-check every login's favicon once per unlocked session, so a site that
   // changed its icon updates without anyone pressing the Settings button.
+  //
+  // This is a no-op unless the user opted in: unforced, `refreshSiteLogos`
+  // returns immediately when `auto_refresh_icons` is off, which it is by
+  // default. Left on because each check is a request to a site you hold an
+  // account with, it would put the vault's whole account list into DNS and
+  // TLS SNI, timestamped to every unlock.
   // ponytail: serial fetches on a background promise; batch them if a large
   // vault ever makes the first seconds after unlock feel slow.
   useEffect(() => {

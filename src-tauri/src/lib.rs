@@ -10,6 +10,7 @@ pub mod metadata;
 pub mod password;
 pub mod recovery;
 pub mod storage;
+pub mod tray;
 pub mod vault;
 
 #[cfg(test)]
@@ -26,15 +27,28 @@ pub fn run() {
         .manage(AppState::new())
         .setup(|app| {
             crate::log_info!("app", "started version={}", env!("CARGO_PKG_VERSION"));
+            tray::build(app.handle())?;
             // Idle watchdog: AutoLock only measures idle time; this enforces it.
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 if handle.state::<AppState>().autolock_if_idle() {
                     let _ = handle.emit("vault://locked", ());
+                    // The window may be hidden, so the tray icon is the only
+                    // place an auto-lock becomes visible.
+                    tray::sync(&handle);
                 }
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing hides: the vault stays reachable in the background and
+            // the idle watchdog keeps running. Only the tray's "Exit app"
+            // actually quits.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_accounts,
@@ -54,6 +68,7 @@ pub fn run() {
             commands::copy_to_clipboard,
             commands::get_config,
             commands::set_autolock_mins,
+            commands::set_auto_refresh_icons,
             commands::reset_activity,
             commands::log_event,
             commands::vault_storage,
@@ -74,8 +89,18 @@ pub fn run() {
             commands::get_personal_info,
             commands::save_personal_info,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_app, event| {
+            // Hiding the last window would otherwise end the process. An
+            // explicit `app.exit(code)` carries a code and is allowed through;
+            // everything else is the window merely closing, so it is refused.
+            if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
 
 pub use autolock::AutoLock;

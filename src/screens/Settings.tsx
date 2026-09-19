@@ -39,6 +39,7 @@ export default function Settings({ accountId, onLock }: Props) {
   const [resetError, setResetError] = useState<string | null>(null);
   const [logosBusy, setLogosBusy] = useState(false);
   const [logosResult, setLogosResult] = useState<string | null>(null);
+  const [autoRefreshIcons, setAutoRefreshIcons] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportResult, setExportResult] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -66,7 +67,10 @@ export default function Settings({ accountId, onLock }: Props) {
   const [backupResult, setBackupResult] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getConfig().then((cfg) => setAutolockMins(cfg.autolock_mins));
+    api.getConfig().then((cfg) => {
+      setAutolockMins(cfg.autolock_mins);
+      setAutoRefreshIcons(cfg.auto_refresh_icons);
+    });
     loadStorage();
     loadSecurity();
     api
@@ -163,6 +167,18 @@ export default function Settings({ accountId, onLock }: Props) {
       setLogosResult(`Updated ${updated} of ${checked} login logos.`);
     } finally {
       setLogosBusy(false);
+    }
+  }
+
+  // Saved immediately rather than behind a Save button: it is one privacy
+  // choice, and a toggle that silently needs confirming is the kind that ends
+  // up on when the user believes it is off.
+  async function saveAutoRefreshIcons(on: boolean) {
+    setAutoRefreshIcons(on);
+    try {
+      await api.setAutoRefreshIcons(on);
+    } catch {
+      setAutoRefreshIcons(!on);
     }
   }
 
@@ -310,6 +326,23 @@ export default function Settings({ accountId, onLock }: Props) {
           {logosBusy ? "Refreshing…" : "Refresh site logos"}
         </button>
         {logosResult && <p className="text-body-sm text-on-surface-variant">{logosResult}</p>}
+
+        <label className="flex items-start gap-2 border-t border-white/6 pt-4 text-body-sm text-on-surface">
+          <input
+            type="checkbox"
+            checked={autoRefreshIcons}
+            onChange={(e) => saveAutoRefreshIcons(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-primary"
+          />
+          Re-check stale logos automatically each time the vault unlocks
+        </label>
+        <p className="text-body-sm text-on-surface-variant">
+          Off by default. Turning it on contacts every site whose logo is over 30 days old, every
+          time you unlock — so whoever can see your network (your internet provider, a proxy, or
+          anyone on the same Wi-Fi) learns which sites you keep accounts with, and when you opened
+          the vault. The sites themselves see a visit too. Nothing from inside the vault is sent,
+          and the button above still works with this off.
+        </p>
       </div>
 
       <div className="card flex flex-col gap-4 p-5">
@@ -457,7 +490,24 @@ export default function Settings({ accountId, onLock }: Props) {
         <div className="flex items-center gap-2 text-on-surface">
           <CloudIcon size={16} />
           <h2 className="text-body-md font-semibold">Cloud backup</h2>
+          <span
+            className={
+              backup?.configured
+                ? "text-label-md text-on-surface-variant"
+                : "text-label-md text-on-surface-variant opacity-70"
+            }
+          >
+            {backup?.configured ? "· On" : "· Not configured"}
+          </span>
         </div>
+
+        {!backup?.configured && (
+          <p className="text-body-sm text-on-surface-variant">
+            <strong>Off.</strong> Nothing leaves this device. Setting it up needs a Cloudflare
+            account with R2 enabled — see <code>worker/README.md</code>. Until then, use{" "}
+            <strong>Export vault backup</strong> above and keep the file somewhere else.
+          </p>
+        )}
 
         <p className="text-body-sm text-on-surface-variant">
           Keeps an encrypted copy in your own Cloudflare account, uploaded when this vault locks

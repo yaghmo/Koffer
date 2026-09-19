@@ -58,14 +58,10 @@ impl AppState {
     fn lock_and_clear(&self) {
         if let Ok(mut k) = self.key.lock() {
             if let Some(keys) = k.as_mut() {
-                for b in keys.data_key.iter_mut() {
-                    *b = 0;
-                }
-                if let Some(kek) = keys.master_kek.as_mut() {
-                    for b in kek.iter_mut() {
-                        *b = 0;
-                    }
-                }
+                // Covers the recovery KEK too, which also unwraps the data
+                // key. `KeySet` wipes itself on drop as well; this stays
+                // explicit so locking does not depend on when the drop runs.
+                keys.wipe();
             }
             *k = None;
         }
@@ -85,7 +81,12 @@ impl AppState {
     /// Separate from `lock_and_clear` because `reset_vault` also locks, and a
     /// reset means the user is destroying this vault — uploading it on the way
     /// out would hand the cloud a copy of exactly what they asked to erase.
-    fn lock_and_backup(&self) {
+    /// Whether a key is currently held. Drives the tray's lock indicator.
+    pub fn is_unlocked(&self) -> bool {
+        self.key.lock().map(|k| k.is_some()).unwrap_or(false)
+    }
+
+    pub(crate) fn lock_and_backup(&self) {
         // Captured before the wipe: afterwards the vault's backup config is
         // gone from memory. The upload itself runs from the on-disk file.
         let job = self.take_backup_job();
@@ -100,7 +101,9 @@ impl AppState {
     /// unlocked vault paired with the previous session's expired timer.
     fn start_autolock(&self, account: &Account) {
         let mut al = self.autolock.lock().unwrap();
-        al.set_timeout(config::load(account).autolock_mins.clamp(15, 30));
+        // Same range `set_autolock_mins` accepts, or Settings would show a
+        // timeout the watchdog silently ignores.
+        al.set_timeout(config::load(account).autolock_mins.clamp(15, 90));
         al.reset();
     }
 
@@ -244,6 +247,7 @@ pub fn unlock_vault(
     password: String,
     account_id: String,
     state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<(), String> {
     crate::log_info!("unlock_vault", "attempt account={account_id}");
     let id = Uuid::parse_str(&account_id).map_err(|e| e.to_string())?;
@@ -257,6 +261,7 @@ pub fn unlock_vault(
     *state.vault.lock().unwrap() = Some(vault);
     *state.current_account.lock().unwrap() = Some(account);
     crate::log_info!("unlock_vault", "unlocked account={account_id}");
+    crate::tray::sync(&app);
     Ok(())
 }
 
@@ -265,6 +270,7 @@ pub fn lock_vault(state: State<'_, AppState>, app: AppHandle) -> Result<(), Stri
     crate::log_info!("lock_vault", "locked");
     state.lock_and_backup();
     let _ = app.emit("vault://locked", ());
+    crate::tray::sync(&app);
     Ok(())
 }
 
@@ -568,7 +574,9 @@ pub fn copy_to_clipboard(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let ttl = std::time::Duration::from_secs(ttl_secs.unwrap_or(30) as u64);
-    crate::log_info!("copy_to_clipboard", "chars={} ttl_secs={}", text.chars().count(), ttl.as_secs());
+    // No length: the log file is plaintext beside the vault, and a per-copy
+    // character count is an exact inventory of your password lengths.
+    crate::log_info!("copy_to_clipboard", "ttl_secs={}", ttl.as_secs());
     crate::clipboard::copy_with_ttl(&text, ttl).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
@@ -612,6 +620,17 @@ pub fn set_autolock_mins(mins: u8, state: State<'_, AppState>) -> Result<(), Str
     config::save(&account, &c).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().set_timeout(mins);
     Ok(())
+}
+
+/// Turn the unlock-time favicon refresh on or off. Off by default — see
+/// `Config::auto_refresh_icons`.
+#[tauri::command]
+pub fn set_auto_refresh_icons(on: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let account = current_account(&state)?;
+    crate::log_info!("set_auto_refresh_icons", "on={on}");
+    let mut c = config::load(&account);
+    c.auto_refresh_icons = on;
+    config::save(&account, &c).map_err(|e| e.to_string())
 }
 
 /// On-disk footprint of the active vault, for the Settings storage card.
@@ -685,12 +704,16 @@ pub fn create_recovery_code(
     let account = current_account(&state)?;
     // Re-authenticate: a recovery code is a second key to the vault, so an
     // unattended unlocked window must not be enough to mint one.
-    let (vault, mut keys) = storage::load_vault(&account, &password)
+    let (mut vault, mut keys) = storage::load_vault(&account, &password)
         .map_err(|_| "invalid password".to_string())?;
 
     let (secret, code) = crate::recovery::generate();
     keys.set_recovery_secret(&secret);
-    storage::save_vault(&account, &vault, &keys).map_err(|e| e.to_string())?;
+    let saved = storage::save_vault(&account, &vault, &keys);
+    // A second fully decrypted vault, separate from the one in AppState and
+    // dropped here — wipe it rather than leave it in freed memory.
+    vault::zeroize_secrets(&mut vault);
+    saved.map_err(|e| e.to_string())?;
     *state.key.lock().unwrap() = Some(keys);
     crate::log_warn!("create_recovery_code", "new recovery code issued");
     Ok(crate::recovery::format_for_display(&code))
@@ -744,7 +767,7 @@ pub fn change_master_password(
         return Err("password must be at least 8 characters".to_string());
     }
     let account = current_account(&state)?;
-    let (vault, mut keys) = storage::load_vault(&account, &current).map_err(|_| {
+    let (mut vault, mut keys) = storage::load_vault(&account, &current).map_err(|_| {
         crate::log_warn!("change_master_password", "refused (bad current password)");
         "current password is not correct".to_string()
     })?;
@@ -752,7 +775,14 @@ pub fn change_master_password(
     // The recovery slot rides along sealed, so an existing recovery code
     // keeps opening the vault after the password changes.
     keys.set_master_password(&new_password);
-    storage::save_vault(&account, &vault, &keys).map_err(|e| e.to_string())?;
+    let saved = storage::save_vault(&account, &vault, &keys);
+    // Second decrypted copy, dropped here; the AppState one is untouched.
+    vault::zeroize_secrets(&mut vault);
+    saved.map_err(|e| e.to_string())?;
+    // Every retained copy is still wrapped under the password being rotated
+    // away from — often the reason for the change. Keeping them would leave
+    // the old password opening ten full vaults.
+    storage::delete_backups(&account);
     *state.key.lock().unwrap() = Some(keys);
     crate::log_warn!("change_master_password", "master password changed");
     Ok(())
@@ -778,10 +808,14 @@ pub fn reset_vault(
     let account = accounts::get_account_legacy_fallback(id).map_err(|e| e.to_string())?;
 
     // Verify by attempting a full unlock cycle against the existing vault.
-    storage::load_vault(&account, &password).map_err(|_| {
+    // The decrypted copy is only proof the password is right; wipe it instead
+    // of dropping a whole plaintext vault into freed memory.
+    let (mut proof, _keys) = storage::load_vault(&account, &password).map_err(|_| {
         crate::log_warn!("reset_vault", "refused account={account_id} (bad password)");
         "invalid password".to_string()
     })?;
+    vault::zeroize_secrets(&mut proof);
+    drop(proof);
 
     // Wipe the in-memory key first, then delete the files. If the
     // currently unlocked account is the one being reset, also clear
@@ -865,6 +899,24 @@ pub fn get_backup_config(state: State<'_, AppState>) -> Result<BackupState, Stri
 /// the user only wants to change the URL, since `get_backup_config` never
 /// hands the token back for them to re-enter. Rejected only when there is no
 /// existing config to fall back on.
+/// Pick the PUT token to store: the supplied one when it is non-blank,
+/// otherwise the one already saved.
+///
+/// Lives outside `set_backup_config` so it can be tested — the command itself
+/// takes a `tauri::State`, which a unit test cannot readily build. The blank
+/// case exists so the URL can be changed on its own: `get_backup_config`
+/// never returns the token, so the user has nothing to re-type.
+fn resolve_put_token(supplied: Option<&str>, existing: Option<&str>) -> Result<String, String> {
+    match supplied.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => Ok(t.to_string()),
+        // Blank with nothing stored would configure a backup that can never
+        // authenticate, and every upload would fail 401 with no obvious cause.
+        None => existing
+            .map(str::to_string)
+            .ok_or_else(|| "token cannot be empty".to_string()),
+    }
+}
+
 #[tauri::command]
 pub fn set_backup_config(
     url: String,
@@ -884,13 +936,10 @@ pub fn set_backup_config(
     let mut vault = state.vault.lock().unwrap();
     let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
 
-    let new_token = match put_token.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-        Some(t) => t.to_string(),
-        None => match vault.backup.as_ref() {
-            Some(existing) => existing.put_token.clone(),
-            None => return Err("token cannot be empty".into()),
-        },
-    };
+    let new_token = resolve_put_token(
+        put_token.as_deref(),
+        vault.backup.as_ref().map(|b| b.put_token.as_str()),
+    )?;
 
     if let Some(mut old) = vault.backup.take() {
         old.put_token.zeroize();
@@ -900,6 +949,15 @@ pub fn set_backup_config(
         put_token: new_token,
     });
     storage::save_vault(&account, vault, &keys).map_err(|e| e.to_string())?;
+    // Clear any recorded failure: the settings just changed, so the stored
+    // error describes an attempt against a configuration that no longer
+    // exists. Leaving it would show a user who just fixed a bad token the
+    // same failure until the next upload happens to run.
+    let mut cfg = config::load(&account);
+    if !cfg.last_cloud_backup_error.is_empty() {
+        cfg.last_cloud_backup_error = String::new();
+        let _ = config::save(&account, &cfg);
+    }
     // The URL is as sensitive as the domain list the vault protects, so it is
     // absent here on purpose.
     crate::log_info!("set_backup_config", "cloud backup configured");
@@ -939,6 +997,13 @@ pub fn clear_backup_config(state: State<'_, AppState>) -> Result<(), String> {
 /// caller starts stamping the file's own mtime instead of wall-clock time —
 /// uploading forever. Milliseconds make an exact-equal stamp mean "this exact
 /// file version was already uploaded", so `>` is then the correct read.
+///
+/// That precision comes from the filesystem, not from this code. NTFS, APFS
+/// and ext4 all carry sub-second mtimes, so the shipped targets are fine; a
+/// coarse-grained filesystem (FAT32 at 2s, ext3 at 1s) collapses two saves in
+/// the same tick and would skip the second one. Storing the vault on such a
+/// filesystem is out of scope, but the decision below is only as exact as the
+/// mtime it reads.
 pub fn needs_upload(vault_path: &std::path::Path, last_uploaded_mtime_ms: i64) -> bool {
     let modified = match std::fs::metadata(vault_path).and_then(|m| m.modified()) {
         Ok(t) => t,
@@ -1132,6 +1197,12 @@ pub fn open_login_url(
     if url.is_empty() {
         return Err("item has no URL".to_string());
     }
+    // Checked before the clipboard is primed, not just before the open: a
+    // refused URL must not leave the password sitting on the clipboard.
+    if !is_browser_url(&url) {
+        crate::log_warn!("open_login_url", "refused id={id}: not an http(s) URL");
+        return Err("that item's URL is not a web address (http or https)".to_string());
+    }
 
     if let Item::Login { fields, .. } = &item {
         if let Some(pw) = login_password(vault, fields) {
@@ -1144,6 +1215,19 @@ pub fn open_login_url(
     app.shell().open(&url, None).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
+}
+
+/// Whether a stored URL may be handed to the OS's default handler.
+///
+/// `shell().open(.., None)` skips the plugin's own scheme allow-list when it
+/// is called from Rust, so `open::that_detached` — `ShellExecuteExW` on
+/// Windows — would happily launch `file:///…`, `ms-msdt:` or a UNC path as a
+/// program. Nothing else in the app checks: `host_of` is display-only and
+/// `metadata::is_public_http` guards favicon fetching, not this.
+fn is_browser_url(url: &str) -> bool {
+    reqwest::Url::parse(url.trim())
+        .map(|u| matches!(u.scheme(), "http" | "https"))
+        .unwrap_or(false)
 }
 
 /// Password to prime the clipboard with when opening a login: the item's
@@ -1194,6 +1278,31 @@ mod tests {
     }
 
     #[test]
+    fn a_supplied_token_wins_and_is_trimmed() {
+        assert_eq!(resolve_put_token(Some("  fresh  "), None).unwrap(), "fresh");
+        assert_eq!(resolve_put_token(Some("fresh"), Some("stored")).unwrap(), "fresh");
+    }
+
+    #[test]
+    fn a_blank_token_keeps_the_stored_one() {
+        // This is what makes a URL-only edit possible: get_backup_config never
+        // returns the token, so the user has nothing to re-type.
+        assert_eq!(resolve_put_token(None, Some("stored")).unwrap(), "stored");
+        assert_eq!(resolve_put_token(Some(""), Some("stored")).unwrap(), "stored");
+        assert_eq!(resolve_put_token(Some("   "), Some("stored")).unwrap(), "stored");
+    }
+
+    #[test]
+    fn a_blank_token_with_nothing_stored_is_rejected() {
+        // Otherwise the vault would carry a backup config that can never
+        // authenticate, and every upload would 401 with no obvious cause.
+        for supplied in [None, Some(""), Some("   ")] {
+            let out = resolve_put_token(supplied, None);
+            assert_eq!(out.unwrap_err(), "token cannot be empty");
+        }
+    }
+
+    #[test]
     fn restore_rejects_an_insecure_url_before_touching_the_disk() {
         let _g = crate::test_env::lock_recover(&crate::test_env::ENV_LOCK);
         crate::test_env::override_data_dir_to_tmp("restore-insecure");
@@ -1219,6 +1328,33 @@ mod tests {
             "   ".into(),
         ));
         assert!(out.is_err());
+    }
+
+    #[test]
+    fn only_http_urls_may_reach_the_os_handler() {
+        // These open in a browser.
+        for ok in [
+            "https://example.com/login",
+            "http://example.com",
+            "  https://example.com  ",
+            "HTTPS://example.com",
+        ] {
+            assert!(is_browser_url(ok), "should be allowed: {ok}");
+        }
+        // These would hand ShellExecuteExW something to *run*. The password is
+        // already on the clipboard by the time the user clicks Open.
+        for bad in [
+            "file:///C:/Windows/System32/calc.exe",
+            "ms-msdt:-id PCWDiagnostic",
+            r"\\10.0.0.5\share\update.exe",
+            "example.com",
+            "javascript:alert(1)",
+            "vbscript:msgbox(1)",
+            "C:\\Windows\\System32\\calc.exe",
+            "",
+        ] {
+            assert!(!is_browser_url(bad), "should be refused: {bad}");
+        }
     }
 
     fn login(method: &str, username: &str, password: &str) -> LoginFields {
@@ -1454,13 +1590,8 @@ mod tests {
         // A reset destroys the vault on purpose. Uploading it on the way out
         // would leave in the cloud exactly what the user asked to erase.
         let src = std::fs::read_to_string(file!()).unwrap();
-        let reset = src
-            .split("pub fn reset_vault")
-            .nth(1)
-            .expect("reset_vault not found");
-        let body = &reset[..reset.find("\npub fn ").unwrap_or(reset.len())];
         assert!(
-            !body.contains("lock_and_backup"),
+            !body_of(&src, "fn reset_vault").contains("lock_and_backup"),
             "reset_vault must lock without backing up"
         );
 
@@ -1468,14 +1599,45 @@ mod tests {
         // spawn INTO lock_and_clear itself — which reset_vault also calls —
         // would upload on reset too and still pass the assertion above, so
         // pin lock_and_clear's body separately.
-        let clear = src
-            .split("fn lock_and_clear")
-            .nth(1)
-            .expect("lock_and_clear not found");
-        let clear_body = &clear[..clear.find("\n    fn ").unwrap_or(clear.len())];
         assert!(
-            !clear_body.contains("spawn_backup"),
+            !body_of(&src, "fn lock_and_clear").contains("spawn_backup"),
             "lock_and_clear must not itself call spawn_backup"
         );
+    }
+
+    /// Return one function's body, delimited by brace matching.
+    ///
+    /// Bounding by "the next `fn`" looked simpler and was wrong: adding
+    /// `pub(crate)` to the following method silently widened the slice to the
+    /// rest of the file, and the assertion then read a body it was never
+    /// meant to see. Counting braces survives visibility changes, reordering
+    /// and renames of neighbours. `sig` is matched without a visibility
+    /// prefix for the same reason.
+    fn body_of<'a>(src: &'a str, sig: &str) -> &'a str {
+        let from = src.find(sig).unwrap_or_else(|| panic!("{sig} not found"));
+        let rest = &src[from..];
+        let open = rest.find('{').expect("function has no body");
+        let mut depth = 0usize;
+        for (i, c) in rest[open..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &rest[open..open + i + 1];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unbalanced braces after {sig}");
+    }
+
+    #[test]
+    fn body_of_stops_at_the_functions_own_closing_brace() {
+        let src = "fn a() {\n    let x = Foo { y: 1 };\n}\nfn b() {\n    poison();\n}\n";
+        let body = body_of(src, "fn a");
+        assert!(body.contains("let x"), "must include the real body");
+        assert!(!body.contains("poison"), "must not bleed into the next fn");
     }
 }

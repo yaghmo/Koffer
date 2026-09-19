@@ -190,6 +190,7 @@ mod tests {
             CloudError::InsecureUrl,
             CloudError::BadUrl,
             CloudError::TooLarge,
+            CloudError::EmptyBlob,
             CloudError::Unauthorized,
             CloudError::NotFound,
             CloudError::Status(500),

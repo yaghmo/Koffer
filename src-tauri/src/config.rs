@@ -32,6 +32,14 @@ pub struct Config {
     /// backup status.
     #[serde(default)]
     pub last_cloud_backup_error: String,
+    /// Whether unlocking re-checks stale login favicons on its own.
+    ///
+    /// Off by default, and deliberately so: the refresh contacts every site
+    /// with a stale icon, which puts the vault's exact account list into DNS
+    /// and TLS SNI, timestamped to each unlock. The manual "Refresh site
+    /// logos" button stays available either way.
+    #[serde(default)]
+    pub auto_refresh_icons: bool,
 }
 
 impl Default for Config {
@@ -42,6 +50,7 @@ impl Default for Config {
             last_cloud_backup_secs: 0,
             last_cloud_backup_mtime_ms: 0,
             last_cloud_backup_error: String::new(),
+            auto_refresh_icons: false,
         }
     }
 }
