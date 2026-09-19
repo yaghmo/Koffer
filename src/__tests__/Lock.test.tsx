@@ -11,6 +11,7 @@ vi.mock("../lib/api", () => ({
   api: {
     unlockVault: vi.fn().mockResolvedValue(undefined),
     importVault: vi.fn(),
+    restoreFromCloud: vi.fn(),
   },
 }));
 
@@ -310,5 +311,102 @@ describe("AccountLock — import vault", () => {
     // stuck on the empty state; should self-heal back to the still-valid acct1.
     await waitFor(() => expect(screen.getByText("user1")).toBeTruthy());
     expect(screen.queryByText(/no vaults exist/i)).toBeNull();
+  });
+});
+
+describe("AccountLock — restore from cloud", () => {
+  it("sends the url, token, and name, and never renders the token field as plain text", async () => {
+    const { api } = await import("../lib/api");
+    (api.restoreFromCloud as any).mockResolvedValue({ id: "a3", name: "Restored" });
+    render(<AccountLock accounts={[acct1]} onUnlocked={() => {}} onAddNew={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /restore from cloud/i }));
+    const tokenField = screen.getByLabelText(/download token/i) as HTMLInputElement;
+    expect(tokenField.type).toBe("password");
+
+    fireEvent.change(screen.getByLabelText(/worker url/i), {
+      target: { value: "https://w.example.dev" },
+    });
+    fireEvent.change(tokenField, { target: { value: "get-secret" } });
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Restored" } });
+    fireEvent.click(screen.getByRole("button", { name: /^restore$/i }));
+
+    await waitFor(() =>
+      expect(api.restoreFromCloud).toHaveBeenCalledWith(
+        "https://w.example.dev",
+        "get-secret",
+        "Restored"
+      )
+    );
+  });
+
+  it("tells the user the restore adds a new vault and overwrites nothing", () => {
+    render(<AccountLock accounts={[acct1]} onUnlocked={() => {}} onAddNew={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /restore from cloud/i }));
+    expect(screen.getByText(/adds it as a new vault/i)).toBeTruthy();
+    expect(screen.getByText(/nothing on this device is overwritten/i)).toBeTruthy();
+  });
+
+  it("surfaces a restore failure without touching the account list", async () => {
+    const { api } = await import("../lib/api");
+    (api.restoreFromCloud as any).mockRejectedValue("token rejected by the worker");
+    render(<AccountLock accounts={[acct1]} onUnlocked={() => {}} onAddNew={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /restore from cloud/i }));
+    fireEvent.change(screen.getByLabelText(/worker url/i), {
+      target: { value: "https://w.example.dev" },
+    });
+    fireEvent.change(screen.getByLabelText(/download token/i), { target: { value: "bad" } });
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Restored" } });
+    fireEvent.click(screen.getByRole("button", { name: /^restore$/i }));
+
+    expect(await screen.findByText(/token rejected by the worker/i)).toBeTruthy();
+    expect(screen.getByText("user1")).toBeTruthy();
+  });
+
+  // Same async-refetch race as the import-vault harness above: `accounts`
+  // lives in the parent and `onImported` resolves strictly later than
+  // `setSelectedId(result.id)` runs inside `confirmRestore`.
+  function RestoreHarness({
+    initialAccounts,
+    accountsAfterRestore,
+  }: {
+    initialAccounts: Account[];
+    accountsAfterRestore: Account[];
+  }) {
+    const [accounts, setAccounts] = useState(initialAccounts);
+    const onImported = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      setAccounts(accountsAfterRestore);
+    };
+    return (
+      <AccountLock
+        accounts={accounts}
+        onUnlocked={() => {}}
+        onAddNew={() => {}}
+        onImported={onImported}
+      />
+    );
+  }
+
+  it("selects the newly restored vault even when other vaults already exist (parent-owned accounts state, async refresh)", async () => {
+    const { api } = await import("../lib/api");
+    (api.restoreFromCloud as any).mockResolvedValue({ id: acct2.id, name: acct2.name });
+
+    render(<RestoreHarness initialAccounts={[acct1]} accountsAfterRestore={[acct1, acct2]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /restore from cloud/i }));
+    fireEvent.change(screen.getByLabelText(/worker url/i), {
+      target: { value: "https://w.example.dev" },
+    });
+    fireEvent.change(screen.getByLabelText(/download token/i), { target: { value: "tok" } });
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "user2" } });
+    fireEvent.click(screen.getByRole("button", { name: /^restore$/i }));
+
+    await waitFor(() => expect(api.restoreFromCloud).toHaveBeenCalled());
+
+    // The newly restored vault must end up selected, not reverted back to
+    // the pre-existing one by the stale-selection repair effect.
+    await waitFor(() => expect(screen.getByText("user2")).toBeTruthy());
   });
 });

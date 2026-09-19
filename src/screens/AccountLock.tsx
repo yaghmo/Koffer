@@ -26,6 +26,13 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   const [importName, setImportName] = useState("");
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  // Restore-from-cloud flow, reached from "Restore from cloud".
+  const [restoring, setRestoring] = useState(false);
+  const [restoreUrl, setRestoreUrl] = useState("");
+  const [restoreToken, setRestoreToken] = useState("");
+  const [restoreName, setRestoreName] = useState("");
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   // Recovery-code flow, reached from "Forgot your master password?".
   const [recovering, setRecovering] = useState(false);
   const [code, setCode] = useState("");
@@ -47,6 +54,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
 
   useHotkey("escape", () => setSwitcherOpen(false), switcherOpen);
   useHotkey("escape", () => setRecovering(false), recovering && !switcherOpen);
+  useHotkey("escape", () => setRestoring(false), restoring && !switcherOpen);
 
   async function submitRecovery(e: React.FormEvent) {
     e.preventDefault();
@@ -144,6 +152,37 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
       setImportError(String(err));
     } finally {
       setImportBusy(false);
+    }
+  }
+
+  async function confirmRestore(e: React.FormEvent) {
+    e.preventDefault();
+    setRestoreBusy(true);
+    setRestoreError(null);
+    try {
+      const result = await api.restoreFromCloud(
+        restoreUrl.trim(),
+        restoreToken.trim(),
+        restoreName.trim()
+      );
+      setRestoring(false);
+      setRestoreUrl("");
+      setRestoreToken("");
+      setRestoreName("");
+      pendingSelectionRef.current = result.id;
+      setSelectedId(result.id);
+      await onImported?.();
+      // Same guard as confirmImport: onImported's refresh may swallow its own
+      // error and never land `result.id` in `accounts`. Don't leave the
+      // pending ref suppressing the repair effect forever in that case.
+      if (pendingSelectionRef.current === result.id && !accountsRef.current.some((a) => a.id === result.id)) {
+        pendingSelectionRef.current = null;
+        setSelectedId(accountsRef.current[0]?.id ?? "");
+      }
+    } catch (err) {
+      setRestoreError(String(err));
+    } finally {
+      setRestoreBusy(false);
     }
   }
 
@@ -316,13 +355,22 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           </form>
         )}
 
-        <button
-          type="button"
-          onClick={pickImportFile}
-          className="self-center text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
-        >
-          Import vault
-        </button>
+        <div className="flex items-center justify-center gap-4">
+          <button
+            type="button"
+            onClick={pickImportFile}
+            className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
+          >
+            Import vault
+          </button>
+          <button
+            type="button"
+            onClick={() => setRestoring(true)}
+            className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
+          >
+            Restore from cloud
+          </button>
+        </div>
 
         {!importPath && importError && (
           <p role="alert" className="text-body-sm text-error">
@@ -354,6 +402,71 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
               </button>
               <button type="submit" className="btn-primary" disabled={importBusy || !importName.trim()}>
                 {importBusy ? "Importing…" : "Import"}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {restoring && (
+          <form onSubmit={confirmRestore} className="flex w-full flex-col gap-3 border-t border-white/6 pt-4">
+            <p className="text-body-sm text-on-surface-variant">
+              Downloads the newest backup from your Worker and{" "}
+              <strong className="text-on-surface">adds it as a new vault</strong> beside the
+              ones you already have — nothing on this device is overwritten. Unlock it with
+              its master password once it appears.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Worker URL</p>
+              <input
+                type="url"
+                value={restoreUrl}
+                onChange={(e) => setRestoreUrl(e.target.value)}
+                aria-label="Worker URL"
+                autoFocus
+                spellCheck={false}
+                autoComplete="off"
+                className="field"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Download token</p>
+              <input
+                type="password"
+                value={restoreToken}
+                onChange={(e) => setRestoreToken(e.target.value)}
+                aria-label="Download token"
+                spellCheck={false}
+                autoComplete="off"
+                className="field font-mono"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Name</p>
+              <input
+                type="text"
+                value={restoreName}
+                onChange={(e) => setRestoreName(e.target.value)}
+                aria-label="Name"
+                className="field"
+              />
+              {restoreError && (
+                <p role="alert" className="text-body-sm text-error">
+                  {restoreError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary" onClick={() => setRestoring(false)}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={
+                  restoreBusy || !restoreUrl.trim() || !restoreToken.trim() || !restoreName.trim()
+                }
+              >
+                {restoreBusy ? "Restoring…" : "Restore"}
               </button>
             </div>
           </form>
