@@ -37,7 +37,7 @@ vi.mock("../lib/api", () => ({
       modified_secs: 1_700_000_000,
     }),
     exportVault: vi.fn().mockResolvedValue(undefined),
-    securityState: vi.fn().mockResolvedValue({ has_recovery: true, last_export_secs: 0 }),
+    securityState: vi.fn().mockResolvedValue({ has_recovery: true, last_export_secs: 0, last_cloud_backup_secs: 0 }),
     createRecoveryCode: vi.fn().mockResolvedValue("K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"),
     changeMasterPassword: vi.fn().mockResolvedValue(undefined),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),

@@ -69,12 +69,21 @@ export interface SecurityState {
   has_recovery: boolean;
   /** Unix seconds of the last export; 0 when never exported. */
   last_export_secs: number;
+  /** Unix seconds of the last cloud upload; 0 when never uploaded. */
+  last_cloud_backup_secs: number;
 }
 
 export interface VaultStorage {
   path: string;
   bytes: number;
   modified_secs: number;
+}
+
+export interface BackupState {
+  configured: boolean;
+  url: string;
+  /** Unix seconds of the last successful upload; 0 when never uploaded. */
+  last_backup_secs: number;
 }
 
 export interface PersonalInfo {

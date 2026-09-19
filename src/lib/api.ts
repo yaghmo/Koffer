@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, UrlMetadata, VaultStats, VaultStorage } from "./types";
+import type { Account, BackupState, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, UrlMetadata, VaultStats, VaultStorage } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -58,6 +58,15 @@ export const api = {
   exportVault: (dest: string) => invoke<void>("export_vault", { dest }),
   importVault: (src: string, name: string) =>
     invoke<Account>("import_vault", { src, name }),
+
+  getBackupConfig: () => invoke<BackupState>("get_backup_config"),
+  /** The PUT token is write-only from the UI's side: it goes down, never back up. */
+  setBackupConfig: (url: string, putToken: string) =>
+    invoke<void>("set_backup_config", { url, putToken }),
+  clearBackupConfig: () => invoke<void>("clear_backup_config"),
+  backupNow: () => invoke<void>("backup_now"),
+  restoreFromCloud: (url: string, getToken: string, name: string) =>
+    invoke<Account>("restore_from_cloud", { url, getToken, name }),
 
   fetchUrlMetadata: (url: string) =>
     invoke<UrlMetadata>("fetch_url_metadata", { url }),
