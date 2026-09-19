@@ -54,6 +54,7 @@ pub fn run() {
             commands::copy_to_clipboard,
             commands::get_config,
             commands::set_autolock_mins,
+            commands::set_auto_refresh_icons,
             commands::reset_activity,
             commands::log_event,
             commands::vault_storage,

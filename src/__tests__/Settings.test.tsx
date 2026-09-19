@@ -4,7 +4,8 @@ import Settings from "../screens/Settings";
 
 vi.mock("../lib/api", () => ({
   api: {
-    getConfig: vi.fn().mockResolvedValue({ autolock_mins: 15 }),
+    getConfig: vi.fn().mockResolvedValue({ autolock_mins: 15, auto_refresh_icons: false }),
+    setAutoRefreshIcons: vi.fn().mockResolvedValue(undefined),
     listItems: vi.fn().mockResolvedValue([
       { id: "1", kind: "login", title: "GitHub", icon_checked_at: 0 },
       { id: "2", kind: "login", title: "No favicon site", icon_checked_at: 0 },
@@ -69,6 +70,28 @@ describe("Settings — site logos", () => {
       expect(api.setItemFavicon).toHaveBeenCalledWith("1", "data:image/png;base64,abc")
     );
     expect(api.setItemFavicon).toHaveBeenCalledWith("2", null);
+  });
+
+  it("shows the automatic refresh off, and says what turning it on reveals", async () => {
+    render(<Settings accountId="acct-1" onLock={() => {}} />);
+    const toggle = (await screen.findByRole("checkbox", {
+      name: /automatically each time the vault unlocks/i,
+    })) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    // The copy has to name the exposure, not just say "may use the network".
+    expect(screen.getByText(/internet provider/i)).toBeTruthy();
+    expect(screen.getByText(/which sites you keep accounts with/i)).toBeTruthy();
+  });
+
+  it("persists the automatic refresh when it is turned on", async () => {
+    const { api } = await import("../lib/api");
+    render(<Settings accountId="acct-1" onLock={() => {}} />);
+    const toggle = (await screen.findByRole("checkbox", {
+      name: /automatically each time the vault unlocks/i,
+    })) as HTMLInputElement;
+    fireEvent.click(toggle);
+    await waitFor(() => expect(api.setAutoRefreshIcons).toHaveBeenCalledWith(true));
+    expect(toggle.checked).toBe(true);
   });
 });
 

@@ -36,6 +36,7 @@ export const api = {
 
   getConfig: () => invoke<Config>("get_config"),
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
+  setAutoRefreshIcons: (on: boolean) => invoke<void>("set_auto_refresh_icons", { on }),
 
   vaultStorage: () => invoke<VaultStorage>("vault_storage"),
 

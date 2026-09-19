@@ -63,6 +63,12 @@ export interface GenOpts {
 
 export interface Config {
   autolock_mins: number;
+  /**
+   * Whether unlocking re-checks stale login logos on its own. Off by default:
+   * the refresh contacts every site with a stale icon, putting the vault's
+   * account list into DNS and TLS SNI at each unlock.
+   */
+  auto_refresh_icons: boolean;
 }
 
 export interface SecurityState {

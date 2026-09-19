@@ -9,14 +9,20 @@ const MAX_AGE_SECS = ICON_MAX_AGE_DAYS * 24 * 60 * 60;
  *
  * Only icons not checked in the last 30 days are fetched: every fetch is an
  * HTTP request to a site you hold an account with, so doing it on every
- * unlock would broadcast that list to the network over and over. `force`
- * skips the age check for the manual button in Settings.
+ * unlock would broadcast that list to the network over and over.
+ *
+ * `force` means "the user just asked for this" — it is what the Settings
+ * button passes, and it skips both the age check and the opt-in check below.
+ * Everything else is automatic and stays off unless `auto_refresh_icons` is
+ * on, so the check lives here rather than at the call site: an automatic
+ * caller added later is off by default without having to remember.
  *
  * Writes through `setItemFavicon`, not `saveItem`, so a refresh never bumps
  * `updated_at` — otherwise it would mark every login as freshly changed and
  * permanently hide the "stale password" health warning.
  */
 export async function refreshSiteLogos(force = false): Promise<[number, number]> {
+  if (!force && !(await api.getConfig()).auto_refresh_icons) return [0, 0];
   const now = Math.floor(Date.now() / 1000);
   const metas = await api.listItems(undefined, "login");
   const due = force ? metas : metas.filter((m) => now - m.icon_checked_at > MAX_AGE_SECS);
