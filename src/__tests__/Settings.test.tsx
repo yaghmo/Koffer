@@ -37,11 +37,11 @@ vi.mock("../lib/api", () => ({
       modified_secs: 1_700_000_000,
     }),
     exportVault: vi.fn().mockResolvedValue(undefined),
-    securityState: vi.fn().mockResolvedValue({ has_recovery: true, last_export_secs: 0, last_cloud_backup_secs: 0 }),
+    securityState: vi.fn().mockResolvedValue({ has_recovery: true, last_export_secs: 0 }),
     createRecoveryCode: vi.fn().mockResolvedValue("K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"),
     changeMasterPassword: vi.fn().mockResolvedValue(undefined),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
-    getBackupConfig: vi.fn().mockResolvedValue({ configured: false, url: "", last_backup_secs: 0 }),
+    getBackupConfig: vi.fn().mockResolvedValue({ configured: false, url: "", last_backup_secs: 0, last_backup_error: "" }),
     setBackupConfig: vi.fn().mockResolvedValue(undefined),
     clearBackupConfig: vi.fn().mockResolvedValue(undefined),
     backupNow: vi.fn().mockResolvedValue(undefined),
@@ -169,10 +169,46 @@ describe("Settings cloud backup card", () => {
       configured: true,
       url: "https://w.example.dev",
       last_backup_secs: 0,
+      last_backup_error: "",
     });
     vi.mocked(api.backupNow).mockRejectedValue("could not reach the worker");
     render(<Settings accountId="a1" onLock={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
     expect(await screen.findByText(/could not reach the worker/i)).toBeTruthy();
+  });
+
+  it("shows a persisted last-backup error on load, before any action this session", async () => {
+    const { api } = await import("../lib/api");
+    vi.mocked(api.getBackupConfig).mockResolvedValue({
+      configured: true,
+      url: "https://w.example.dev",
+      last_backup_secs: 0,
+      last_backup_error: "token rejected by the worker",
+    });
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    expect(await screen.findByText(/token rejected by the worker/i)).toBeTruthy();
+  });
+
+  it("allows saving a URL-only change, keeping the existing token, when already configured", async () => {
+    const { api } = await import("../lib/api");
+    vi.mocked(api.getBackupConfig).mockResolvedValue({
+      configured: true,
+      url: "https://old.example.dev",
+      last_backup_secs: 0,
+      last_backup_error: "",
+    });
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    const urlField = (await screen.findByLabelText(/worker url/i)) as HTMLInputElement;
+    await waitFor(() => expect(urlField.value).toBe("https://old.example.dev"));
+    fireEvent.change(urlField, { target: { value: "https://new.example.dev" } });
+    const saveBtn = screen.getByRole("button", { name: /save backup settings/i }) as HTMLButtonElement;
+    // Token field left blank on purpose: the button must not require it when
+    // a config already exists, since get_backup_config never returns the
+    // token to re-enter.
+    expect(saveBtn.disabled).toBe(false);
+    fireEvent.click(saveBtn);
+    await waitFor(() =>
+      expect(api.setBackupConfig).toHaveBeenCalledWith("https://new.example.dev", undefined)
+    );
   });
 });

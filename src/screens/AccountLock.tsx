@@ -415,6 +415,11 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
               ones you already have — nothing on this device is overwritten. Unlock it with
               its master password once it appears.
             </p>
+            <p className="text-body-sm text-on-surface-variant">
+              The restored vault keeps the cloud-backup settings it was copied with, and will
+              back up to that <strong className="text-on-surface">same bucket</strong> once
+              unlocked. If you're keeping both vaults, turn cloud backup off in one of them.
+            </p>
             <div className="flex flex-col gap-1.5">
               <p className="label-md">Worker URL</p>
               <input

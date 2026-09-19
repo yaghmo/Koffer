@@ -14,9 +14,10 @@ account. Nothing here talks to us, and we operate no server.
 - **Your master password is still required.** A restored vault opens only with
   it. This is a backup, not account recovery — it does not help with a
   forgotten password. That is what your recovery code is for.
-- **Keep the GET token, and keep it safe.** It is shown once during setup, and
-  it is the only way to download a backup. Store it with your recovery code.
-  Lose it and the backup cannot be retrieved.
+- **Keep the GET token, and keep it safe.** You generate it yourself (see
+  Setup below) — the app never sees it, so there is no second chance to
+  retrieve it from anywhere if it's lost. It is the only way to download a
+  backup. Store it with your recovery code.
 - **The token on your device cannot read the backup.** The app stores only the
   PUT token, which can upload but not download. That is why there are two.
 - **A strong master password matters more once backup is on.** A downloaded
@@ -75,6 +76,16 @@ On a machine with no vault, choose **Restore from cloud** on the lock screen,
 then enter the Worker URL and the **GET** token. The vault downloads as a new
 entry beside any existing one, so nothing is overwritten, and you unlock it
 with your master password as usual.
+
+**The restored vault carries over the original's cloud-backup settings** —
+the same Worker URL and PUT token are baked into its ciphertext, since the
+app cannot edit a vault it cannot yet decrypt. Once you unlock the restored
+copy, it will back up to the **same bucket** as the vault it was copied from.
+If you intend to keep both vaults around — for example while comparing the
+restored copy against the one already on this device before deciding which
+to keep — turn cloud backup off in one of them (Settings → Cloud backup →
+Turn off), or they will periodically overwrite each other's
+`latest/vault.bin` on the next lock.
 
 ## API
 

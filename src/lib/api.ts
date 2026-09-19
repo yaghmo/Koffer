@@ -60,9 +60,11 @@ export const api = {
     invoke<Account>("import_vault", { src, name }),
 
   getBackupConfig: () => invoke<BackupState>("get_backup_config"),
-  /** The PUT token is write-only from the UI's side: it goes down, never back up. */
-  setBackupConfig: (url: string, putToken: string) =>
-    invoke<void>("set_backup_config", { url, putToken }),
+  /** The PUT token is write-only from the UI's side: it goes down, never back
+   * up. Omit it (or pass an empty string) to change only the URL and keep
+   * the token already stored — that only works when a config already exists. */
+  setBackupConfig: (url: string, putToken?: string) =>
+    invoke<void>("set_backup_config", { url, putToken: putToken || null }),
   clearBackupConfig: () => invoke<void>("clear_backup_config"),
   backupNow: () => invoke<void>("backup_now"),
   restoreFromCloud: (url: string, getToken: string, name: string) =>

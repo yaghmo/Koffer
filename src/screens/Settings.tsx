@@ -195,7 +195,7 @@ export default function Settings({ accountId, onLock }: Props) {
     setBackupError(null);
     setBackupResult(null);
     try {
-      await api.setBackupConfig(backupUrl.trim(), backupToken.trim());
+      await api.setBackupConfig(backupUrl.trim(), backupToken.trim() || undefined);
       setBackupToken("");
       setBackup(await api.getBackupConfig());
       setBackupResult("Backup settings saved.");
@@ -475,6 +475,10 @@ export default function Settings({ accountId, onLock }: Props) {
           why there are two. The app <strong>never stores your download token</strong> — keep that
           one with your recovery code, or the backup cannot be retrieved.
         </p>
+        <p className="text-body-sm text-on-surface-variant">
+          History is kept for 30 days; the latest copy never expires. Turning backup off only stops
+          future uploads — it does not delete anything already in the cloud.
+        </p>
 
         <label className="flex flex-col gap-1">
           <span className="label-md">Worker URL</span>
@@ -493,7 +497,7 @@ export default function Settings({ accountId, onLock }: Props) {
             type="password"
             value={backupToken}
             onChange={(e) => setBackupToken(e.target.value)}
-            placeholder={backup?.configured ? "Saved — enter a new token to replace it" : ""}
+            placeholder={backup?.configured ? "Saved — leave blank to keep it, or enter a new one" : ""}
             className="field font-mono"
           />
         </label>
@@ -503,7 +507,7 @@ export default function Settings({ accountId, onLock }: Props) {
             type="button"
             className="btn-secondary self-start"
             onClick={saveBackupSettings}
-            disabled={backupBusy || !backupUrl.trim() || !backupToken.trim()}
+            disabled={backupBusy || !backupUrl.trim() || (!backupToken.trim() && !backup?.configured)}
           >
             Save backup settings
           </button>
@@ -534,6 +538,16 @@ export default function Settings({ accountId, onLock }: Props) {
             {backup.last_backup_secs === 0
               ? "Never uploaded yet."
               : `Last upload: ${daysAgo(backup.last_backup_secs)} days ago.`}
+          </p>
+        )}
+        {/* Persisted from the last auto/manual attempt (e.g. an upload on lock
+            that failed silently while no one was looking at this screen), so
+            it stays visible on load even if the current session did nothing
+            wrong. Suppressed once a fresh attempt below has its own result. */}
+        {backup?.configured && backup.last_backup_error && !backupError && !backupResult && (
+          <p role="alert" className="text-body-sm text-error">
+            Last upload attempt failed: {backup.last_backup_error} (this may not reflect the
+            current status — try "Back up now" to check).
           </p>
         )}
         {backupResult && <p className="text-body-sm text-on-surface-variant">{backupResult}</p>}

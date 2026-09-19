@@ -69,8 +69,6 @@ export interface SecurityState {
   has_recovery: boolean;
   /** Unix seconds of the last export; 0 when never exported. */
   last_export_secs: number;
-  /** Unix seconds of the last cloud upload; 0 when never uploaded. */
-  last_cloud_backup_secs: number;
 }
 
 export interface VaultStorage {
@@ -84,6 +82,10 @@ export interface BackupState {
   url: string;
   /** Unix seconds of the last successful upload; 0 when never uploaded. */
   last_backup_secs: number;
+  /** The last upload attempt's failure message; empty when it succeeded or
+   * none has run yet. Reflects the *last* attempt, not necessarily the
+   * vault's current backup status. */
+  last_backup_error: string;
 }
 
 export interface PersonalInfo {
