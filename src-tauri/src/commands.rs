@@ -865,6 +865,24 @@ pub fn get_backup_config(state: State<'_, AppState>) -> Result<BackupState, Stri
 /// the user only wants to change the URL, since `get_backup_config` never
 /// hands the token back for them to re-enter. Rejected only when there is no
 /// existing config to fall back on.
+/// Pick the PUT token to store: the supplied one when it is non-blank,
+/// otherwise the one already saved.
+///
+/// Lives outside `set_backup_config` so it can be tested — the command itself
+/// takes a `tauri::State`, which a unit test cannot readily build. The blank
+/// case exists so the URL can be changed on its own: `get_backup_config`
+/// never returns the token, so the user has nothing to re-type.
+fn resolve_put_token(supplied: Option<&str>, existing: Option<&str>) -> Result<String, String> {
+    match supplied.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => Ok(t.to_string()),
+        // Blank with nothing stored would configure a backup that can never
+        // authenticate, and every upload would fail 401 with no obvious cause.
+        None => existing
+            .map(str::to_string)
+            .ok_or_else(|| "token cannot be empty".to_string()),
+    }
+}
+
 #[tauri::command]
 pub fn set_backup_config(
     url: String,
@@ -884,13 +902,10 @@ pub fn set_backup_config(
     let mut vault = state.vault.lock().unwrap();
     let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
 
-    let new_token = match put_token.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-        Some(t) => t.to_string(),
-        None => match vault.backup.as_ref() {
-            Some(existing) => existing.put_token.clone(),
-            None => return Err("token cannot be empty".into()),
-        },
-    };
+    let new_token = resolve_put_token(
+        put_token.as_deref(),
+        vault.backup.as_ref().map(|b| b.put_token.as_str()),
+    )?;
 
     if let Some(mut old) = vault.backup.take() {
         old.put_token.zeroize();
@@ -900,6 +915,15 @@ pub fn set_backup_config(
         put_token: new_token,
     });
     storage::save_vault(&account, vault, &keys).map_err(|e| e.to_string())?;
+    // Clear any recorded failure: the settings just changed, so the stored
+    // error describes an attempt against a configuration that no longer
+    // exists. Leaving it would show a user who just fixed a bad token the
+    // same failure until the next upload happens to run.
+    let mut cfg = config::load(&account);
+    if !cfg.last_cloud_backup_error.is_empty() {
+        cfg.last_cloud_backup_error = String::new();
+        let _ = config::save(&account, &cfg);
+    }
     // The URL is as sensitive as the domain list the vault protects, so it is
     // absent here on purpose.
     crate::log_info!("set_backup_config", "cloud backup configured");
@@ -939,6 +963,13 @@ pub fn clear_backup_config(state: State<'_, AppState>) -> Result<(), String> {
 /// caller starts stamping the file's own mtime instead of wall-clock time —
 /// uploading forever. Milliseconds make an exact-equal stamp mean "this exact
 /// file version was already uploaded", so `>` is then the correct read.
+///
+/// That precision comes from the filesystem, not from this code. NTFS, APFS
+/// and ext4 all carry sub-second mtimes, so the shipped targets are fine; a
+/// coarse-grained filesystem (FAT32 at 2s, ext3 at 1s) collapses two saves in
+/// the same tick and would skip the second one. Storing the vault on such a
+/// filesystem is out of scope, but the decision below is only as exact as the
+/// mtime it reads.
 pub fn needs_upload(vault_path: &std::path::Path, last_uploaded_mtime_ms: i64) -> bool {
     let modified = match std::fs::metadata(vault_path).and_then(|m| m.modified()) {
         Ok(t) => t,
@@ -1191,6 +1222,31 @@ mod tests {
         let expected: std::collections::BTreeSet<&str> =
             ["configured", "url", "last_backup_secs", "last_backup_error"].into_iter().collect();
         assert_eq!(keys, expected, "BackupState field set changed unexpectedly");
+    }
+
+    #[test]
+    fn a_supplied_token_wins_and_is_trimmed() {
+        assert_eq!(resolve_put_token(Some("  fresh  "), None).unwrap(), "fresh");
+        assert_eq!(resolve_put_token(Some("fresh"), Some("stored")).unwrap(), "fresh");
+    }
+
+    #[test]
+    fn a_blank_token_keeps_the_stored_one() {
+        // This is what makes a URL-only edit possible: get_backup_config never
+        // returns the token, so the user has nothing to re-type.
+        assert_eq!(resolve_put_token(None, Some("stored")).unwrap(), "stored");
+        assert_eq!(resolve_put_token(Some(""), Some("stored")).unwrap(), "stored");
+        assert_eq!(resolve_put_token(Some("   "), Some("stored")).unwrap(), "stored");
+    }
+
+    #[test]
+    fn a_blank_token_with_nothing_stored_is_rejected() {
+        // Otherwise the vault would carry a backup config that can never
+        // authenticate, and every upload would 401 with no obvious cause.
+        for supplied in [None, Some(""), Some("   ")] {
+            let out = resolve_put_token(supplied, None);
+            assert_eq!(out.unwrap_err(), "token cannot be empty");
+        }
     }
 
     #[test]
