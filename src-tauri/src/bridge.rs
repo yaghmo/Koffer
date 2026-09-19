@@ -629,6 +629,58 @@ mod tests {
         assert_eq!((user.as_str(), pass.as_str()), ("me", "hunter2"));
     }
 
+    /// A provider login (`method` other than "credentials") may carry no
+    /// password of its own and borrow the one saved against the provider.
+    fn provider_login(title: &str, url: &str, method: &str, user: &str, pass: &str) -> Item {
+        let mut item = login(title, url, user, pass);
+        if let Item::Login { fields, .. } = &mut item {
+            fields.method = method.to_string();
+        }
+        item
+    }
+
+    #[test]
+    fn a_provider_login_borrows_the_providers_password() {
+        let mut v = new_vault(vec![0; 16]);
+        let twitch = provider_login("Twitch", "https://twitch.tv/", "google", "me@gmail.test", "");
+        let id = twitch.id();
+        crate::vault::add_item(&mut v, twitch);
+        crate::vault::add_item(
+            &mut v,
+            provider_login("Google", "https://google.com/", "google", "me@gmail.test", "hunter2"),
+        );
+
+        let (user, pass) = credentials_for(&v, id, "https://twitch.tv").unwrap();
+        assert_eq!((user.as_str(), pass.as_str()), ("me@gmail.test", "hunter2"));
+    }
+
+    #[test]
+    fn a_provider_login_whose_provider_is_gone_is_refused_not_guessed() {
+        // Delete the Google entry and the Twitch item that leaned on it has
+        // nothing left to give. It must say so rather than hand back an
+        // empty password, or the page gets silently filled with nothing.
+        let mut v = new_vault(vec![0; 16]);
+        let twitch = provider_login("Twitch", "https://twitch.tv/", "google", "me@gmail.test", "");
+        let id = twitch.id();
+        crate::vault::add_item(&mut v, twitch);
+
+        assert_eq!(
+            credentials_for(&v, id, "https://twitch.tv").unwrap_err(),
+            "that item has no password"
+        );
+
+        // A same-provider entry under a different username is not a match
+        // either: one person's Google password is not another's.
+        crate::vault::add_item(
+            &mut v,
+            provider_login("Google", "https://google.com/", "google", "someoneelse@gmail.test", "hunter2"),
+        );
+        assert_eq!(
+            credentials_for(&v, id, "https://twitch.tv").unwrap_err(),
+            "that item has no password"
+        );
+    }
+
     #[test]
     fn credentials_are_refused_for_an_unknown_id() {
         let v = new_vault(vec![0; 16]);
