@@ -41,6 +41,10 @@ vi.mock("../lib/api", () => ({
     createRecoveryCode: vi.fn().mockResolvedValue("K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"),
     changeMasterPassword: vi.fn().mockResolvedValue(undefined),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
+    getBackupConfig: vi.fn().mockResolvedValue({ configured: false, url: "", last_backup_secs: 0 }),
+    setBackupConfig: vi.fn().mockResolvedValue(undefined),
+    clearBackupConfig: vi.fn().mockResolvedValue(undefined),
+    backupNow: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -123,5 +127,52 @@ describe("Settings — export backup", () => {
     fireEvent.click(await screen.findByRole("button", { name: /export vault backup/i }));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(api.exportVault).not.toHaveBeenCalled();
+  });
+});
+
+describe("Settings cloud backup card", () => {
+  it("explains that the master password is still required", async () => {
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    expect(await screen.findByText(/cloud backup/i)).toBeTruthy();
+    expect(screen.getByText(/master password is still required/i)).toBeTruthy();
+  });
+
+  it("warns that the download token is not stored by the app", async () => {
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    expect(await screen.findByText(/never stores your download token/i)).toBeTruthy();
+  });
+
+  it("saves the url and token", async () => {
+    const { api } = await import("../lib/api");
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    fireEvent.change(await screen.findByLabelText(/worker url/i), {
+      target: { value: "https://w.example.dev" },
+    });
+    fireEvent.change(screen.getByLabelText(/upload token/i), {
+      target: { value: "put-secret" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save backup settings/i }));
+    await waitFor(() =>
+      expect(api.setBackupConfig).toHaveBeenCalledWith("https://w.example.dev", "put-secret")
+    );
+  });
+
+  it("masks the token field", async () => {
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    const field = (await screen.findByLabelText(/upload token/i)) as HTMLInputElement;
+    expect(field.type).toBe("password");
+  });
+
+  it("surfaces an upload failure", async () => {
+    const { api } = await import("../lib/api");
+    vi.mocked(api.getBackupConfig).mockResolvedValue({
+      configured: true,
+      url: "https://w.example.dev",
+      last_backup_secs: 0,
+    });
+    vi.mocked(api.backupNow).mockRejectedValue("could not reach the worker");
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
+    expect(await screen.findByText(/could not reach the worker/i)).toBeTruthy();
   });
 });

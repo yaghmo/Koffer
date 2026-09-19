@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import { refreshSiteLogos } from "../lib/logos";
-import type { SecurityState, VaultStorage } from "../lib/types";
-import { SettingsIcon, ShieldIcon, ImageIcon, XIcon, DatabaseIcon, KeyIcon } from "../components/Icon";
+import type { BackupState, SecurityState, VaultStorage } from "../lib/types";
+import { SettingsIcon, ShieldIcon, ImageIcon, XIcon, DatabaseIcon, KeyIcon, CloudIcon } from "../components/Icon";
 import RecoveryCodeDialog from "../components/RecoveryCodeDialog";
 import { useHotkey } from "../lib/useHotkey";
 
@@ -58,11 +58,24 @@ export default function Settings({ accountId, onLock }: Props) {
   const [pwError, setPwError] = useState<string | null>(null);
   const [pwDone, setPwDone] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
+  const [backup, setBackup] = useState<BackupState | null>(null);
+  const [backupUrl, setBackupUrl] = useState("");
+  const [backupToken, setBackupToken] = useState("");
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupResult, setBackupResult] = useState<string | null>(null);
 
   useEffect(() => {
     api.getConfig().then((cfg) => setAutolockMins(cfg.autolock_mins));
     loadStorage();
     loadSecurity();
+    api
+      .getBackupConfig()
+      .then((b) => {
+        setBackup(b);
+        setBackupUrl(b.url);
+      })
+      .catch(() => {});
   }, []);
 
   function loadSecurity() {
@@ -174,6 +187,53 @@ export default function Settings({ accountId, onLock }: Props) {
       setExportError(`Export failed: ${String(err)}`);
     } finally {
       setExportBusy(false);
+    }
+  }
+
+  async function saveBackupSettings() {
+    setBackupBusy(true);
+    setBackupError(null);
+    setBackupResult(null);
+    try {
+      await api.setBackupConfig(backupUrl.trim(), backupToken.trim());
+      setBackupToken("");
+      setBackup(await api.getBackupConfig());
+      setBackupResult("Backup settings saved.");
+    } catch (err) {
+      setBackupError(String(err));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function runBackupNow() {
+    setBackupBusy(true);
+    setBackupError(null);
+    setBackupResult(null);
+    try {
+      await api.backupNow();
+      setBackup(await api.getBackupConfig());
+      setBackupResult("Vault uploaded.");
+    } catch (err) {
+      setBackupError(String(err));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function disableBackup() {
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      await api.clearBackupConfig();
+      setBackupUrl("");
+      setBackupToken("");
+      setBackup(await api.getBackupConfig());
+      setBackupResult("Cloud backup turned off.");
+    } catch (err) {
+      setBackupError(String(err));
+    } finally {
+      setBackupBusy(false);
     }
   }
 
@@ -389,6 +449,97 @@ export default function Settings({ accountId, onLock }: Props) {
         {exportError && (
           <p role="alert" className="text-body-sm text-error">
             {exportError}
+          </p>
+        )}
+      </div>
+
+      <div className="card flex flex-col gap-3 p-5">
+        <div className="flex items-center gap-2 text-on-surface">
+          <CloudIcon size={16} />
+          <h2 className="text-body-md font-semibold">Cloud backup</h2>
+        </div>
+
+        <p className="text-body-sm text-on-surface-variant">
+          Keeps an encrypted copy in your own Cloudflare account, uploaded when this vault locks
+          after a change. It is a copy, not a sync — editing the same vault on two machines is not
+          supported.
+        </p>
+        <p className="text-body-sm text-on-surface-variant">
+          Your <strong>master password is still required</strong> to open a restored vault. This is
+          not account recovery and does not help with a forgotten password — your recovery code
+          does that. Because a downloaded copy can be attacked offline, a strong master password
+          matters more once this is on.
+        </p>
+        <p className="text-body-sm text-on-surface-variant">
+          Paste the <strong>upload</strong> token below. It can upload but not download, which is
+          why there are two. The app <strong>never stores your download token</strong> — keep that
+          one with your recovery code, or the backup cannot be retrieved.
+        </p>
+
+        <label className="flex flex-col gap-1">
+          <span className="label-md">Worker URL</span>
+          <input
+            type="url"
+            value={backupUrl}
+            onChange={(e) => setBackupUrl(e.target.value)}
+            placeholder="https://vault-backup.you.workers.dev"
+            className="field font-mono"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="label-md">Upload token</span>
+          <input
+            type="password"
+            value={backupToken}
+            onChange={(e) => setBackupToken(e.target.value)}
+            placeholder={backup?.configured ? "Saved — enter a new token to replace it" : ""}
+            className="field font-mono"
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="btn-secondary self-start"
+            onClick={saveBackupSettings}
+            disabled={backupBusy || !backupUrl.trim() || !backupToken.trim()}
+          >
+            Save backup settings
+          </button>
+          {backup?.configured && (
+            <>
+              <button
+                type="button"
+                className="btn-secondary self-start"
+                onClick={runBackupNow}
+                disabled={backupBusy}
+              >
+                {backupBusy ? "Uploading…" : "Back up now"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary self-start"
+                onClick={disableBackup}
+                disabled={backupBusy}
+              >
+                Turn off
+              </button>
+            </>
+          )}
+        </div>
+
+        {backup?.configured && (
+          <p className="text-body-sm text-on-surface-variant">
+            {backup.last_backup_secs === 0
+              ? "Never uploaded yet."
+              : `Last upload: ${daysAgo(backup.last_backup_secs)} days ago.`}
+          </p>
+        )}
+        {backupResult && <p className="text-body-sm text-on-surface-variant">{backupResult}</p>}
+        {backupError && (
+          <p role="alert" className="text-body-sm text-error">
+            {backupError}
           </p>
         )}
       </div>

@@ -156,6 +156,14 @@ export function DatabaseIcon({ size = 16, ...props }: IconProps) {
   );
 }
 
+export function CloudIcon({ size = 16, ...props }: IconProps) {
+  return (
+    <svg {...base(size, props)}>
+      <path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97 6 6 0 0 0-11.64-1.5A3.75 3.75 0 0 0 6.75 19h10.75Z" />
+    </svg>
+  );
+}
+
 export function GridIcon({ size = 16, ...props }: IconProps) {
   return (
     <svg {...base(size, props)}>
