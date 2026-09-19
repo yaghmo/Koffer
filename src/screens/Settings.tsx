@@ -457,7 +457,24 @@ export default function Settings({ accountId, onLock }: Props) {
         <div className="flex items-center gap-2 text-on-surface">
           <CloudIcon size={16} />
           <h2 className="text-body-md font-semibold">Cloud backup</h2>
+          <span
+            className={
+              backup?.configured
+                ? "text-label-md text-on-surface-variant"
+                : "text-label-md text-on-surface-variant opacity-70"
+            }
+          >
+            {backup?.configured ? "· On" : "· Not configured"}
+          </span>
         </div>
+
+        {!backup?.configured && (
+          <p className="text-body-sm text-on-surface-variant">
+            <strong>Off.</strong> Nothing leaves this device. Setting it up needs a Cloudflare
+            account with R2 enabled — see <code>worker/README.md</code>. Until then, use{" "}
+            <strong>Export vault backup</strong> above and keep the file somewhere else.
+          </p>
+        )}
 
         <p className="text-body-sm text-on-surface-variant">
           Keeps an encrypted copy in your own Cloudflare account, uploaded when this vault locks
