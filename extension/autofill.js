@@ -101,6 +101,12 @@
   function isVisible(el) {
     if (!el || el.type === "hidden") return false;
     if (el.disabled || el.readOnly) return false;
+    // Taken out of the tab order is the page saying this is not a field the
+    // user types into. TikTok's login carries
+    // `<input type="password" tabindex="-1" class="...InputPasskeyHack...">`,
+    // which counted as the page's one password box and would have been
+    // handed the password.
+    if (el.tabIndex < 0) return false;
     var rects = el.getClientRects();
     if (!rects || rects.length === 0) return false;
     var hasArea = false;
@@ -155,20 +161,56 @@
     return out;
   }
 
-  function fieldMeta(el) {
+  /**
+   * The words a person sees against this field.
+   *
+   * Deliberately excludes `autocomplete`. That attribute is not a
+   * description, it is an instruction to the browser, and a site sets it to
+   * whatever makes its own autofill behave: TikTok's phone box is
+   * `autocomplete="username webauthn"`, because to TikTok the phone number
+   * *is* the username. Reading that as "this box says username" is what let
+   * a username be typed into it.
+   */
+  function humanMeta(el) {
     var parts = [
       el.name,
       el.id,
       el.placeholder,
-      el.getAttribute("autocomplete") || "",
       el.getAttribute("aria-label") || "",
       el.getAttribute("title") || "",
-      el.getAttribute("data-autofill") || "",
-      // Last, and capped: a label can be a whole paragraph, and nothing here
-      // needs more than the words next to the box.
+      // Capped: a label can be a whole paragraph, and nothing here needs
+      // more than the words next to the box.
       labelText(el).slice(0, 200),
     ];
     return parts.join(" ").toLowerCase();
+  }
+
+  function fieldMeta(el) {
+    return (
+      humanMeta(el) +
+      " " +
+      (el.getAttribute("autocomplete") || "") +
+      " " +
+      (el.getAttribute("data-autofill") || "")
+    ).toLowerCase();
+  }
+
+  /**
+   * `autocomplete` is a space-separated token list, not a single word.
+   * `"username webauthn"` is a perfectly ordinary value and an exact compare
+   * against it matches nothing.
+   */
+  function autoTokens(el) {
+    return String(el.getAttribute("autocomplete") || "")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(function (t) {
+        return t !== "";
+      });
+  }
+
+  function hasAuto(el, want) {
+    return autoTokens(el).indexOf(want) !== -1;
   }
 
   /**
@@ -231,6 +273,22 @@
    * recognised by what is *in* it. Two options carrying a `+`-prefixed
    * number is not something any other kind of select does.
    */
+  /**
+   * Anything beside a field that is showing a dial code.
+   *
+   * TikTok's country picker is
+   * `<div role="button" aria-label="FR +33 phone country code...">`, not a
+   * `<select>`, which is the usual shape in a framework-built form. Limited
+   * to things that announce themselves as controls, so this never walks an
+   * arbitrary subtree.
+   */
+  function looksLikeDialControl(el) {
+    if (el.options) return looksLikeDialSelect(el);
+    var label = el.getAttribute("aria-label") || "";
+    if (/\+\d{1,4}/.test(label)) return true;
+    return /\+\d{1,4}/.test(String(el.textContent || "").slice(0, 80));
+  }
+
   function looksLikeDialSelect(el) {
     if (!el.options || el.options.length < 2) return false;
     var seen = 0;
@@ -257,11 +315,11 @@
     var root = el.form || (el.closest && el.closest("form"));
     if (!root) root = el.parentElement && el.parentElement.parentElement;
     if (!root || !root.querySelectorAll) return false;
-    var nodes = root.querySelectorAll("input, select");
+    var nodes = root.querySelectorAll('input, select, [role="button"], [aria-haspopup]');
     for (var i = 0; i < nodes.length; i++) {
       if (nodes[i] === el) continue;
       if (roleMatches(ROLES.dial_code, nodes[i])) return true;
-      if (looksLikeDialSelect(nodes[i])) return true;
+      if (looksLikeDialControl(nodes[i])) return true;
     }
     return false;
   }
@@ -270,25 +328,28 @@
     var type = String(el.type || "").toLowerCase();
     if (type === "tel") return true;
     if (type === "email" || type === "password") return false;
-    var auto = (el.getAttribute("autocomplete") || "").toLowerCase();
-    if (auto === "tel" || auto.indexOf("tel-") === 0) return true;
+    var tokens = autoTokens(el);
+    for (var t = 0; t < tokens.length; t++) {
+      if (tokens[t] === "tel" || tokens[t].indexOf("tel-") === 0) return true;
+    }
 
     // `inputmode="tel"` is the page asking for a phone keypad. Nothing else
-    // wants one, so it outranks everything below -- including
-    // `autocomplete="username"`, which a sign-in box that takes a phone
-    // number often carries, because to the site that is exactly what it is.
-    // It is still not somewhere to put a username.
+    // wants one, so it outranks everything below.
     if (isTelBox(el)) return true;
 
-    var meta = fieldMeta(el);
-    var saysPhone = ROLES.phone.nameRe.test(meta);
+    // Only the words a person reads decide this, never `autocomplete`. A
+    // sign-in box that takes a phone number routinely declares
+    // `autocomplete="username"` -- to the site that is exactly what it is --
+    // and letting that vote made this whole test a no-op on the form it was
+    // written for.
+    var human = humanMeta(el);
+    var saysPhone = ROLES.phone.nameRe.test(human);
     // Plain digits are more ambiguous -- an account number is digits too --
     // so those need the field to say phone, or a country code beside it.
     if (isNumericBox(el) && (saysPhone || hasDialNeighbour(el))) return true;
 
-    if (auto === "username" || auto === "email") return false;
     if (!saysPhone) return false;
-    return !IDENTIFIER_HINT.test(meta);
+    return !IDENTIFIER_HINT.test(human);
   }
 
   /**
@@ -307,8 +368,7 @@
 
   function roleMatches(role, el) {
     if (role.typeRe && role.typeRe.test(el.type || "")) return "type";
-    var auto = (el.getAttribute("autocomplete") || "").toLowerCase();
-    if (role.autocomplete && auto === role.autocomplete) return "autocomplete";
+    if (role.autocomplete && hasAuto(el, role.autocomplete)) return "autocomplete";
     if (role.nameRe && role.nameRe.test(fieldMeta(el))) return "name";
     return null;
   }

@@ -170,15 +170,31 @@ A box that asks for a phone and nothing else never takes a username. TikTok
 opens its sign-in on a phone tab, and the box there matched the username role
 well enough to be filled with a value it will never accept.
 
-Recognising one is deliberately not just a name match, because a form built
-by a framework has no useful names: its `name` and `id` are generated and the
-only thing saying what the box is for is the text beside it. So field
-metadata includes the `<label>`, `aria-label`, `aria-labelledby` and `title`
-as well as the attributes, `inputmode="tel"` counts on its own — nothing but
-a phone number wants a phone keypad, and it outranks an
-`autocomplete="username"` that a phone sign-in box often carries — and a
-digits-only box next to a country picker counts too, where the picker is
-found by the dial codes among its options rather than by its name.
+Recognising one is deliberately not a name match. A form built by a
+framework has no useful names — TikTok's phone box is `name="mobile"` with
+generated classes, no `id`, and the country picker beside it is a
+`<div role="button">` rather than a `<select>`. So:
+
+- field metadata includes the `<label>`, `aria-label`, `aria-labelledby` and
+  `title`, which is the text a person actually reads;
+- the decision reads *only* that text, never `autocomplete`. That attribute
+  is an instruction to the browser, not a description, and TikTok's phone box
+  declares `autocomplete="username webauthn"` because to TikTok the phone
+  number is the username. Letting it vote made this test a no-op on the form
+  it was written for;
+- `autocomplete` is parsed as the space-separated token list it is, so
+  `"username webauthn"` is recognised everywhere else it matters;
+- `inputmode="tel"` counts on its own — nothing but a phone number wants a
+  phone keypad;
+- a digits-only box next to a country picker counts too, and the picker is
+  found by the dial code it is showing, in a `<select>`'s options or in the
+  `aria-label` of a `role="button"`.
+
+A field with `tabindex="-1"` is skipped entirely. That is the page saying
+nobody types here, and TikTok's login carries an
+`<input type="password" tabindex="-1">` passkey workaround that was the only
+password box in the document — so the page read as an ordinary sign-in form
+with somewhere to put the password.
 
 "And nothing else" is the careful half: Facebook's login box is named `email`
 and reads "Email address or phone number", takes either, and still gets the
