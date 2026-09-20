@@ -114,7 +114,7 @@ describe("TikTok's phone sign-in", () => {
     // set it, but it can be read, and it already says what we want.
     const out = Autofill.fill(document, { phone: "+33 6-12-34-56-78" });
     expect(out.missing).not.toContain("phone");
-    expect(phoneBox().value).toBe("6-12-34-56-78");
+    expect(phoneBox().value).toBe("612345678");
   });
 
   it("refuses a number from a country the page is not set to", () => {

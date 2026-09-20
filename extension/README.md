@@ -158,7 +158,10 @@ already settled, rather than putting the same dialog up twice.
 
 A login can carry a phone number as well as a username, for the sites that
 sign you in by phone. It is stored as one string with its dial code
-("+1 555-123-4567") and split apart here. Three cases:
+("+1 555-123-4567"), grouped so it reads on screen, and goes into a form as
+digits — plenty validate on length or strip nothing, and a hyphen is the
+difference between accepted and "enter a valid phone number". Three cases for
+where the country code ends up:
 
 - **A picker this can set.** The dial code goes into it and the national
   number into the box. Options are matched by label as well as value, because

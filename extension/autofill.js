@@ -463,6 +463,10 @@
     return m ? { dial: m[1], local: m[2].trim() } : { dial: "", local: String(value || "").trim() };
   }
 
+  function digits(value) {
+    return String(value == null ? "" : value).replace(/\D/g, "");
+  }
+
   var LOGIN_URL = /(^|[^a-z])(sign[-_]?in|signin|log[-_]?in|login|auth|session|account)([^a-z]|$)/i;
 
   /**
@@ -515,19 +519,25 @@
    */
   function phoneValue(value, box, filled) {
     var parts = splitDial(value);
+    // Digits only, whichever half goes in. The vault groups a number with
+    // hyphens so it is readable on screen; a form wants the number. Plenty
+    // of them validate on length or strip nothing, and a hyphen is the
+    // difference between accepted and "enter a valid phone number".
+    var local = digits(parts.local);
+    var whole = parts.dial ? parts.dial + local : local;
     var dialWent = filled.some(function (f) {
       return f.field === "dial_code";
     });
-    if (dialWent) return { value: parts.local };
-    if (!parts.dial) return { value: value };
+    if (dialWent) return { value: local };
+    if (!parts.dial) return { value: local };
 
     var picker = dialControl(box);
     var shown = picker ? shownDial(picker) : "";
-    if (!shown) return { value: value };
+    if (!shown) return { value: whole };
     if (shown !== parts.dial) {
       return { refuse: true, mismatch: { wanted: parts.dial, shown: shown } };
     }
-    return { value: parts.local };
+    return { value: local };
   }
 
   function fillOnce(scope, wanted) {
@@ -627,7 +637,16 @@
       if (value === undefined || value === null || String(value).trim() === "") return;
       var wanted = String(value).trim();
       var landed = inputs.some(function (el) {
-        return matchesRole(role, el) && el.value === wanted;
+        if (!matchesRole(role, el)) return false;
+        // A phone number goes in as digits and may be only the national
+        // half, so the stored string never matches the box character for
+        // character. Compare what is actually in there.
+        if (role === "phone") {
+          var want = digits(value);
+          var got = digits(el.value);
+          return got !== "" && (want === got || want.slice(-got.length) === got);
+        }
+        return el.value === wanted;
       });
       // A dial code that found no picker is not outstanding work.
       if (!landed && role !== "dial_code") left[role] = value;

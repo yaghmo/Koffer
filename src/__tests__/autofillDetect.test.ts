@@ -354,10 +354,14 @@ describe("phone boxes", () => {
     );
   });
 
-  it("puts the whole number in a lone phone box", () => {
+  it("puts the whole number in a lone phone box, as digits", () => {
+    // The vault groups a number with hyphens so it reads on screen. A form
+    // wants the number: plenty validate on length or strip nothing, and a
+    // hyphen is the difference between accepted and "enter a valid phone
+    // number".
     document.body.innerHTML = `<input type="tel" name="phone">`;
     Autofill.fill(document, { phone: "+1 555-123-4567" });
-    expect((document.querySelector("input") as HTMLInputElement).value).toBe("+1 555-123-4567");
+    expect((document.querySelector("input") as HTMLInputElement).value).toBe("+15551234567");
   });
 
   it("splits the dial code off when the form has a picker for it", () => {
@@ -374,7 +378,7 @@ describe("phone boxes", () => {
     expect(out.missing).not.toContain("phone");
     expect((document.querySelector("select") as HTMLSelectElement).value).toBe("+1");
     expect((document.querySelector('input[name="phone"]') as HTMLInputElement).value).toBe(
-      "555-123-4567"
+      "5551234567"
     );
   });
 
