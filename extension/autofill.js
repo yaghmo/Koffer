@@ -126,13 +126,47 @@
     return Array.prototype.filter.call(nodes, isVisible);
   }
 
+  /**
+   * Whatever text is attached to this field's own label.
+   *
+   * A framework-built form often has no useful `name` or `id` at all — both
+   * are generated — and the only thing saying what the box is for is the
+   * label beside it or an `aria-label`. Reading only the attributes meant
+   * those fields were, to this code, anonymous.
+   */
+  function labelText(el) {
+    var out = "";
+    try {
+      var labels = el.labels;
+      if (labels) {
+        for (var i = 0; i < labels.length; i++) out += " " + (labels[i].textContent || "");
+      }
+    } catch (e) {
+      // `labels` is not on every element type, and some pages shadow it.
+    }
+    var by = el.getAttribute("aria-labelledby");
+    if (by) {
+      var ids = by.split(/\s+/);
+      for (var j = 0; j < ids.length; j++) {
+        var node = global.document.getElementById(ids[j]);
+        if (node) out += " " + (node.textContent || "");
+      }
+    }
+    return out;
+  }
+
   function fieldMeta(el) {
     var parts = [
       el.name,
       el.id,
       el.placeholder,
       el.getAttribute("autocomplete") || "",
+      el.getAttribute("aria-label") || "",
+      el.getAttribute("title") || "",
       el.getAttribute("data-autofill") || "",
+      // Last, and capped: a label can be a whole paragraph, and nothing here
+      // needs more than the words next to the box.
+      labelText(el).slice(0, 200),
     ];
     return parts.join(" ").toLowerCase();
   }
@@ -177,15 +211,83 @@
    */
   var IDENTIFIER_HINT = /user(name|id)?|loginid|e-?mail/i;
 
+  /** A box the page has told the browser to put a *phone* keypad on. */
+  function isTelBox(el) {
+    return (el.getAttribute("inputmode") || "").toLowerCase() === "tel";
+  }
+
+  /** A box for digits, which may or may not be a phone number. */
+  function isNumericBox(el) {
+    var mode = (el.getAttribute("inputmode") || "").toLowerCase();
+    if (mode === "numeric") return true;
+    return String(el.type || "").toLowerCase() === "number";
+  }
+
+  /**
+   * A `<select>` full of dial codes, whatever it is named.
+   *
+   * The country picker beside a phone box is the clearest signal there is,
+   * and on a framework-built form its name is generated -- so it is
+   * recognised by what is *in* it. Two options carrying a `+`-prefixed
+   * number is not something any other kind of select does.
+   */
+  function looksLikeDialSelect(el) {
+    if (!el.options || el.options.length < 2) return false;
+    var seen = 0;
+    var limit = Math.min(el.options.length, 40);
+    for (var i = 0; i < limit; i++) {
+      var opt = el.options[i];
+      if (/\+\d{1,4}/.test(String(opt.value || "")) || /\+\d{1,4}/.test(String(opt.text || ""))) {
+        seen++;
+        if (seen >= 2) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Is there a dial-code control beside this field?
+   *
+   * A country code next to a box is what a phone entry looks like even when
+   * every name on the page is generated. Scoped to the form, or to the
+   * grandparent when there is no form element, so a picker somewhere else
+   * entirely does not vote.
+   */
+  function hasDialNeighbour(el) {
+    var root = el.form || (el.closest && el.closest("form"));
+    if (!root) root = el.parentElement && el.parentElement.parentElement;
+    if (!root || !root.querySelectorAll) return false;
+    var nodes = root.querySelectorAll("input, select");
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i] === el) continue;
+      if (roleMatches(ROLES.dial_code, nodes[i])) return true;
+      if (looksLikeDialSelect(nodes[i])) return true;
+    }
+    return false;
+  }
+
   function isPhoneBox(el) {
     var type = String(el.type || "").toLowerCase();
     if (type === "tel") return true;
     if (type === "email" || type === "password") return false;
     var auto = (el.getAttribute("autocomplete") || "").toLowerCase();
     if (auto === "tel" || auto.indexOf("tel-") === 0) return true;
-    if (auto === "username" || auto === "email") return false;
+
+    // `inputmode="tel"` is the page asking for a phone keypad. Nothing else
+    // wants one, so it outranks everything below -- including
+    // `autocomplete="username"`, which a sign-in box that takes a phone
+    // number often carries, because to the site that is exactly what it is.
+    // It is still not somewhere to put a username.
+    if (isTelBox(el)) return true;
+
     var meta = fieldMeta(el);
-    if (!ROLES.phone.nameRe.test(meta)) return false;
+    var saysPhone = ROLES.phone.nameRe.test(meta);
+    // Plain digits are more ambiguous -- an account number is digits too --
+    // so those need the field to say phone, or a country code beside it.
+    if (isNumericBox(el) && (saysPhone || hasDialNeighbour(el))) return true;
+
+    if (auto === "username" || auto === "email") return false;
+    if (!saysPhone) return false;
     return !IDENTIFIER_HINT.test(meta);
   }
 

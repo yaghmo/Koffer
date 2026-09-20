@@ -286,6 +286,59 @@ describe("phone boxes", () => {
     );
   });
 
+  it("reads a label and an aria-label, not just the attributes", () => {
+    // A framework-built form generates its `name` and `id`, so the only
+    // thing saying what the box is for is the text beside it. Reading only
+    // attributes made those fields anonymous, and a username went in.
+    document.body.innerHTML = `
+      <form>
+        <label for="f1">Phone number</label>
+        <input id="f1" name="x7k2">
+        <input name="x7k3" aria-label="Phone number">
+        <input name="password" type="password">
+      </form>`;
+    const out = Autofill.fill(document, { username: "me", password: "hunter2" });
+    expect(out.missing).toContain("username");
+    expect((document.querySelector("#f1") as HTMLInputElement).value).toBe("");
+    expect((document.querySelector('[name="x7k3"]') as HTMLInputElement).value).toBe("");
+  });
+
+  it("treats a digits-only box beside a country code as a phone box", () => {
+    // Nothing here is named anything useful and `autocomplete` says the box
+    // is the username — which, to the site, it is. It is still not somewhere
+    // to put one.
+    document.body.innerHTML = `
+      <form>
+        <select name="a1">
+          <option value="gb">United Kingdom +44</option>
+          <option value="us">United States +1</option>
+        </select>
+        <input name="a2" inputmode="numeric" autocomplete="username">
+        <input name="password" type="password">
+      </form>`;
+    const out = Autofill.fill(document, { username: "me", password: "hunter2" });
+    expect(out.missing).toContain("username");
+    expect((document.querySelector('[name="a2"]') as HTMLInputElement).value).toBe("");
+  });
+
+  it("refuses a box asking for a phone keypad, whatever it claims to be", () => {
+    // `inputmode="tel"` outranks `autocomplete="username"`: to the site the
+    // box really is the username, and it still only accepts digits.
+    document.body.innerHTML = `
+      <input name="a2" inputmode="tel" autocomplete="username">`;
+    const out = Autofill.fill(document, { username: "me" });
+    expect(out.missing).toContain("username");
+    expect((document.querySelector("input") as HTMLInputElement).value).toBe("");
+  });
+
+  it("does not call every numeric box a phone box", () => {
+    // No country code beside it and nothing saying phone: a numeric box is
+    // just a numeric box, and the guard must not spread.
+    document.body.innerHTML = `<input name="username" inputmode="numeric">`;
+    Autofill.fill(document, { username: "1234" });
+    expect((document.querySelector("input") as HTMLInputElement).value).toBe("1234");
+  });
+
   it("still fills a box that takes either a phone or a username", () => {
     // Facebook's single login box is named `email` and reads "Email address
     // or phone number". It takes either, and the username belongs in it.
