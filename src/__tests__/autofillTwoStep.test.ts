@@ -42,7 +42,13 @@ beforeAll(async () => {
   Element.prototype.getClientRects = function (this: Element) {
     const style = window.getComputedStyle(this);
     const hidden = style.display === "none" || style.visibility === "hidden";
-    return (hidden ? [] : [{ width: 100, height: 20 }]) as unknown as DOMRectList;
+    if (hidden) return [] as unknown as DOMRectList;
+    // A box with no area: still one rect, which is what a sign-in page's
+    // collapsed password field looks like before the step that asks for it.
+    const collapsed = this.hasAttribute("data-collapsed");
+    return [
+      collapsed ? { width: 0, height: 0 } : { width: 100, height: 20 },
+    ] as unknown as DOMRectList;
   };
   (globalThis as unknown as { chrome: unknown }).chrome = {
     runtime: {

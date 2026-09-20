@@ -23,6 +23,15 @@
  * box at all. Clearing on every `login:false` made the badge and the menu
  * blink out mid-use, so nothing is cleared until the tab actually
  * navigates.
+ *
+ * A third fact, learned the hard way: **context menus do not survive the
+ * worker being killed**, and nothing re-creates them on its own. On a page
+ * that does not mutate — an OAuth popup sitting there waiting — the menu
+ * would simply vanish and only come back if you reloaded the page. So the
+ * menu is rebuilt when this file is evaluated, which happens on every
+ * revival, and whenever the focused window changes: `tabs.onActivated` does
+ * not fire for a window switch, so without that the menu could also be left
+ * showing the other window's accounts.
  */
 import { matches, credentials, ask } from "./vault.js";
 
@@ -34,6 +43,19 @@ const BADGE_COLOUR = "#7C9CFF";
 const ROOT_ID = "pm-root";
 const ASK_ID = "pm-ask";
 const KEY = "tabState";
+
+/**
+ * How long a "this site is not approved" answer may be reused.
+ *
+ * Approval happens in the app, which has no way to tell this worker about
+ * it, so a cached refusal that never expired left the menu offering to ask
+ * for a site that had already been approved — forever, and raising the
+ * dialog again on every click.
+ */
+const RECHECK_MS = 5000;
+/** While waiting for someone to answer the dialog, and for how long. */
+const APPROVAL_POLL_MS = 2000;
+const APPROVAL_POLL_TRIES = 30;
 
 /** Matches the app's own naming in src/lib/methods.tsx. */
 const PROVIDER_LABELS = {
@@ -106,14 +128,13 @@ async function renderMenu(state) {
   }
 }
 
-async function onDetectedLogin(tabId, origin) {
-  const known = (await allTabState())[tabId];
-  // Rebuilding on every mutation would hammer the bridge and race with
-  // itself; the accounts for an origin do not change while you sit on it.
-  if (known && known.origin === origin) {
-    await renderMenu(known);
-    return;
-  }
+/** A cached refusal goes stale; a cached list of accounts does not. */
+function stale(state) {
+  return state.needsApproval && Date.now() - (state.checkedAt || 0) > RECHECK_MS;
+}
+
+/** Ask the app what it has for this origin, store it, and redraw the menu. */
+async function refresh(tabId, origin) {
   let found = { items: [], count: 0, needsApproval: false, host: "" };
   try {
     found = await matches(origin);
@@ -121,9 +142,43 @@ async function onDetectedLogin(tabId, origin) {
     // Not paired, app closed, or vault locked. The popup explains all three;
     // a menu that cannot fill anything is just noise.
   }
-  const state = { origin, ...found };
+  const state = { origin, checkedAt: Date.now(), ...found };
   await setTabState(tabId, state);
   await renderMenu(state);
+  return state;
+}
+
+async function onDetectedLogin(tabId, origin) {
+  const known = (await allTabState())[tabId];
+  // Rebuilding on every mutation would hammer the bridge and race with
+  // itself; the accounts for an origin do not change while you sit on it.
+  // A refusal is the exception — that one changes in the app, behind our
+  // back.
+  if (known && known.origin === origin && !stale(known)) {
+    await renderMenu(known);
+    return;
+  }
+  await refresh(tabId, origin);
+}
+
+/**
+ * Watch for the dialog being answered.
+ *
+ * Nothing pushes an approval back to the extension, and the page that needs
+ * the menu most — an OAuth popup — may never mutate again, so waiting for
+ * the next `detect` means waiting forever. Polling ends as soon as the
+ * answer changes, or gives up after a minute; the handler staying pending is
+ * also what keeps the worker alive while it waits.
+ */
+async function waitForApproval(tabId, origin) {
+  for (let i = 0; i < APPROVAL_POLL_TRIES; i++) {
+    await new Promise((done) => setTimeout(done, APPROVAL_POLL_MS));
+    const current = (await allTabState())[tabId];
+    // The tab went away, or moved on: stop.
+    if (!current || current.origin !== origin) return;
+    const state = await refresh(tabId, origin);
+    if (!state.needsApproval) return;
+  }
 }
 
 ext.runtime.onMessage.addListener((msg, sender) => {
@@ -175,12 +230,54 @@ ext.tabs.onActivated.addListener(async ({ tabId }) => {
   renderMenu((await allTabState())[tabId]);
 });
 
+/** Redraw for whichever tab is in front, wherever that is. */
+async function renderForActiveTab(windowId) {
+  try {
+    const query = windowId === undefined ? { active: true, lastFocusedWindow: true } : { active: true, windowId };
+    const [tab] = await ext.tabs.query(query);
+    if (!tab || tab.id === undefined) return;
+    await renderMenu((await allTabState())[tab.id]);
+  } catch {
+    // No window to draw for yet.
+  }
+}
+
+/**
+ * Switching windows does not switch tabs, so `onActivated` never fires for
+ * it — and the menu is global. Without this, moving from an OAuth popup back
+ * to the page that opened it leaves the popup's accounts on the menu.
+ */
+if (ext.windows && ext.windows.onFocusChanged) {
+  ext.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId === ext.windows.WINDOW_ID_NONE) return;
+    renderForActiveTab(windowId);
+  });
+}
+
+// Runs on every revival of the worker, which is the only moment the menus it
+// created are known to be gone.
+renderForActiveTab();
+
 ext.contextMenus.onClicked.addListener(async (info, tab) => {
   const id = String(info.menuItemId || "");
   if (!tab || tab.id === undefined) return;
   if (id === ASK_ID) {
     const state = (await allTabState())[tab.id];
-    if (state && state.origin) await ask(state.origin).catch(() => {});
+    if (!state || !state.origin) return;
+    let answer;
+    try {
+      answer = await ask(state.origin);
+    } catch {
+      // Locked, unpaired, or the app is gone. The popup says which.
+      return;
+    }
+    // Already approved: the menu was showing a refusal the app had since
+    // taken back. Redraw rather than leaving it there.
+    if (answer && answer.approved) {
+      await refresh(tab.id, state.origin);
+      return;
+    }
+    await waitForApproval(tab.id, state.origin);
     return;
   }
   if (!id.startsWith("pm:")) return;

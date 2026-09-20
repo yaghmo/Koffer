@@ -76,13 +76,39 @@
     desired_salary: { nameRe: /salary|compensation|pay\b/i, report: "desired_salary" },
   };
 
+  /**
+   * Is this field actually on the page, in front of the person?
+   *
+   * "Has a box" is not enough. A sign-in page routinely keeps the password
+   * input mounted and collapsed during the step that only asks for an email
+   * — Google's does — and a zero-by-zero box still returns one client rect.
+   * Filling that writes the password into a field the user cannot see, on a
+   * form they have not agreed to submit.
+   *
+   * So a field has to have *area*, and it has to not be transparent.
+   * `checkVisibility` answers both (and content-visibility besides) where it
+   * exists; the fallback catches the cases that are the element's own style.
+   */
   function isVisible(el) {
     if (!el || el.type === "hidden") return false;
     if (el.disabled || el.readOnly) return false;
     var rects = el.getClientRects();
     if (!rects || rects.length === 0) return false;
+    var hasArea = false;
+    for (var i = 0; i < rects.length; i++) {
+      if (rects[i].width > 0 && rects[i].height > 0) {
+        hasArea = true;
+        break;
+      }
+    }
+    if (!hasArea) return false;
+    if (typeof el.checkVisibility === "function") {
+      return el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+    }
     var style = global.getComputedStyle(el);
-    return style.visibility !== "hidden" && style.display !== "none";
+    return (
+      style.visibility !== "hidden" && style.display !== "none" && style.opacity !== "0"
+    );
   }
 
   function collectInputs(scope) {

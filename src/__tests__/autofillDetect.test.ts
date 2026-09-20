@@ -26,7 +26,13 @@ beforeAll(() => {
   Element.prototype.getClientRects = function (this: Element) {
     const style = window.getComputedStyle(this);
     const hidden = style.display === "none" || style.visibility === "hidden";
-    return (hidden ? [] : [{ width: 100, height: 20 }]) as unknown as DOMRectList;
+    if (hidden) return [] as unknown as DOMRectList;
+    // A box with no area: still one rect, which is what a sign-in page's
+    // collapsed password field looks like before the step that asks for it.
+    const collapsed = this.hasAttribute("data-collapsed");
+    return [
+      collapsed ? { width: 0, height: 0 } : { width: 100, height: 20 },
+    ] as unknown as DOMRectList;
   };
 });
 
@@ -66,6 +72,25 @@ describe("detect", () => {
         <input name="confirm-password" type="text">
       </form>`;
     expect(Autofill.detect(document).passwords).toBe(2);
+  });
+
+  it("ignores a password box that is mounted but collapsed", () => {
+    // Found live on a Google sign-in: the password input is in the DOM
+    // during the step that only asks for an email, sized to nothing. It has
+    // a client rect, so "has a box" counted it, and the fill wrote the
+    // password into a field nobody could see.
+    document.body.innerHTML = `
+      <form>
+        <input name="email" type="email">
+        <input name="password" type="password" data-collapsed>
+      </form>`;
+    expect(Autofill.detect(document)).toEqual({ passwords: 0, identifier: true });
+  });
+
+  it("ignores a password box that is there but transparent", () => {
+    document.body.innerHTML = `
+      <input name="password" type="password" style="opacity: 0">`;
+    expect(Autofill.detect(document).passwords).toBe(0);
   });
 
   it("does not mistake a search box for a revealed password", () => {
@@ -255,6 +280,19 @@ describe("filling a revealed password", () => {
     expect(out.missing).not.toContain("password");
     expect((document.querySelector('input[name="password"]') as HTMLInputElement).value).toBe(
       "hunter2"
+    );
+  });
+
+  it("never writes into a collapsed box", () => {
+    document.body.innerHTML = `
+      <form>
+        <input name="username">
+        <input name="password" type="password" data-collapsed>
+      </form>`;
+    const out = Autofill.fill(document, { username: "me", password: "hunter2" });
+    expect(out.missing).toContain("password");
+    expect((document.querySelector('input[name="password"]') as HTMLInputElement).value).toBe(
+      ""
     );
   });
 

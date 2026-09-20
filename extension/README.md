@@ -136,10 +136,23 @@ text field, under "Password Manager". Same rules as the popup: only
 fillable accounts are clickable, and a provider login appears greyed out
 naming the account you used.
 
-Context menus are global rather than per-tab, so the menu can go stale if
-you switch tabs without navigating. That is safe, not just unlikely: the
-origin the menu was built for travels with the fill, and the content script
-drops it when it no longer matches the page it is running in.
+Context menus are global rather than per-tab, so the menu is redrawn
+whenever the front tab changes — including on a *window* switch, which
+`tabs.onActivated` does not report. They also do not survive the service
+worker being killed and nothing re-creates them on its own, so the menu is
+rebuilt whenever `background.js` is evaluated, which is every revival. Before
+that, a menu on a page that never mutates again — an OAuth popup waiting for
+you — simply vanished until the page was reloaded.
+
+If a stale menu ever does get through, it is safe rather than merely
+unlikely: the origin the menu was built for travels with the fill, and the
+content script drops it when it no longer matches the page it is running in.
+
+On a site this browser has not been approved for, the menu offers to raise
+the approval dialog instead of listing accounts. Answering it happens in the
+app, which has no way to tell the extension, so the extension watches for the
+answer and redraws itself; it also asks the app first whether the question is
+already settled, rather than putting the same dialog up twice.
 
 ## Two-step logins
 

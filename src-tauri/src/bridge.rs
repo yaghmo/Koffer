@@ -1043,11 +1043,18 @@ fn ask(app: &AppHandle, inc: &Incoming) -> Reply {
     let Some(host) = host_of(&field(&inc.body, "origin")) else {
         return fail(400, "not a web origin");
     };
+    // Already approved: say so instead of putting a dialog up for a question
+    // that has been answered. The extension caches refusals, and the app has
+    // no way to tell it when one stops being true, so this is how a stale
+    // menu finds out.
+    if approved(session.client(), &host) {
+        return reply(serde_json::json!({ "asked": false, "approved": true }), due);
+    }
     let (label, origin) = (session.client().label.clone(), session.client().origin.clone());
     // The vault lock goes before the window comes forward. See `Gate::Ask`.
     drop(session);
     ask_approval(app, &label, &origin, &host);
-    reply(serde_json::json!({ "asked": true }), due)
+    reply(serde_json::json!({ "asked": true, "approved": false }), due)
 }
 
 /// What the gate below decided.
