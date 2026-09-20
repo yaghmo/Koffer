@@ -24,6 +24,7 @@ interface FillResult {
   formFound: boolean;
   filled: { field: string; value: string; matchedBy: string }[];
   missing: string[];
+  mismatch: { wanted: string; shown: string } | null;
 }
 interface AutofillApi {
   detect: (scope?: Element | Document) => Detected;
@@ -108,12 +109,22 @@ describe("TikTok's phone sign-in", () => {
     expect(code.value).toBe("");
   });
 
-  it("fills the phone box when the login has a phone number", () => {
-    // The country picker is a div, so there is nothing to put the dial code
-    // in: the box takes the whole number.
+  it("fills the national number when the page is already on that country", () => {
+    // The picker is a `<div role="button">` showing "FR +33". Nothing can
+    // set it, but it can be read, and it already says what we want.
     const out = Autofill.fill(document, { phone: "+33 6-12-34-56-78" });
     expect(out.missing).not.toContain("phone");
-    expect(phoneBox().value).toBe("+33 6-12-34-56-78");
+    expect(phoneBox().value).toBe("6-12-34-56-78");
+  });
+
+  it("refuses a number from a country the page is not set to", () => {
+    // Reported: the picker stayed on +33 and "+1 555-123-4567" went into the
+    // box under it. The whole number is invalid there and the national part
+    // alone is somebody else's number, so neither gets written.
+    const out = Autofill.fill(document, { phone: "+1 555-123-4567" });
+    expect(phoneBox().value).toBe("");
+    expect(out.missing).toContain("phone");
+    expect(out.mismatch).toEqual({ wanted: "+1", shown: "+33" });
   });
 
   it("is still recognised as a login page worth offering", () => {

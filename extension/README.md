@@ -158,13 +158,19 @@ already settled, rather than putting the same dialog up twice.
 
 A login can carry a phone number as well as a username, for the sites that
 sign you in by phone. It is stored as one string with its dial code
-("+1 555-123-4567") and split apart here: a form with a separate country
-picker gets the code in the picker and the national number in the box, and a
-form with a single box gets the lot. The picker is matched by option label as
-well as option value, because "+1", "1", "US" and "United States" are all in
-use — and if no option means that dial code, the picker is left alone and the
-number keeps its prefix rather than the select silently sitting on its first
-entry.
+("+1 555-123-4567") and split apart here. Three cases:
+
+- **A picker this can set.** The dial code goes into it and the national
+  number into the box. Options are matched by label as well as value, because
+  "+1", "1", "US" and "United States" are all in use.
+- **No picker at all.** The box takes the whole number, prefix included.
+- **A picker this cannot set.** TikTok's is a `<div role="button">`: a
+  control to a person, nothing to a script. It can still be *read*, so if it
+  already shows the right country the box takes the national number — and if
+  it shows a different one, nothing is written. The whole number under the
+  wrong prefix is invalid, and the national part alone is somebody else's
+  number; neither is a fill. The popup names both countries so the fix is one
+  click on the page.
 
 A box that asks for a phone and nothing else never takes a username. TikTok
 opens its sign-in on a phone tab, and the box there matched the username role

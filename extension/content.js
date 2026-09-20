@@ -160,6 +160,8 @@
         }),
         missing: out.missing,
         deferred: deferred,
+        // Names a country, never a number.
+        mismatch: out.mismatch || null,
       });
       return false;
     }

@@ -311,17 +311,35 @@
    * grandparent when there is no form element, so a picker somewhere else
    * entirely does not vote.
    */
-  function hasDialNeighbour(el) {
+  function dialControl(el) {
     var root = el.form || (el.closest && el.closest("form"));
     if (!root) root = el.parentElement && el.parentElement.parentElement;
-    if (!root || !root.querySelectorAll) return false;
+    if (!root || !root.querySelectorAll) return null;
     var nodes = root.querySelectorAll('input, select, [role="button"], [aria-haspopup]');
     for (var i = 0; i < nodes.length; i++) {
       if (nodes[i] === el) continue;
-      if (roleMatches(ROLES.dial_code, nodes[i])) return true;
-      if (looksLikeDialControl(nodes[i])) return true;
+      if (roleMatches(ROLES.dial_code, nodes[i]) || looksLikeDialControl(nodes[i])) {
+        return nodes[i];
+      }
     }
-    return false;
+    return null;
+  }
+
+  function hasDialNeighbour(el) {
+    return dialControl(el) !== null;
+  }
+
+  /** The dial code a picker is currently showing, if it is showing one. */
+  function shownDial(el) {
+    var text;
+    if (el.options && el.selectedIndex >= 0 && el.options[el.selectedIndex]) {
+      var opt = el.options[el.selectedIndex];
+      text = String(opt.value || "") + " " + String(opt.text || "");
+    } else {
+      text = (el.getAttribute("aria-label") || "") + " " + String(el.textContent || "").slice(0, 80);
+    }
+    var m = /\+\d{1,4}/.exec(text);
+    return m ? m[0] : "";
   }
 
   function isPhoneBox(el) {
@@ -484,27 +502,45 @@
     return out;
   }
 
+  /**
+   * Which half of a phone number this box should get, and whether it should
+   * get one at all.
+   *
+   * Three cases. The dial code went into a control of its own, so the box
+   * takes the national part. There is no country picker at all, so the box
+   * takes the whole number. Or there is a picker this cannot set — a
+   * `<div role="button">` is a picker to a person and nothing to a script —
+   * in which case the only safe fill is one where it already shows the right
+   * country, and anything else is refused rather than guessed.
+   */
+  function phoneValue(value, box, filled) {
+    var parts = splitDial(value);
+    var dialWent = filled.some(function (f) {
+      return f.field === "dial_code";
+    });
+    if (dialWent) return { value: parts.local };
+    if (!parts.dial) return { value: value };
+
+    var picker = dialControl(box);
+    var shown = picker ? shownDial(picker) : "";
+    if (!shown) return { value: value };
+    if (shown !== parts.dial) {
+      return { refuse: true, mismatch: { wanted: parts.dial, shown: shown } };
+    }
+    return { value: parts.local };
+  }
+
   function fillOnce(scope, wanted) {
     var inputs = collectInputs(scope);
     var claimed = [];
     var filled = [];
     var missing = [];
+    var mismatch = null;
     var data = expand(wanted);
 
     Object.keys(ROLES).forEach(function (role) {
       var value = data[role];
       if (value === undefined || value === null || String(value).trim() === "") return;
-      // The dial code went into its own control, so the number box takes the
-      // national part. Without a picker it takes the lot.
-      if (role === "phone") {
-        var dialWent = filled.some(function (f) {
-          return f.field === "dial_code";
-        });
-        if (dialWent) {
-          value = splitDial(value).local;
-          if (value === "") return;
-        }
-      }
 
       var match = null;
       for (var i = 0; i < inputs.length; i++) {
@@ -535,6 +571,23 @@
         if (role !== "dial_code") missing.push(ROLES[role].report);
         return;
       }
+      // What the number box gets depends on what carries the country, which
+      // is only knowable once the box itself is in hand.
+      if (role === "phone") {
+        var decided = phoneValue(value, match, filled);
+        if (decided.refuse) {
+          // A country picker showing a different country, and no way to
+          // change it: this is a `<div role="button">`, not a control with a
+          // value. Writing the whole number leaves "+1 555..." sitting under
+          // a +33 picker, and writing the national part alone turns a US
+          // number into a French one. Neither is a fill; say so instead.
+          mismatch = decided.mismatch;
+          missing.push(ROLES[role].report);
+          return;
+        }
+        value = decided.value;
+        if (String(value).trim() === "") return;
+      }
       if (!setValue(match, String(value).trim())) {
         // A select with no option for this value. Saying it landed would be
         // a lie, and claiming the element would hide the next candidate.
@@ -549,6 +602,9 @@
       formFound: inputs.length > 0,
       filled: filled,
       missing: missing,
+      // Set when a number was refused because the page's own country picker
+      // is on a different country and cannot be changed from here.
+      mismatch: mismatch,
     };
   }
 
@@ -602,6 +658,7 @@
     if (Object.keys(left).length > 0) {
       var again = fillOnce(scope, left);
       out.retried = true;
+      if (!out.mismatch) out.mismatch = again.mismatch;
       again.filled.forEach(function (f) {
         if (
           out.filled.some(function (existing) {

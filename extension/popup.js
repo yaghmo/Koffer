@@ -347,6 +347,17 @@ async function fill(button, item, tabId, origin) {
       text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
       return;
     }
+    // The page's own country picker is on another country and there is no
+    // way to change it from here, so nothing was written. Saying which two
+    // countries turns a dead end into one click.
+    if (out && out.mismatch) {
+      text(
+        vaultEl,
+        `This page's country is set to ${out.mismatch.shown} and your number is ${out.mismatch.wanted}. Change it on the page, then fill again.`,
+        "muted"
+      );
+      return;
+    }
     // Checked before "nothing matched", because a deferred fill usually
     // *is* a page where nothing matched yet — that was the whole confusion:
     // it said nothing could be filled and then filled the modal a moment

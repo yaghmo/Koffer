@@ -10,6 +10,7 @@ interface FillResult {
   filled: { field: string; value: string; matchedBy: string }[];
   missing: string[];
   retried?: boolean;
+  mismatch: { wanted: string; shown: string } | null;
 }
 interface AutofillApi {
   detect: (scope?: Element | Document) => Detected;
@@ -390,20 +391,21 @@ describe("phone boxes", () => {
     expect((document.querySelector("select") as HTMLSelectElement).value).toBe("us");
   });
 
-  it("leaves a picker alone when no option means this dial code", () => {
+  it("refuses the number when the page is set to another country", () => {
     // Assigning a value no option carries silently leaves the select on its
-    // first entry, which would say "United Kingdom" for a US number.
+    // first entry. Writing the whole number then puts "+1 555..." under a
+    // +44 picker, and writing the national part alone turns a US number into
+    // a British one. Neither is a fill.
     document.body.innerHTML = `
       <form>
         <select name="country-code"><option value="+44">United Kingdom</option></select>
         <input type="tel" name="phone">
       </form>`;
-    Autofill.fill(document, { phone: "+1 555-123-4567" });
+    const out = Autofill.fill(document, { phone: "+1 555-123-4567" });
+    expect(out.missing).toContain("phone");
+    expect(out.mismatch).toEqual({ wanted: "+1", shown: "+44" });
     expect((document.querySelector("select") as HTMLSelectElement).value).toBe("+44");
-    // And the number box keeps the dial code, because nothing else carries it.
-    expect((document.querySelector('input[name="phone"]') as HTMLInputElement).value).toBe(
-      "+1 555-123-4567"
-    );
+    expect((document.querySelector('input[name="phone"]') as HTMLInputElement).value).toBe("");
   });
 });
 
