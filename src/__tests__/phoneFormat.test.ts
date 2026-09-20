@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatPhoneLocal } from "../screens/PersonalInfo";
+import { formatPhoneLocal } from "../lib/phone";
 
 describe("formatPhoneLocal", () => {
   it("groups US numbers 3-3-4 with hyphens", () => {

@@ -269,6 +269,91 @@ describe("fill finds a revealed password box", () => {
   });
 });
 
+describe("phone boxes", () => {
+  it("never puts a username in a phone-only box", () => {
+    // TikTok opens its sign-in on a phone tab. The box matched the username
+    // role well enough to be filled with a username it will never accept,
+    // and the real username box was never reached.
+    document.body.innerHTML = `
+      <form>
+        <input name="login-mobile" placeholder="Phone number">
+        <input name="password" type="password">
+      </form>`;
+    const out = Autofill.fill(document, { username: "me", password: "hunter2" });
+    expect(out.missing).toContain("username");
+    expect((document.querySelector('input[name="login-mobile"]') as HTMLInputElement).value).toBe(
+      ""
+    );
+  });
+
+  it("still fills a box that takes either a phone or a username", () => {
+    // Facebook's single login box is named `email` and reads "Email address
+    // or phone number". It takes either, and the username belongs in it.
+    document.body.innerHTML = `
+      <form>
+        <input name="email" placeholder="Email address or phone number">
+        <input name="password" type="password">
+      </form>`;
+    Autofill.fill(document, { username: "me@test.example", password: "hunter2" });
+    expect((document.querySelector('input[name="email"]') as HTMLInputElement).value).toBe(
+      "me@test.example"
+    );
+  });
+
+  it("puts the whole number in a lone phone box", () => {
+    document.body.innerHTML = `<input type="tel" name="phone">`;
+    Autofill.fill(document, { phone: "+1 555-123-4567" });
+    expect((document.querySelector("input") as HTMLInputElement).value).toBe("+1 555-123-4567");
+  });
+
+  it("splits the dial code off when the form has a picker for it", () => {
+    document.body.innerHTML = `
+      <form>
+        <select name="country-code">
+          <option value="">Pick</option>
+          <option value="+44">United Kingdom (+44)</option>
+          <option value="+1">United States (+1)</option>
+        </select>
+        <input type="tel" name="phone">
+      </form>`;
+    const out = Autofill.fill(document, { phone: "+1 555-123-4567" });
+    expect(out.missing).not.toContain("phone");
+    expect((document.querySelector("select") as HTMLSelectElement).value).toBe("+1");
+    expect((document.querySelector('input[name="phone"]') as HTMLInputElement).value).toBe(
+      "555-123-4567"
+    );
+  });
+
+  it("matches a picker by its label when the values are not dial codes", () => {
+    document.body.innerHTML = `
+      <form>
+        <select name="dialCode">
+          <option value="gb">United Kingdom +44</option>
+          <option value="us">United States +1</option>
+        </select>
+        <input type="tel" name="phone">
+      </form>`;
+    Autofill.fill(document, { phone: "+1 555-123-4567" });
+    expect((document.querySelector("select") as HTMLSelectElement).value).toBe("us");
+  });
+
+  it("leaves a picker alone when no option means this dial code", () => {
+    // Assigning a value no option carries silently leaves the select on its
+    // first entry, which would say "United Kingdom" for a US number.
+    document.body.innerHTML = `
+      <form>
+        <select name="country-code"><option value="+44">United Kingdom</option></select>
+        <input type="tel" name="phone">
+      </form>`;
+    Autofill.fill(document, { phone: "+1 555-123-4567" });
+    expect((document.querySelector("select") as HTMLSelectElement).value).toBe("+44");
+    // And the number box keeps the dial code, because nothing else carries it.
+    expect((document.querySelector('input[name="phone"]') as HTMLInputElement).value).toBe(
+      "+1 555-123-4567"
+    );
+  });
+});
+
 describe("filling a revealed password", () => {
   it("writes into the unmasked box", () => {
     document.body.innerHTML = `

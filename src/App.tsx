@@ -46,6 +46,11 @@ export default function App() {
   // been approved for. The call was already refused; this only decides
   // whether the next one is.
   const [approveAsk, setApproveAsk] = useState<ApproveRequest | null>(null);
+  // A line that says what just happened and then gets out of the way. The
+  // approval dialog closes the instant it is answered, which left no sign
+  // that anything had been granted — and "did that work?" is the one
+  // question a permission prompt must not leave behind.
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     api.listAccounts().then((list) => {
@@ -64,6 +69,7 @@ export default function App() {
       setReturnView(null);
       setExtendAsk(null);
       setApproveAsk(null);
+      setNotice(null);
     });
     const unlistenExtend = onExtendRequest((remaining) => {
       logUi("info", "app", `extension filled a login with ${remaining}s left`);
@@ -82,6 +88,14 @@ export default function App() {
       unlistenApprove.then((fn) => fn());
     };
   }, []);
+
+  // A notice says its piece and goes. Cleared on a new one so two in a row
+  // do not leave the first one's timer to cut the second short.
+  useEffect(() => {
+    if (notice === null) return;
+    const t = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
 
   // Re-check every login's favicon once per unlocked session, so a site that
   // changed its icon updates without anyone pressing the Settings button.
@@ -324,15 +338,32 @@ export default function App() {
             confirmLabel="Allow"
             tone="primary"
             onConfirm={() => {
-              const { origin, host } = approveAsk;
+              const { origin, host, label } = approveAsk;
               api
                 .bridgeApprove(origin, host)
-                .then(() => logUi("info", "app", `approved ${host} for the extension`))
-                .catch((e) => logUi("warn", "app", `approval failed: ${String(e)}`));
+                .then(() => {
+                  logUi("info", "app", `approved ${host} for the extension`);
+                  setNotice(`${label} can now fill logins for ${host}.`);
+                })
+                .catch((e) => {
+                  logUi("warn", "app", `approval failed: ${String(e)}`);
+                  setNotice(`${host} could not be approved: ${String(e)}`);
+                });
               setApproveAsk(null);
             }}
             onCancel={() => setApproveAsk(null)}
           />
+        )}
+        {notice !== null && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-none fixed inset-x-0 bottom-6 z-[80] flex justify-center px-5"
+          >
+            <p className="dialog max-w-[420px] px-4 py-2.5 text-center text-body-sm text-on-surface">
+              {notice}
+            </p>
+          </div>
         )}
         {/* Viewer overlays both views so the user can pop in from anywhere */}
         {viewingId && (

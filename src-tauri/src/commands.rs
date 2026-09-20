@@ -1539,6 +1539,7 @@ mod tests {
             url: String::new(),
             username: username.to_string(),
             password: password.to_string(),
+            phone: String::new(),
         }
     }
 

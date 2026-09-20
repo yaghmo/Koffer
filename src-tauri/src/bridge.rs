@@ -464,11 +464,35 @@ pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
 /// into the site's own form would post a Google password to Twitch. The app
 /// may still show it (clipboard, user watching); a one-click fill is a
 /// different risk and is refused here.
+/// What one item can put into one page.
+///
+/// `Debug` is hand-written for the same reason `PairCode`'s is: derived, it
+/// would print the password into any test failure that formats a
+/// `Result<Handout, _>`, and `unwrap_err` formats one on every assertion.
+pub(crate) struct Handout {
+    pub username: String,
+    pub password: String,
+    /// The phone number this account signs in with, if it has one. Sites that
+    /// ask for a phone instead of a username get it here; the extension
+    /// splits the dial code off itself.
+    pub phone: String,
+}
+
+impl std::fmt::Debug for Handout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Handout")
+            .field("username", &"<redacted>")
+            .field("password", &"<redacted>")
+            .field("phone", &"<redacted>")
+            .finish()
+    }
+}
+
 pub(crate) fn credentials_for(
     vault: &Vault,
     id: Uuid,
     origin: &str,
-) -> Result<(String, String), &'static str> {
+) -> Result<Handout, &'static str> {
     if host_of(origin).is_none() {
         return Err("not a web origin");
     }
@@ -483,7 +507,11 @@ pub(crate) fn credentials_for(
     if let Some(why) = refuse_fill(fields, origin) {
         return Err(why);
     }
-    Ok((fields.username.clone(), fields.password.clone()))
+    Ok(Handout {
+        username: fields.username.clone(),
+        password: fields.password.clone(),
+        phone: fields.phone.clone(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1120,11 +1148,16 @@ fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
         }
     };
     match credentials_for(session.vault(), id, &page) {
-        Ok((username, password)) => {
+        Ok(out) => {
             drop(session);
             after_handout(app, &state);
             crate::log_info!("bridge", "filled one login");
-            let mut out = serde_json::json!({ "username": username, "password": password });
+            let mut body = serde_json::json!({
+                "username": out.username,
+                "password": out.password,
+                "phone": out.phone,
+            });
+            let out = &mut body;
             if due {
                 out["rekey"] = serde_json::Value::Bool(true);
             }
@@ -1161,8 +1194,8 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
     };
     let due = rekey_due(&session);
     let which = field(&inc.body, "field");
-    if which != "password" && which != "username" {
-        return fail(400, "copy password or username");
+    if which != "password" && which != "username" && which != "phone" {
+        return fail(400, "copy password, username or phone");
     }
     let (id, page) = match gate(&session, inc) {
         Gate::Go(id, page) => (id, page),
@@ -1174,9 +1207,11 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
         }
     };
     let value = match credentials_for(session.vault(), id, &page) {
-        Ok((username, password)) => {
-            Zeroizing::new(if which == "username" { username } else { password })
-        }
+        Ok(out) => Zeroizing::new(match which.as_str() {
+            "username" => out.username,
+            "phone" => out.phone,
+            _ => out.password,
+        }),
         Err(e) => {
             crate::log_warn!("bridge", "copy refused: {e}");
             return fail(403, e);
@@ -1215,6 +1250,7 @@ mod tests {
                 url: url.to_string(),
                 username: user.to_string(),
                 password: pass.to_string(),
+                phone: String::new(),
             },
         }
     }
@@ -1330,7 +1366,8 @@ mod tests {
             credentials_for(&v, id, "https://evil.test").unwrap_err(),
             "that item does not belong to this site"
         );
-        let (user, pass) = credentials_for(&v, id, "https://bank.test").unwrap();
+        let out = credentials_for(&v, id, "https://bank.test").unwrap();
+        let (user, pass) = (out.username, out.password);
         assert_eq!((user.as_str(), pass.as_str()), ("me", "hunter2"));
     }
 
@@ -1387,7 +1424,8 @@ mod tests {
             let out = matches_for(&v, origin);
             assert_eq!(out.len(), 1, "not offered on {origin}");
             assert!(out[0].fillable, "offered but not fillable on {origin}");
-            let (user, pass) = credentials_for(&v, id, origin).unwrap();
+            let out = credentials_for(&v, id, origin).unwrap();
+            let (user, pass) = (out.username, out.password);
             assert_eq!((user.as_str(), pass.as_str()), ("me@gmail.test", "hunter2"));
         }
     }

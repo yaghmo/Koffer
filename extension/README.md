@@ -154,6 +154,24 @@ app, which has no way to tell the extension, so the extension watches for the
 answer and redraws itself; it also asks the app first whether the question is
 already settled, rather than putting the same dialog up twice.
 
+## Phone numbers
+
+A login can carry a phone number as well as a username, for the sites that
+sign you in by phone. It is stored as one string with its dial code
+("+1 555-123-4567") and split apart here: a form with a separate country
+picker gets the code in the picker and the national number in the box, and a
+form with a single box gets the lot. The picker is matched by option label as
+well as option value, because "+1", "1", "US" and "United States" are all in
+use — and if no option means that dial code, the picker is left alone and the
+number keeps its prefix rather than the select silently sitting on its first
+entry.
+
+A box that asks for a phone and nothing else never takes a username. TikTok
+opens its sign-in on a phone tab, and the box there matched the username role
+well enough to be filled with a value it will never accept. "And nothing
+else" is the careful half: Facebook's login box is named `email` and reads
+"Email address or phone number", takes either, and still gets the username.
+
 ## Forms that are not there yet
 
 Two shapes of the same problem. Google and Microsoft ask for the identifier

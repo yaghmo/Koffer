@@ -290,7 +290,7 @@ function renderItems(result, tabId, origin) {
     title.textContent = item.title;
     const sub = document.createElement("span");
     sub.className = "sub";
-    sub.textContent = item.username || "no username saved";
+    sub.textContent = item.username || item.phone || "no username saved";
     button.append(title, sub);
     button.addEventListener("click", () => fill(button, item, tabId, origin));
 

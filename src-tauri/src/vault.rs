@@ -28,6 +28,11 @@ pub struct LoginFields {
     pub url: String,
     pub username: String,
     pub password: String,
+    /// The phone number this account signs in with, dial code and all
+    /// ("+1 555-123-4567"), for the sites that ask for one instead of a
+    /// username. Empty on every login saved before this existed.
+    #[serde(default)]
+    pub phone: String,
 }
 
 fn default_login_method() -> String {
@@ -251,6 +256,8 @@ pub fn zeroize_secrets(vault: &mut Vault) {
             Item::Login { base, fields } => {
                 fields.password.zeroize();
                 fields.username.zeroize();
+                // A phone number identifies a person, not just an account.
+                fields.phone.zeroize();
                 base.notes.zeroize();
             }
             Item::Note { base, fields } => {
@@ -611,6 +618,7 @@ mod tests {
                 url: "https://github.com".to_string(),
                 username: "octocat".to_string(),
                 password: "s3cret".to_string(),
+                phone: String::new(),
             },
         }
     }

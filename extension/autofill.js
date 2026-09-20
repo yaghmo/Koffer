@@ -16,6 +16,9 @@
  * `data` uses the vault's personal-info keys plus `password`:
  *   { name, username, email, phone, website, github, linkedin, password }
  *
+ * `phone` carries its dial code ("+1 555-123-4567"). A form with a separate
+ * country picker gets them apart, one with a single box gets them together.
+ *
  * Only visible, enabled inputs are touched. Values are set through the
  * native value setter and followed by bubbling `input` + `change` events so
  * React/Vue/Angular-controlled inputs observe the change. Never auto-submits.
@@ -42,6 +45,12 @@
       autocomplete: "email",
       nameRe: /email/,
       report: "email",
+    },
+    // Before `phone`, because whether the phone box gets the whole number or
+    // just the national part depends on whether this one was filled.
+    dial_code: {
+      nameRe: /country[-_\s]?code|dial[-_\s]?code|phone[-_\s]?code|calling[-_\s]?code|area[-_\s]?code/i,
+      report: "dial_code",
     },
     phone: {
       typeRe: /^tel$/,
@@ -150,12 +159,47 @@
   }
 
   /**
-   * `roleMatches`, plus the one rule that is not about the name: whatever
-   * takes the password has to be a password box. Used everywhere a role is
-   * matched for writing, so `fill` and `pending` cannot disagree about it.
+   * Is this box asking for a phone number and nothing else?
+   *
+   * The point is what must *not* go in it. TikTok's sign-in opens on a phone
+   * tab, and the box there matched the username role well enough to be
+   * filled with a username — a value that field will never accept.
+   *
+   * "And nothing else" is the careful half. Facebook's single login box is
+   * named `email` and reads "Email address or phone number": it takes either,
+   * and the username belongs in it. So a box only counts as a phone box when
+   * it says phone and does *not* also name a kind of identifier.
+   *
+   * IDENTIFIER_HINT is deliberately narrower than the username role's own
+   * pattern, which counts a bare "login". TikTok's box is `login-mobile`
+   * with the placeholder "Phone number" — "login" says which form it is on,
+   * not what goes in it, and letting it vote made this test useless there.
+   */
+  var IDENTIFIER_HINT = /user(name|id)?|loginid|e-?mail/i;
+
+  function isPhoneBox(el) {
+    var type = String(el.type || "").toLowerCase();
+    if (type === "tel") return true;
+    if (type === "email" || type === "password") return false;
+    var auto = (el.getAttribute("autocomplete") || "").toLowerCase();
+    if (auto === "tel" || auto.indexOf("tel-") === 0) return true;
+    if (auto === "username" || auto === "email") return false;
+    var meta = fieldMeta(el);
+    if (!ROLES.phone.nameRe.test(meta)) return false;
+    return !IDENTIFIER_HINT.test(meta);
+  }
+
+  /**
+   * `roleMatches`, plus the rules that are not about the name. Used
+   * everywhere a role is matched for writing, so `fill` and `pending` cannot
+   * disagree about them.
    */
   function matchesRole(roleKey, el) {
     if (roleKey === "password" && !isPasswordBox(el)) return null;
+    // A username or an email address typed into a phone box is a value that
+    // field will never accept, and it stops the real box being filled when
+    // the page finally shows it.
+    if ((roleKey === "username" || roleKey === "email") && isPhoneBox(el)) return null;
     return roleMatches(ROLES[roleKey], el);
   }
 
@@ -167,9 +211,37 @@
     return null;
   }
 
+  /**
+   * The option of a `<select>` that this value means, if any.
+   *
+   * A country or dial-code picker is a select whose option values are
+   * anybody's guess — "+1", "US", "1", "United States". Assigning a value
+   * that matches no option silently leaves the select on its first entry, so
+   * the label is worth reading too.
+   */
+  function optionFor(select, value) {
+    var wanted = String(value).trim().toLowerCase();
+    if (wanted === "") return null;
+    var exact = null;
+    var contains = null;
+    for (var i = 0; i < select.options.length; i++) {
+      var opt = select.options[i];
+      var val = String(opt.value || "").trim().toLowerCase();
+      var label = String(opt.text || "").trim().toLowerCase();
+      if (val === wanted || label === wanted) return opt;
+      if (exact === null && (val === wanted.replace(/^\+/, "") || label === wanted.replace(/^\+/, ""))) {
+        exact = opt;
+      }
+      if (contains === null && label.indexOf(wanted) !== -1) contains = opt;
+    }
+    return exact || contains;
+  }
+
   function setValue(el, value) {
     if (el instanceof HTMLSelectElement) {
-      el.value = value;
+      var opt = optionFor(el, value);
+      if (!opt) return false;
+      el.value = opt.value;
     } else {
       var proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement : HTMLInputElement;
       var setter = Object.getOwnPropertyDescriptor(proto.prototype, "value").set;
@@ -178,6 +250,7 @@
     }
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
   }
 
   /**
@@ -199,6 +272,17 @@
     return { passwords: passwords.length, identifier: identifier };
   }
 
+  /**
+   * "+1 555-123-4567" as its dial code and the rest.
+   *
+   * Done here rather than in the app so no country table has to cross the
+   * bridge: a leading `+` and up to four digits is a dial code everywhere.
+   */
+  function splitDial(value) {
+    var m = /^\s*(\+\d{1,4})[\s\-.]*(.*)$/.exec(String(value == null ? "" : value));
+    return m ? { dial: m[1], local: m[2].trim() } : { dial: "", local: String(value || "").trim() };
+  }
+
   var LOGIN_URL = /(^|[^a-z])(sign[-_]?in|signin|log[-_]?in|login|auth|session|account)([^a-z]|$)/i;
 
   /**
@@ -218,15 +302,47 @@
     return result.passwords === 0 && result.identifier && LOGIN_URL.test(String(href || ""));
   }
 
-  function fillOnce(scope, data) {
+  /**
+   * The values to write, given the ones that were asked for.
+   *
+   * A stored phone number carries its dial code. A form that has a separate
+   * country picker wants them apart; one with a single box wants them
+   * together. `dial_code` is offered either way and `fillOnce` decides which
+   * shape the phone box gets from whether that picker was actually there.
+   */
+  function expand(data) {
+    var out = {};
+    Object.keys(data).forEach(function (k) {
+      out[k] = data[k];
+    });
+    if (data.phone && out.dial_code === undefined) {
+      var dial = splitDial(data.phone).dial;
+      if (dial) out.dial_code = dial;
+    }
+    return out;
+  }
+
+  function fillOnce(scope, wanted) {
     var inputs = collectInputs(scope);
     var claimed = [];
     var filled = [];
     var missing = [];
+    var data = expand(wanted);
 
     Object.keys(ROLES).forEach(function (role) {
       var value = data[role];
       if (value === undefined || value === null || String(value).trim() === "") return;
+      // The dial code went into its own control, so the number box takes the
+      // national part. Without a picker it takes the lot.
+      if (role === "phone") {
+        var dialWent = filled.some(function (f) {
+          return f.field === "dial_code";
+        });
+        if (dialWent) {
+          value = splitDial(value).local;
+          if (value === "") return;
+        }
+      }
 
       var match = null;
       for (var i = 0; i < inputs.length; i++) {
@@ -237,11 +353,32 @@
           break;
         }
       }
+      // Plenty of sign-in forms have one identifier box and call it `email`,
+      // whatever you actually type into it. With no box of its own, the
+      // username goes there rather than nowhere -- still never into a
+      // phone-only box, which `matchesRole` refuses.
+      if (!match && role === "username") {
+        for (var j = 0; j < inputs.length; j++) {
+          var box = inputs[j];
+          if (claimed.indexOf(box) !== -1) continue;
+          if (matchesRole("email", box)) {
+            match = box;
+            break;
+          }
+        }
+      }
       if (!match) {
-        missing.push(ROLES[role].report);
+        // A dial code with nowhere to go is not a gap in the fill: most
+        // forms have one phone box and no picker at all.
+        if (role !== "dial_code") missing.push(ROLES[role].report);
         return;
       }
-      setValue(match, String(value).trim());
+      if (!setValue(match, String(value).trim())) {
+        // A select with no option for this value. Saying it landed would be
+        // a lie, and claiming the element would hide the next candidate.
+        if (role !== "dial_code") missing.push(ROLES[role].report);
+        return;
+      }
       claimed.push(match);
       filled.push({ field: ROLES[role].report, value: value, matchedBy: matchesRole(role, match) });
     });
@@ -263,9 +400,10 @@
    * settle correctly. Writing the same value twice costs nothing; telling
    * the user their password did not land when it did costs their trust.
    */
-  function pending(scope, data) {
+  function pending(scope, wanted) {
     var inputs = collectInputs(scope);
     var left = {};
+    var data = expand(wanted);
     Object.keys(ROLES).forEach(function (role) {
       var value = data[role];
       if (value === undefined || value === null || String(value).trim() === "") return;
@@ -273,7 +411,8 @@
       var landed = inputs.some(function (el) {
         return matchesRole(role, el) && el.value === wanted;
       });
-      if (!landed) left[role] = value;
+      // A dial code that found no picker is not outstanding work.
+      if (!landed && role !== "dial_code") left[role] = value;
     });
     return left;
   }

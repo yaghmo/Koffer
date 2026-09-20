@@ -16,6 +16,8 @@ export interface LoginFields {
   url: string;
   username: string;
   password: string;
+  /** "+1 555-123-4567", for sites that sign you in by phone. May be empty. */
+  phone: string;
 }
 
 export interface NoteFields {

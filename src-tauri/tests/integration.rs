@@ -23,6 +23,7 @@ fn full_vault_lifecycle() {
             url: "https://github.com".to_string(),
             username: "octocat".to_string(),
             password: "s3cret".to_string(),
+            phone: String::new(),
         },
     };
     add_item(&mut v, item.clone());

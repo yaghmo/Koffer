@@ -12,6 +12,8 @@ import {
   normalizeAccount,
 } from "../lib/methods";
 import { useHotkey } from "../lib/useHotkey";
+import PhoneField from "../components/PhoneField";
+import { isValidPhone } from "../lib/phone";
 import Generator from "../components/Generator";
 import NoteEditor from "../components/NoteEditor";
 import { logUi } from "../lib/log";
@@ -25,7 +27,13 @@ interface Props {
   onSaved?: () => void;
 }
 
-const emptyLogin = (): LoginFields => ({ method: "credentials", url: "", username: "", password: "" });
+const emptyLogin = (): LoginFields => ({
+  method: "credentials",
+  url: "",
+  username: "",
+  password: "",
+  phone: "",
+});
 const emptyNote = (): NoteFields => ({ body: "" });
 const emptyCard = (): CardFields => ({ cardholder: "", number: "", exp: "", cvv: "" });
 
@@ -182,7 +190,13 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
         setNotes(item.notes);
         setFavicon(item.favicon || null);
         if (item.type === "login") {
-          setLogin({ method: item.method || "credentials", url: item.url, username: item.username, password: item.password });
+          setLogin({
+            method: item.method || "credentials",
+            url: item.url,
+            username: item.username,
+            password: item.password,
+            phone: item.phone || "",
+          });
         } else if (item.type === "note") {
           setNote({ body: item.body });
         } else {
@@ -269,6 +283,9 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
     if (kind === "login") {
       if (!isValidUrl(login.url)) {
         errors.url = "URL must be a valid http(s) link (e.g. https://example.com).";
+      }
+      if (login.phone && !isValidPhone(login.phone)) {
+        errors.phone = "Not a valid phone number.";
       }
       if (login.method === "credentials" && !login.password) {
         errors.password = "Password is required.";
@@ -520,6 +537,38 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                         markDirty();
                       }}
                     />
+                  )}
+
+                  {/* Some sites sign you in by phone and never ask for a
+                      username at all. Stored with its dial code so the
+                      filler can split it back out for a form that has a
+                      separate country picker. */}
+                  <p className="label-md mt-1.5">Phone number</p>
+                  <PhoneField
+                    value={login.phone}
+                    onChange={(phone) => {
+                      setLogin({ ...login, phone });
+                      markDirty();
+                    }}
+                    ariaLabel="Phone number"
+                    logScope="item-editor"
+                  />
+                  {fieldErrors.phone && (
+                    <p role="alert" className="text-body-sm text-error">
+                      {fieldErrors.phone}
+                    </p>
+                  )}
+                  {!login.phone && personalInfo.phone && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLogin({ ...login, phone: personalInfo.phone });
+                        markDirty();
+                      }}
+                      className="self-start text-body-sm font-medium text-primary hover:underline"
+                    >
+                      Use {personalInfo.phone}
+                    </button>
                   )}
                 </div>
               )}
@@ -885,6 +934,7 @@ function NewAccountModal({
         url,
         username: normalizeAccount(username.trim()),
         password,
+        phone: "",
       };
       await api.saveItem(item);
       logUi("info", "new-account", `created provider=${providerMethod}`);

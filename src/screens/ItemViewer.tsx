@@ -229,6 +229,17 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
                   onCopy={() => copy("username", item.username)}
                   copied={copied === "username"}
                 />
+                {/* Only when there is one: most logins sign in by username,
+                    and an empty row for every one of them is noise. */}
+                {item.phone && (
+                  <Field
+                    label="Phone"
+                    value={item.phone}
+                    mono
+                    onCopy={() => copy("phone", item.phone)}
+                    copied={copied === "phone"}
+                  />
+                )}
                 <SecretField
                   label="Password"
                   value={item.password}
