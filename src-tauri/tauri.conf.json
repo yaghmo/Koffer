@@ -28,7 +28,7 @@
     "active": true,
     "publisher": "Local Vault",
     "copyright": "",
-    "targets": ["msi"],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
