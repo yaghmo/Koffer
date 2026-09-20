@@ -181,6 +181,34 @@ pub struct PairedClient {
     pub label: String,
     pub token: String,
     pub paired_at: i64,
+    /// Unix seconds the *current* token was minted. Tokens rotate on use and
+    /// expire outright, so this is the clock both of those read from —
+    /// `paired_at` stays put and answers "paired since when".
+    ///
+    /// Zero on a vault written before rotation existed. Treated as "due for
+    /// rotation right now" rather than "expired", so upgrading does not
+    /// silently unpair every browser.
+    #[serde(default)]
+    pub token_issued_at: i64,
+    /// The token this one replaced, and the moment it stops being honoured.
+    ///
+    /// Rotation happens on whatever call comes in first. A second call that
+    /// the browser had already sent with the old string would otherwise come
+    /// back `401`, and the extension would tell the user to pair again over
+    /// nothing. A few seconds of overlap costs far less than that.
+    #[serde(default)]
+    pub prev_token: String,
+    #[serde(default)]
+    pub prev_until: i64,
+    /// Hosts this browser has been allowed to be handed a password for, one
+    /// approval at a time.
+    ///
+    /// Empty is the state a fresh pairing starts in: pairing grants the
+    /// ability to *ask*, never the vault. Without this a token holder could
+    /// walk a domain list and collect every password in the file; with it,
+    /// each new host is a dialog the user has to answer on screen.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 /// How many items of each kind may be pinned at once.
@@ -268,6 +296,7 @@ pub fn zeroize_secrets(vault: &mut Vault) {
     // would look like an unpairing, but the token is a live credential.
     for client in vault.paired.iter_mut() {
         client.token.zeroize();
+        client.prev_token.zeroize();
     }
 }
 
@@ -415,11 +444,9 @@ pub fn compute_stats(vault: &Vault, now: i64) -> VaultStats {
     flagged_ids.extend(weak.iter().map(|f| f.id));
     flagged_ids.extend(reused.iter().map(|f| f.id));
     flagged_ids.extend(old.iter().map(|f| f.id));
-    let health_score = if logins == 0 {
-        100
-    } else {
-        (100 * (logins - flagged_ids.len().min(logins)) / logins) as u8
-    };
+    let healthy = logins - flagged_ids.len().min(logins);
+    // An empty vault is not an unhealthy one, so no logins scores 100.
+    let health_score = (100 * healthy).checked_div(logins).unwrap_or(100) as u8;
 
     VaultStats {
         total: vault.items.len(),

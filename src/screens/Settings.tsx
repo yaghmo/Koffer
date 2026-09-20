@@ -134,6 +134,17 @@ export default function Settings({ accountId, onLock }: Props) {
     }
   }
 
+  /** Take one site's approval back. The browser stays paired. */
+  async function revokeHost(origin: string, host: string) {
+    setBridgeError(null);
+    try {
+      await api.bridgeRevokeHost(origin, host);
+      loadBridge();
+    } catch (err: any) {
+      setBridgeError(String(err));
+    }
+  }
+
   function loadSecurity() {
     api
       .securityState()
@@ -555,6 +566,12 @@ export default function Settings({ accountId, onLock }: Props) {
           network. A paired browser can read a login <strong>only for the site it is
           actually on</strong>, and only while this vault is unlocked.
         </p>
+        <p className="text-body-sm text-on-surface-variant">
+          Pairing lets a browser <em>ask</em>. The first time it wants a password for a site,
+          this window asks you, and the site is remembered below — so a stolen pairing cannot
+          quietly walk through the vault. Its token is also replaced as it is used, and dies
+          after a week unused.
+        </p>
 
         {bridge?.listen_error ? (
           <p role="alert" className="text-body-sm text-error">
@@ -588,17 +605,39 @@ export default function Settings({ accountId, onLock }: Props) {
             {bridge.clients.map((c) => (
               <li
                 key={c.origin}
-                className="flex items-center justify-between gap-3 rounded-control border border-white/8 px-3 py-2"
+                className="flex flex-col gap-2 rounded-control border border-white/8 px-3 py-2"
               >
-                <span className="flex min-w-0 flex-col">
-                  <span className="text-body-sm text-on-surface">{c.label}</span>
-                  <span className="truncate font-mono text-label-md text-on-surface-variant">
-                    {c.origin}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-body-sm text-on-surface">{c.label}</span>
+                    <span className="truncate font-mono text-label-md text-on-surface-variant">
+                      {c.origin}
+                    </span>
                   </span>
-                </span>
-                <button type="button" className="btn-secondary" onClick={() => unpair(c.origin)}>
-                  Unpair
-                </button>
+                  <button type="button" className="btn-secondary" onClick={() => unpair(c.origin)}>
+                    Unpair
+                  </button>
+                </div>
+                {c.allowed_hosts.length === 0 ? (
+                  <span className="text-label-md text-on-surface-variant opacity-70">
+                    No sites approved yet — it will ask on the first fill.
+                  </span>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.allowed_hosts.map((host) => (
+                      <button
+                        key={host}
+                        type="button"
+                        title={`Stop filling ${host} in ${c.label}`}
+                        aria-label={`Stop filling ${host} in ${c.label}`}
+                        onClick={() => revokeHost(c.origin, host)}
+                        className="rounded-control border border-white/8 px-2 py-0.5 font-mono text-label-md text-on-surface-variant hover:border-error hover:text-error"
+                      >
+                        {host} ×
+                      </button>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

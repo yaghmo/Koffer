@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-import { onExtendRequest, onVaultLocked } from "./lib/events";
+import { onApproveRequest, onExtendRequest, onVaultLocked, type ApproveRequest } from "./lib/events";
 import { refreshSiteLogos } from "./lib/logos";
 import { logUi } from "./lib/log";
 import Setup from "./screens/Setup";
@@ -42,6 +42,10 @@ export default function App() {
   // Set when the browser extension filled a login with the idle timer almost
   // up, and cleared when the vault locks or the user answers.
   const [extendAsk, setExtendAsk] = useState<number | null>(null);
+  // Set when a paired browser asked for a password on a site it has never
+  // been approved for. The call was already refused; this only decides
+  // whether the next one is.
+  const [approveAsk, setApproveAsk] = useState<ApproveRequest | null>(null);
 
   useEffect(() => {
     api.listAccounts().then((list) => {
@@ -59,14 +63,20 @@ export default function App() {
       setViewingId(null);
       setReturnView(null);
       setExtendAsk(null);
+      setApproveAsk(null);
     });
     const unlistenExtend = onExtendRequest((remaining) => {
       logUi("info", "app", `extension filled a login with ${remaining}s left`);
       setExtendAsk(remaining);
     });
+    const unlistenApprove = onApproveRequest((req) => {
+      logUi("info", "app", `extension asked to be approved for ${req.host}`);
+      setApproveAsk(req);
+    });
     return () => {
       unlisten.then((fn) => fn());
       unlistenExtend.then((fn) => fn());
+      unlistenApprove.then((fn) => fn());
     };
   }, []);
 
@@ -298,6 +308,26 @@ export default function App() {
               setExtendAsk(null);
             }}
             onCancel={() => setExtendAsk(null)}
+          />
+        )}
+        {/* Pairing lets a browser ask; this is what answers. The bridge has
+            already refused the call that triggered it, so saying no here
+            costs nothing but the fill the user just tried. */}
+        {approveAsk !== null && status === "unlocked" && (
+          <ConfirmDialog
+            title={`Fill logins for ${approveAsk.host}?`}
+            message={`${approveAsk.label} asked for a saved password for ${approveAsk.host}. Allow it, and this browser can fill that site from now on without asking again. It still cannot touch any other site until you say so.`}
+            confirmLabel="Allow"
+            tone="primary"
+            onConfirm={() => {
+              const { origin, host } = approveAsk;
+              api
+                .bridgeApprove(origin, host)
+                .then(() => logUi("info", "app", `approved ${host} for the extension`))
+                .catch((e) => logUi("warn", "app", `approval failed: ${String(e)}`));
+              setApproveAsk(null);
+            }}
+            onCancel={() => setApproveAsk(null)}
           />
         )}
         {/* Viewer overlays both views so the user can pop in from anywhere */}

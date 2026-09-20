@@ -82,6 +82,11 @@ export const api = {
   bridgePairCode: () => invoke<string>("bridge_pair_code"),
   bridgeCancelPairing: () => invoke<void>("bridge_cancel_pairing"),
   bridgeUnpair: (origin: string) => invoke<void>("bridge_unpair", { origin }),
+  /** Let one paired browser be handed passwords for one site. */
+  bridgeApprove: (origin: string, host: string) =>
+    invoke<void>("bridge_approve", { origin, host }),
+  bridgeRevokeHost: (origin: string, host: string) =>
+    invoke<void>("bridge_revoke_host", { origin, host }),
 
   getPersonalInfo: () => invoke<PersonalInfo>("get_personal_info"),
   savePersonalInfo: (info: PersonalInfo) =>

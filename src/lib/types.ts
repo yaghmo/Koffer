@@ -89,6 +89,9 @@ export interface PairedInfo {
   origin: string;
   label: string;
   paired_at: number;
+  /** Sites this browser may be handed a password for, as approved one at a
+   *  time. Empty on a fresh pairing: pairing grants the ability to ask. */
+  allowed_hosts: string[];
 }
 
 export interface BridgeState {

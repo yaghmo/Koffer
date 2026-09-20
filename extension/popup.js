@@ -8,11 +8,14 @@
 import {
   NOT_PAIRED,
   NO_APP,
+  NEEDS_APPROVAL,
   ensureHostPermission,
+  isPaired,
   pair,
   status,
   matches,
   credentials,
+  copy,
 } from "./vault.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
@@ -138,7 +141,31 @@ function browserLabel() {
 function describe(e) {
   if (e.message === NO_APP) return "The vault app is not running.";
   if (e.message === NOT_PAIRED) return "This browser is not paired yet.";
+  if (e.message === NEEDS_APPROVAL) {
+    return `${e.host || "This site"} is not approved for this browser yet. The app is asking — say yes there, then try again.`;
+  }
   return e.message;
+}
+
+/**
+ * The app answers a locked vault and an unpaired browser identically, on
+ * purpose: it cannot read its own token list while locked, and a reply that
+ * told the two apart would let anything on this machine watch for the moment
+ * the vault opened. So this says both, in the order they are likely.
+ */
+function renderUnavailable() {
+  const note = document.createElement("div");
+  note.className = "muted";
+  note.textContent = "The vault is locked, or this browser is no longer paired.";
+  const hint = document.createElement("div");
+  hint.className = "dim";
+  hint.textContent = "Unlock the app and reopen this. If that does not help, pair again.";
+  const again = document.createElement("button");
+  again.className = "primary";
+  again.type = "button";
+  again.textContent = "Pair again";
+  again.addEventListener("click", () => renderPairing());
+  vaultEl.replaceChildren(note, hint, again);
 }
 
 /** Matches the app's own naming in src/lib/methods.tsx. */
@@ -211,10 +238,41 @@ function renderItems(items, tabId, origin) {
     sub.textContent = item.username || "no username saved";
     button.append(title, sub);
     button.addEventListener("click", () => fill(button, item, tabId, origin));
-    li.append(button);
+
+    // The password goes to the clipboard through the app, never through
+    // here: the popup asks, the app copies and clears it a minute later, and
+    // the reply says only that it happened. For the boxes the filler cannot
+    // name — a PIN, a CVV, a second form on the same page.
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "copy";
+    copyBtn.type = "button";
+    copyBtn.textContent = "Copy";
+    copyBtn.title = "Copy the password — the app clears it after a minute";
+    copyBtn.addEventListener("click", () => copyPassword(copyBtn, item, origin));
+
+    const row = document.createElement("div");
+    row.className = "pair";
+    row.append(button, copyBtn);
+    li.append(row);
     list.append(li);
   }
   vaultEl.replaceChildren(list);
+}
+
+async function copyPassword(button, item, origin) {
+  button.disabled = true;
+  const was = button.textContent;
+  try {
+    const { seconds } = await copy(item.id, origin, "password");
+    button.textContent = `${seconds}s`;
+  } catch (e) {
+    text(vaultEl, `Could not copy: ${describe(e)}`);
+    return;
+  }
+  button.disabled = false;
+  setTimeout(() => {
+    button.textContent = was;
+  }, 1500);
 }
 
 async function fill(button, item, tabId, origin) {
@@ -232,6 +290,14 @@ async function fill(button, item, tabId, origin) {
     }
     if (!out || out.filled.length === 0) {
       text(vaultEl, "Nothing on this page matched those fields.");
+      return;
+    }
+    if (out.twoStep) {
+      // Step one of a Google/Microsoft-style login: the identifier box is
+      // all there is. The content script holds the password for a minute and
+      // writes it when the second step appears, so closing here would be a
+      // lie about what happened.
+      text(vaultEl, "Filled your username. The password goes in on the next step.", "muted");
       return;
     }
     // No report on the way out. What landed cannot be checked honestly from
@@ -255,11 +321,9 @@ async function main() {
   renderPage(state);
 
   try {
-    const { unlocked } = await status();
-    if (!unlocked) {
-      text(vaultEl, "The vault is locked. Unlock it in the app, then reopen this.");
-      return;
-    }
+    // A reply at all means the vault is open and this token still works;
+    // anything else throws, and there is no third answer to read.
+    await status();
     if (!state) {
       // The vault is fine; this page just has no content script. Say only
       // that. Suggesting a reload was wrong more often than right — most
@@ -270,8 +334,14 @@ async function main() {
     }
     renderItems(await matches(state.origin), tab.id, state.origin);
   } catch (e) {
-    if (e.message === NOT_PAIRED) renderPairing();
-    else text(vaultEl, describe(e));
+    if (e.message !== NOT_PAIRED) {
+      text(vaultEl, describe(e));
+      return;
+    }
+    // Never paired is a different thing from paired-and-refused, and only
+    // this side knows which: the app answers both the same way.
+    if (await isPaired()) renderUnavailable();
+    else renderPairing();
   }
 }
 

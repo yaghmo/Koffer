@@ -12,7 +12,11 @@
 //!    screen, so nothing else can pair itself.
 //! 3. **The token lives in the vault.** It is encrypted at rest and it stops
 //!    being verifiable the moment the vault locks, which is exactly when the
-//!    extension should stop being able to ask for anything.
+//!    extension should stop being able to ask for anything. Every route
+//!    therefore answers an unverifiable caller the same way — `401 not
+//!    paired` — whether the vault is locked or the token is simply wrong.
+//!    Anything that told those two apart would be a free "is the vault open
+//!    right now?" oracle for every process on the machine.
 //! 4. **Rust decides what an origin may see.** The extension says which
 //!    origin it is acting for, but every lookup is filtered by that origin
 //!    here. A page cannot name an item id and be handed a password that
@@ -29,20 +33,31 @@
 //! reaches these routes. The header narrows the surface; the pairing code
 //! and the token are what actually hold it.
 //!
-//! **A paired browser holds the whole vault, not one site.** The extension
-//! names the origin it is acting for, so whoever holds a token can walk a
-//! list of domains, harvest every title and username, and then ask for any
-//! password. Per-site scoping protects a *page* from another page's
-//! secrets; it does not scope the extension itself.
+//! **A paired browser may ask about any site; it may only be answered for
+//! the sites you approved.** The extension names the origin it is acting
+//! for, so whoever holds a token can still walk a list of domains and
+//! harvest titles and usernames. A *password* is different: the first time
+//! this browser asks for one on a host the user has not approved, the app
+//! raises a dialog and the call is refused. Approvals are remembered per
+//! paired client, so the cost is one click per site, once, and a token
+//! holder trying to empty the vault is a dialog per site instead of a
+//! silent download.
 //!
 //! **The token is only as private as the browser's profile.** It is kept in
 //! `chrome.storage.local`, a file under the browser's user-data directory,
 //! readable by anything running as the same user. Malware with that file can
 //! use these routes directly instead of dumping this process's memory. The
 //! vault must be unlocked for it to work, and revoking the pairing in
-//! Settings kills it immediately — but on a machine that is already
-//! compromised, this is a shorter path to the plaintext than existed before
-//! the bridge, and that is a deliberate trade for one-click autofill.
+//! Settings kills it immediately.
+//!
+//! Two things bound it. Tokens **rotate**: any call made more than
+//! `TOKEN_ROTATE_SECS` after the current token was minted swaps it for a new
+//! one on the way out, so a copy lifted from that file stops working as soon
+//! as the real extension makes its next call — and whichever of the two is
+//! left holding the dead string gets a 401 the user can see. Tokens also
+//! **expire** after `TOKEN_TTL_SECS` without use. And per-host approval
+//! means a stolen token still cannot reach a password for a site the user
+//! never approved without putting a dialog on their screen.
 
 use crate::commands::{host_of, AppState};
 use crate::crypto::random_bytes;
@@ -76,6 +91,24 @@ const MAX_ORIGIN: usize = 128;
 /// When a fill lands with less than this left on the idle timer, ask whether
 /// to stay unlocked. Long enough that the prompt is not a race.
 const EXTEND_PROMPT_SECS: u64 = 120;
+/// How long a token stays good without being used. A browser left closed for
+/// longer than this has to be paired again — the trade for a token that is
+/// worth something to steal.
+const TOKEN_TTL_SECS: i64 = 7 * 24 * 60 * 60;
+/// How old the current token may get before the next successful call
+/// replaces it. An hour: short enough that a token copied out of
+/// `chrome.storage.local` is stale before it is useful, long enough that a
+/// day of browsing costs one vault write.
+const TOKEN_ROTATE_SECS: i64 = 60 * 60;
+/// How long the token a rotation replaced keeps working. Only long enough to
+/// cover a call the browser had already sent when the swap happened.
+const TOKEN_GRACE_SECS: i64 = 30;
+/// How long a password copied through `/copy` stays on the clipboard. Same
+/// TTL the app's own copy buttons use.
+const COPY_TTL: Duration = Duration::from_secs(60);
+/// Quiet window after an approval dialog goes up, so an extension that
+/// retries — or a script that hammers the route — cannot stack prompts.
+const APPROVE_REPROMPT: Duration = Duration::from_secs(10);
 /// Unambiguous: no O/0, no I/1, no letters that look like each other in the
 /// app's font, because this is read off one screen and typed into another.
 const CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -103,6 +136,10 @@ pub struct Bridge {
     pending: Mutex<Option<PairCode>>,
     /// None until `start` has run; Some(err) when the port was unavailable.
     listen_error: Mutex<Option<String>>,
+    /// The last host an approval was asked about, and when. One dialog per
+    /// host per `APPROVE_REPROMPT`, so a refused call that the extension
+    /// retries does not put a second dialog on top of the first.
+    last_ask: Mutex<Option<(String, Instant)>>,
 }
 
 impl Bridge {
@@ -159,6 +196,19 @@ impl Bridge {
         if slot.is_none() {
             *slot = Some(code);
         }
+    }
+
+    /// True the first time a host comes up, and not again for
+    /// `APPROVE_REPROMPT`.
+    fn may_ask_about(&self, host: &str) -> bool {
+        let mut slot = self.last_ask.lock().unwrap();
+        if let Some((last, when)) = slot.as_ref() {
+            if last == host && when.elapsed() < APPROVE_REPROMPT {
+                return false;
+            }
+        }
+        *slot = Some((host.to_string(), Instant::now()));
+        true
     }
 }
 
@@ -469,12 +519,135 @@ fn bearer(req: &Request) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Find the paired client this request is authenticated as.
-fn client_of<'a>(vault: &'a Vault, origin: &str, token: &str) -> Option<&'a PairedClient> {
-    vault
-        .paired
-        .iter()
-        .find(|c| c.origin == origin && ct_eq(&c.token, token))
+/// A token nobody has seen before: 32 random bytes, hex.
+fn new_token() -> String {
+    random_bytes(32).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Seconds since this client's current token was minted.
+///
+/// A `token_issued_at` of zero is a pairing written before rotation existed.
+/// It reads as "exactly due for rotation" rather than "older than the TTL",
+/// so upgrading rotates every live pairing on its next call instead of
+/// unpairing every browser at once.
+fn token_age(client: &PairedClient, now: i64) -> i64 {
+    if client.token_issued_at == 0 {
+        TOKEN_ROTATE_SECS
+    } else {
+        now - client.token_issued_at
+    }
+}
+
+/// Which paired client this request is, if its token is still live.
+///
+/// An index rather than a reference, because the caller goes on to rotate
+/// the token, which needs the vault mutably.
+fn client_index(vault: &Vault, origin: &str, token: &str, now: i64) -> Option<usize> {
+    vault.paired.iter().position(|c| {
+        if c.origin != origin {
+            return false;
+        }
+        // The token this one replaced, for a few seconds: a call the browser
+        // had already sent when the rotation landed is not an intruder.
+        if !c.prev_token.is_empty() && now <= c.prev_until && ct_eq(&c.prev_token, token) {
+            return true;
+        }
+        ct_eq(&c.token, token) && token_age(c, now) <= TOKEN_TTL_SECS
+    })
+}
+
+/// Has the user allowed this browser to be handed a password for this host?
+///
+/// Exact host, deliberately: approving `github.com` does not approve
+/// `gist.github.com`. Widening it would mean the dialog the user answered
+/// said less than what it granted, which is the whole point of asking.
+fn approved(client: &PairedClient, host: &str) -> bool {
+    client.allowed_hosts.iter().any(|h| h == host)
+}
+
+/// Put the approval dialog on screen and bring the app forward.
+///
+/// Only ever a *request*. Nothing here writes the approval — that happens in
+/// `bridge_approve`, from a click in the app, which is the only place it can
+/// happen without the dialog being theatre.
+fn ask_approval(app: &AppHandle, label: &str, origin: &str, host: &str) {
+    if !app.state::<Bridge>().may_ask_about(host) {
+        return;
+    }
+    let _ = app.emit(
+        "vault://approve-request",
+        serde_json::json!({ "label": label, "origin": origin, "host": host }),
+    );
+    crate::tray::reveal(app);
+    crate::log_info!("bridge", "approval asked for host={host}");
+}
+
+/// Replace this client's token once it is older than `TOKEN_ROTATE_SECS`.
+///
+/// Returns the new token so it can ride back on the response the extension
+/// already asked for: no extra route, no extra round trip, and nothing to
+/// call if the extension forgets to.
+///
+/// A failed write puts the old token back. Handing out a string that this
+/// vault will not honour after a restart would unpair the browser for real.
+fn rotate_if_due(
+    state: &tauri::State<'_, AppState>,
+    vault: &mut Vault,
+    idx: usize,
+    now: i64,
+) -> Option<String> {
+    if token_age(&vault.paired[idx], now) < TOKEN_ROTATE_SECS {
+        return None;
+    }
+    let fresh = new_token();
+    let (previous, was) = {
+        let client = &mut vault.paired[idx];
+        let was = client.token_issued_at;
+        let previous = std::mem::replace(&mut client.token, fresh.clone());
+        client.token_issued_at = now;
+        (previous, was)
+    };
+    let (was_prev, was_until) = {
+        let client = &mut vault.paired[idx];
+        let was_prev = std::mem::replace(&mut client.prev_token, previous.clone());
+        let was_until = client.prev_until;
+        client.prev_until = now + TOKEN_GRACE_SECS;
+        (was_prev, was_until)
+    };
+    match crate::commands::save_unlocked(state, vault) {
+        Ok(()) => {
+            use zeroize::Zeroize;
+            let mut was_prev = was_prev;
+            was_prev.zeroize();
+            crate::log_info!("bridge", "token rotated origin={}", vault.paired[idx].origin);
+            Some(fresh)
+        }
+        Err(e) => {
+            let client = &mut vault.paired[idx];
+            client.token = previous;
+            client.token_issued_at = was;
+            client.prev_token = was_prev;
+            client.prev_until = was_until;
+            crate::log_warn!("bridge", "token rotation could not be saved: {e}");
+            None
+        }
+    }
+}
+
+/// A secret just left the vault for the browser.
+///
+/// The handout deliberately does NOT reset the idle timer. It used to, and
+/// that quietly disabled auto-lock: anything holding a token could poll
+/// every few minutes and keep the vault open forever. Only a human at the
+/// app extends the session, so when a handout lands near the end of the
+/// timer we ask for one.
+fn after_handout(app: &AppHandle, state: &tauri::State<'_, AppState>) {
+    let remaining = state.autolock.lock().unwrap().remaining_secs();
+    if remaining <= EXTEND_PROMPT_SECS {
+        let _ = app.emit("vault://extend-request", remaining);
+        crate::tray::reveal(app);
+        crate::log_info!("bridge", "handout near auto-lock, asked to extend");
+    }
 }
 
 pub fn start(app: &AppHandle) {
@@ -526,6 +699,7 @@ fn route(app: &AppHandle, req: &mut Request) -> Response<std::io::Cursor<Vec<u8>
         "/status" => status(app, &origin, req),
         "/matches" => matches(app, &origin, req, &body),
         "/credentials" => credentials(app, &origin, req, &body),
+        "/copy" => copy(app, &origin, req, &body),
         _ => fail(404, "no such endpoint"),
     }
 }
@@ -537,7 +711,11 @@ fn pair(
 ) -> Response<std::io::Cursor<Vec<u8>>> {
     let state = app.state::<AppState>();
     if !state.is_unlocked() {
-        return fail(423, "unlock the vault before pairing");
+        // The same answer a good code gets when no pairing is in progress.
+        // A locked vault cannot have one anyway — the code is issued from
+        // Settings, which is behind the unlock — so saying "unlock first"
+        // only ever told a local process that the vault was shut.
+        return fail(403, "no pairing in progress");
     }
     let redeemed = match app.state::<Bridge>().redeem(&field(body, "code")) {
         Ok(code) => code,
@@ -551,7 +729,8 @@ fn pair(
         let l = l.trim();
         if l.is_empty() { "Browser".to_string() } else { l.chars().take(40).collect() }
     };
-    let token = crate::crypto::random_bytes(32).iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let token = new_token();
+    let now = chrono::Utc::now().timestamp();
 
     match crate::commands::add_paired_client(
         &state,
@@ -559,7 +738,13 @@ fn pair(
             origin: origin.to_string(),
             label,
             token: token.clone(),
-            paired_at: chrono::Utc::now().timestamp(),
+            paired_at: now,
+            token_issued_at: now,
+            prev_token: String::new(),
+            prev_until: 0,
+            // Pairing grants the ability to ask, not the vault. Every host
+            // is approved on screen, one at a time, from here on.
+            allowed_hosts: Vec::new(),
         },
     ) {
         Ok(()) => {
@@ -577,43 +762,90 @@ fn pair(
     }
 }
 
-/// Answered without checking the token, because while the vault is locked
-/// there is nothing to check it against. All it admits is that the vault is
-/// shut, which is what the extension needs to say on screen.
+/// Is the vault open to *this* extension right now?
+///
+/// There is no answer for anyone else. This used to reply `unlocked: false`
+/// without looking at the token, on the grounds that a locked vault has
+/// nothing to check a token against and the extension needs the state to put
+/// on screen. Both halves were true and the result was still an oracle: any
+/// process on the machine could poll this port and watch, in real time, for
+/// the moment the vault opened.
+///
+/// So a locked vault answers exactly what a wrong token answers, because a
+/// locked vault genuinely cannot tell them apart. The extension reads 401 as
+/// "locked, or not paired any more", keeps its token, and says so.
 fn status(app: &AppHandle, origin: &str, req: &Request) -> Response<std::io::Cursor<Vec<u8>>> {
     let state = app.state::<AppState>();
-    if !state.is_unlocked() {
-        return json(200, serde_json::json!({ "unlocked": false, "paired": true }));
-    }
-    let Some(token) = bearer(req) else {
-        return fail(401, "not paired");
+    let mut vault = match authed(&state, origin, req) {
+        Ok(v) => v,
+        Err(r) => return r,
     };
-    let vault = state.vault.lock().unwrap();
-    let Some(vault) = vault.as_ref() else {
-        return json(200, serde_json::json!({ "unlocked": false, "paired": true }));
-    };
-    if client_of(vault, origin, &token).is_none() {
-        return fail(401, "not paired");
-    }
-    json(200, serde_json::json!({ "unlocked": true, "paired": true }))
+    let rotated = rotate(&state, &mut vault);
+    reply(serde_json::json!({ "unlocked": true, "paired": true }), rotated)
 }
 
-/// Everything past here needs a live token, so it is all refused while the
-/// vault is locked.
+/// An authenticated request: the unlocked vault, held open, plus which
+/// paired client is asking.
+struct Session<'a> {
+    guard: std::sync::MutexGuard<'a, Option<Vault>>,
+    /// Index into `vault.paired`. An index and not a reference because the
+    /// token gets rotated on the way out, which needs the vault mutably.
+    client: usize,
+}
+
+impl Session<'_> {
+    fn vault(&self) -> &Vault {
+        self.guard.as_ref().expect("checked in authed")
+    }
+
+    fn vault_mut(&mut self) -> &mut Vault {
+        self.guard.as_mut().expect("checked in authed")
+    }
+
+    fn client(&self) -> &PairedClient {
+        &self.vault().paired[self.client]
+    }
+}
+
+/// Every route past `/pair` needs a live token *and* an open vault.
+///
+/// One failure for both, always `401 not paired`. A locked vault cannot
+/// decrypt the token list, so it cannot tell a real extension from a
+/// stranger — and any status code that admitted the difference would tell
+/// every process on this machine when the vault was open.
 fn authed<'a>(
     state: &'a tauri::State<'_, AppState>,
     origin: &str,
     req: &Request,
-) -> Result<std::sync::MutexGuard<'a, Option<Vault>>, Response<std::io::Cursor<Vec<u8>>>> {
+) -> Result<Session<'a>, Response<std::io::Cursor<Vec<u8>>>> {
     let token = bearer(req).ok_or_else(|| fail(401, "not paired"))?;
-    let vault = state.vault.lock().unwrap();
-    {
-        let v = vault.as_ref().ok_or_else(|| fail(423, "the vault is locked"))?;
-        if client_of(v, origin, &token).is_none() {
-            return Err(fail(401, "not paired"));
-        }
+    let now = chrono::Utc::now().timestamp();
+    let guard = state.vault.lock().unwrap();
+    let client = guard
+        .as_ref()
+        .and_then(|v| client_index(v, origin, &token, now))
+        .ok_or_else(|| fail(401, "not paired"))?;
+    Ok(Session { guard, client })
+}
+
+/// Swap this session's token for a new one if it has aged past the rotation
+/// window. The answer rides back on the response the caller is already
+/// sending.
+fn rotate(state: &tauri::State<'_, AppState>, session: &mut Session) -> Option<String> {
+    let now = chrono::Utc::now().timestamp();
+    let idx = session.client;
+    rotate_if_due(state, session.vault_mut(), idx, now)
+}
+
+/// A 200 that carries a rotated token when there is one.
+fn reply(
+    mut body: serde_json::Value,
+    rotated: Option<String>,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    if let Some(token) = rotated {
+        body["token"] = serde_json::Value::String(token);
     }
-    Ok(vault)
+    json(200, body)
 }
 
 fn matches(
@@ -623,13 +855,54 @@ fn matches(
     body: &serde_json::Value,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
     let state = app.state::<AppState>();
-    let vault = match authed(&state, origin, req) {
-        Ok(v) => v,
+    let mut session = match authed(&state, origin, req) {
+        Ok(s) => s,
         Err(r) => return r,
     };
-    let items = matches_for(vault.as_ref().expect("checked in authed"), &field(body, "origin"));
+    let page = field(body, "origin");
+    // Deliberately not gated on approval. The list carries titles and
+    // usernames, never a password, and gating it would leave the badge and
+    // the context menu blank on every site until the user had been to the
+    // app -- which trains people to approve without reading. The handout is
+    // what gets asked about.
+    let items = matches_for(session.vault(), &page);
+    let rotated = rotate(&state, &mut session);
     crate::log_info!("bridge", "matches n={}", items.len());
-    json(200, serde_json::json!({ "items": items }))
+    reply(serde_json::json!({ "items": items }), rotated)
+}
+
+/// The checks every route that hands out a secret runs, in one place.
+///
+/// Returns the item id and the page origin, or the response to send instead.
+/// Both callers need the identical decision, and a second copy of it is how
+/// one of them ends up a version behind.
+fn cleared_to_hand_out(
+    app: &AppHandle,
+    session: &Session,
+    body: &serde_json::Value,
+) -> Result<(Uuid, String), Response<std::io::Cursor<Vec<u8>>>> {
+    let Ok(id) = Uuid::parse_str(&field(body, "id")) else {
+        return Err(fail(400, "not an item id"));
+    };
+    let page = field(body, "origin");
+    let Some(host) = host_of(&page) else {
+        return Err(fail(400, "not a web origin"));
+    };
+    if !approved(session.client(), &host) {
+        // The dialog goes up in the app, not here, and this call is refused
+        // either way. Approving is a click on screen; nothing the caller
+        // sends can stand in for it.
+        ask_approval(app, &session.client().label, &session.client().origin, &host);
+        return Err(json(
+            403,
+            serde_json::json!({
+                "error": format!("{host} is not approved for this browser yet"),
+                "needsApproval": true,
+                "host": host,
+            }),
+        ));
+    }
+    Ok((id, page))
 }
 
 fn credentials(
@@ -639,36 +912,28 @@ fn credentials(
     body: &serde_json::Value,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
     let state = app.state::<AppState>();
-    let out = {
-        let vault = match authed(&state, origin, req) {
-            Ok(v) => v,
-            Err(r) => return r,
-        };
-        let Ok(id) = Uuid::parse_str(&field(body, "id")) else {
-            return fail(400, "not an item id");
-        };
-        credentials_for(vault.as_ref().expect("checked in authed"), id, &field(body, "origin"))
+    let mut session = match authed(&state, origin, req) {
+        Ok(s) => s,
+        Err(r) => return r,
     };
-    match out {
+    let (id, page) = match cleared_to_hand_out(app, &session, body) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    match credentials_for(session.vault(), id, &page) {
         Ok((username, password)) => {
-            // A fill deliberately does NOT reset the idle timer. It used to,
-            // and that quietly disabled auto-lock: anything holding a token
-            // could poll this route every few minutes and keep the vault
-            // open forever. Only a human at the app extends the session, so
-            // when a fill lands near the end of the timer we ask for one.
-            let remaining = state.autolock.lock().unwrap().remaining_secs();
-            if remaining <= EXTEND_PROMPT_SECS {
-                let _ = app.emit("vault://extend-request", remaining);
-                crate::tray::reveal(app);
-                crate::log_info!("bridge", "fill near auto-lock, asked to extend");
-            }
+            let rotated = rotate(&state, &mut session);
+            drop(session);
+            after_handout(app, &state);
             crate::log_info!("bridge", "filled one login");
             // Zeroized on the way out. The response buffer tiny_http builds
             // is still its own copy that this cannot reach, so this narrows
             // the window rather than closing it.
-            let body = Zeroizing::new(
-                serde_json::json!({ "username": username, "password": password }).to_string(),
-            );
+            let mut out = serde_json::json!({ "username": username, "password": password });
+            if let Some(token) = rotated {
+                out["token"] = serde_json::Value::String(token);
+            }
+            let body = Zeroizing::new(out.to_string());
             json_raw(200, &body)
         }
         Err(e) => {
@@ -676,6 +941,60 @@ fn credentials(
             fail(403, e)
         }
     }
+}
+
+/// Put a value on the clipboard **without letting the extension see it**.
+///
+/// The filler matches login forms. A PIN box, a CVV, a second form on the
+/// same page -- those it cannot name, and the answer used to be nothing at
+/// all. Showing the password in the popup instead would park the plaintext
+/// in the popup's DOM until it closed, for a value the user is going to
+/// paste anyway.
+///
+/// So the *app* does the copying, with the same 60-second clear its own copy
+/// buttons use, and the reply says only that it happened. Same origin check,
+/// same approval, same item rules as a fill: this is the same secret leaving
+/// by a different door.
+fn copy(
+    app: &AppHandle,
+    origin: &str,
+    req: &Request,
+    body: &serde_json::Value,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    let state = app.state::<AppState>();
+    let mut session = match authed(&state, origin, req) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let which = field(body, "field");
+    if which != "password" && which != "username" {
+        return fail(400, "copy password or username");
+    }
+    let (id, page) = match cleared_to_hand_out(app, &session, body) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let value = match credentials_for(session.vault(), id, &page) {
+        Ok((username, password)) => {
+            Zeroizing::new(if which == "username" { username } else { password })
+        }
+        Err(e) => {
+            crate::log_warn!("bridge", "copy refused: {e}");
+            return fail(403, e);
+        }
+    };
+    let rotated = rotate(&state, &mut session);
+    drop(session);
+    if let Err(e) = crate::clipboard::copy_with_ttl(&value, COPY_TTL) {
+        crate::log_warn!("bridge", "copy failed: {e}");
+        return fail(500, "the clipboard could not be written");
+    }
+    after_handout(app, &state);
+    crate::log_info!("bridge", "copied {which} to the clipboard");
+    reply(
+        serde_json::json!({ "copied": which, "seconds": COPY_TTL.as_secs() }),
+        rotated,
+    )
 }
 
 #[cfg(test)]
@@ -1100,21 +1419,158 @@ mod tests {
     }
 
     #[test]
-    fn a_fill_never_resets_the_idle_timer_by_itself() {
+    fn handing_out_a_secret_never_resets_the_idle_timer_by_itself() {
         // It used to, and that silently disabled auto-lock: anything holding
         // a pairing token could poll /credentials every few minutes and keep
         // the vault open indefinitely. Only a person at the app extends the
         // session, which is what the extend prompt is for.
         let src = std::fs::read_to_string(file!()).unwrap();
-        let body = body_of(&src, "fn credentials(");
+        for route in ["fn credentials(", "fn copy("] {
+            let body = body_of(&src, route);
+            assert!(!body.contains("reset()"), "{route} must not reset the idle timer");
+            assert!(
+                body.contains("after_handout("),
+                "{route} must run the post-handout check"
+            );
+        }
+        let shared = body_of(&src, "fn after_handout(");
+        assert!(!shared.contains("reset()"), "the shared check must not reset the timer");
         assert!(
-            !body.contains("reset()"),
-            "the fill route must not reset the idle timer"
+            shared.contains("vault://extend-request"),
+            "the shared check must ask the user instead"
         );
+    }
+
+    #[test]
+    fn a_secret_never_leaves_without_an_approval_check() {
+        // Both handout routes go through the same gate. A second copy of
+        // this decision is how one of them ends up a version behind, so the
+        // test pins that there is only ever one.
+        let src = std::fs::read_to_string(file!()).unwrap();
+        for route in ["fn credentials(", "fn copy("] {
+            let body = body_of(&src, route);
+            assert!(
+                body.contains("cleared_to_hand_out("),
+                "{route} must go through the approval gate"
+            );
+        }
         assert!(
-            body.contains("vault://extend-request"),
-            "the fill route must ask the user instead"
+            body_of(&src, "fn cleared_to_hand_out(").contains("approved("),
+            "the gate must actually check the approval list"
         );
+    }
+
+    fn client(origin: &str, token: &str, issued: i64) -> PairedClient {
+        PairedClient {
+            origin: origin.to_string(),
+            label: "Chrome".to_string(),
+            token: token.to_string(),
+            paired_at: 0,
+            token_issued_at: issued,
+            prev_token: String::new(),
+            prev_until: 0,
+            allowed_hosts: Vec::new(),
+        }
+    }
+
+    const EXT: &str = "chrome-extension://abcdef";
+
+    #[test]
+    fn a_token_is_honoured_until_it_expires() {
+        let now = 1_700_000_000;
+        let mut v = new_vault(vec![0; 16]);
+        v.paired.push(client(EXT, "tok", now - 60));
+        assert_eq!(client_index(&v, EXT, "tok", now), Some(0));
+
+        // A browser that has been shut for longer than the TTL pairs again.
+        let later = now + TOKEN_TTL_SECS + 1;
+        assert_eq!(client_index(&v, EXT, "tok", later), None);
+    }
+
+    #[test]
+    fn a_token_is_only_honoured_for_the_origin_it_was_issued_to() {
+        let now = 1_700_000_000;
+        let mut v = new_vault(vec![0; 16]);
+        v.paired.push(client(EXT, "tok", now));
+        assert_eq!(client_index(&v, "chrome-extension://other", "tok", now), None);
+        assert_eq!(client_index(&v, EXT, "wrong", now), None);
+    }
+
+    #[test]
+    fn a_pairing_written_before_rotation_existed_rotates_rather_than_dying() {
+        // token_issued_at defaults to 0 on an older vault. Read literally
+        // that is 1970, which would expire every live pairing the moment
+        // this shipped; it has to mean "due now" instead.
+        let now = 1_700_000_000;
+        let old = client(EXT, "tok", 0);
+        assert_eq!(token_age(&old, now), TOKEN_ROTATE_SECS);
+
+        let mut v = new_vault(vec![0; 16]);
+        v.paired.push(old);
+        assert_eq!(client_index(&v, EXT, "tok", now), Some(0));
+    }
+
+    #[test]
+    fn a_token_is_due_for_rotation_only_once_it_is_old() {
+        let now = 1_700_000_000;
+        assert!(token_age(&client(EXT, "t", now), now) < TOKEN_ROTATE_SECS);
+        assert!(token_age(&client(EXT, "t", now - TOKEN_ROTATE_SECS), now) >= TOKEN_ROTATE_SECS);
+    }
+
+    #[test]
+    fn the_replaced_token_still_works_for_a_few_seconds() {
+        // The browser can have a call in flight when a rotation lands. Cut
+        // it off and the extension reports "not paired", which sends the
+        // user to re-pair a browser that was never actually unpaired.
+        let now = 1_700_000_000;
+        let mut c = client(EXT, "new", now);
+        c.prev_token = "old".to_string();
+        c.prev_until = now + TOKEN_GRACE_SECS;
+        let mut v = new_vault(vec![0; 16]);
+        v.paired.push(c);
+
+        assert_eq!(client_index(&v, EXT, "new", now), Some(0));
+        assert_eq!(client_index(&v, EXT, "old", now), Some(0));
+        // And not a second longer than the grace window.
+        assert_eq!(client_index(&v, EXT, "old", now + TOKEN_GRACE_SECS + 1), None);
+    }
+
+    #[test]
+    fn an_empty_previous_token_is_not_a_way_in() {
+        // Every field defaults to empty, and `field()` hands back an empty
+        // string for a missing key, so "" must never match anything.
+        let now = 1_700_000_000;
+        let mut v = new_vault(vec![0; 16]);
+        v.paired.push(client(EXT, "tok", now));
+        assert_eq!(client_index(&v, EXT, "", now), None);
+    }
+
+    #[test]
+    fn two_tokens_are_never_the_same() {
+        let a = new_token();
+        assert_eq!(a.len(), 64);
+        assert_ne!(a, new_token());
+    }
+
+    #[test]
+    fn pairing_approves_nothing_on_its_own() {
+        // The whole point of the prompt: a token is permission to ask, and
+        // the answer only ever comes from a click in the app.
+        let fresh = client(EXT, "tok", 0);
+        assert!(!approved(&fresh, "github.com"));
+    }
+
+    #[test]
+    fn an_approval_covers_that_host_and_no_other() {
+        let mut c = client(EXT, "tok", 0);
+        c.allowed_hosts.push("github.com".to_string());
+        assert!(approved(&c, "github.com"));
+        // Not the subdomain: the dialog said "github.com", so that is all it
+        // may grant. gist.github.com asks for itself.
+        assert!(!approved(&c, "gist.github.com"));
+        // And nothing that merely ends the same way.
+        assert!(!approved(&c, "notgithub.com"));
+        assert!(!approved(&c, "github.com.evil.test"));
     }
 
     #[test]

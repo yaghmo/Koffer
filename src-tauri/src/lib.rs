@@ -97,6 +97,8 @@ pub fn run() {
             commands::bridge_cancel_pairing,
             commands::bridge_state,
             commands::bridge_unpair,
+            commands::bridge_approve,
+            commands::bridge_revoke_host,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
