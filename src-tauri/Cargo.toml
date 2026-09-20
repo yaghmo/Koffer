@@ -30,11 +30,23 @@ regex = "1"
 base64 = "0.22"
 tauri-plugin-dialog = "2"
 zeroize = "1"
-tokio = { version = "1", features = ["net"] }
-# Serves the loopback bridge the browser extension talks to. Chosen over
-# axum/hyper because the endpoint is four routes on 127.0.0.1 and hand-rolled
-# HTTP parsing is exactly the wrong corner to cut.
-tiny_http = "0.12"
+tokio = { version = "1", features = ["net", "rt-multi-thread", "time"] }
+# Serves the loopback bridge the browser extension talks to. hyper rather
+# than a hand-rolled parser for the obvious reason, and rather than tiny_http
+# because tiny_http gives no way to put a deadline on a connection: it parses
+# on its own unbounded thread pool, so a process that opens sockets and says
+# nothing costs one OS thread each, forever. Both of these are already in the
+# tree behind reqwest, so this is not a new build.
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+# ECDSA P-256, to verify what the extension signs. The browser holds a key
+# WebCrypto will not export, so there is no bearer string to steal.
+p256 = { version = "0.13", features = ["ecdsa"] }
+sha2 = "0.10"
+# The real Public Suffix List, compiled in. The hand-written table it
+# replaces decided whether one site's saved login may be offered to another.
+psl = "2"
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5"

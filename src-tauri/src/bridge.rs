@@ -62,17 +62,39 @@
 use crate::commands::{host_of, AppState};
 use crate::crypto::random_bytes;
 use crate::vault::{Item, LoginFields, PairedClient, Vault};
+use http_body_util::{BodyExt, Full, Limited};
+use hyper::body::Bytes;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response};
+use hyper_util::rt::TokioIo;
+use p256::ecdsa::signature::Verifier;
+use p256::ecdsa::{Signature, VerifyingKey};
 use serde::Serialize;
-use std::io::Read;
+use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
-use tiny_http::{Header, Request, Response, StatusCode};
+use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// ponytail: one fixed port, no discovery protocol. If something else is
-/// already on it the bridge simply does not come up and Settings says so.
+/// The one port the bridge listens on.
+///
+/// A range was tried — bind the first free port, let the extension probe for
+/// it — and taken back out, because it quietly broke the rule the whole
+/// design rests on: *nothing else on this machine can read the pairing code
+/// off the user's screen*. With a range, a local process that squats 38471
+/// pushes the app to 38472, and the extension, probing upwards, offers the
+/// code to the squatter first. The squatter then redeems that code against
+/// the real app and is a paired browser.
+///
+/// One fixed port fails loudly instead: the bridge does not come up, Settings
+/// says why, and no code goes anywhere. If collisions ever turn up in
+/// practice, the fix is to stop sending a secret at pairing time at all —
+/// have the extension show a fingerprint of its public key and the app ask
+/// the user to confirm it — and only then is probing safe.
 pub const PORT: u16 = 38471;
 
 /// How long a pairing code stays good once it is on screen.
@@ -81,28 +103,40 @@ const CODE_TTL: Duration = Duration::from_secs(180);
 /// sit and guess. Three, because the user is typing it by hand.
 const CODE_TRIES: u8 = 3;
 /// Nothing this endpoint accepts is large.
-const MAX_BODY: u64 = 8 * 1024;
-/// Threads serving the endpoint. One browser needs one; the rest are so a
-/// stalled connection cannot take the bridge down with it.
-const BRIDGE_WORKERS: usize = 4;
+const MAX_BODY: usize = 8 * 1024;
+/// Connections served at once. One browser needs one; the rest are slack.
+/// Past this the socket is closed rather than queued, because a queue is what
+/// an attacker would be trying to fill.
+const MAX_CONNECTIONS: usize = 16;
+/// Longest a connection may live, reading and answering included. Without
+/// this a process that opens a socket and says nothing holds a task for as
+/// long as it likes.
+const CONN_DEADLINE: Duration = Duration::from_secs(10);
+/// Pause after a failed accept, so a listener that is refusing every
+/// connection does not spin a core.
+const ACCEPT_BACKOFF: Duration = Duration::from_millis(200);
+/// How far the browser's clock may be from this one before a signature is
+/// refused. Also the window in which a captured request could be replayed —
+/// narrow, and on loopback, where capturing one means already owning the
+/// machine.
+const SIGNATURE_SKEW_SECS: i64 = 60;
 /// Longest `Origin` kept. An extension id is ~50 characters; this only stops
 /// a paired client writing kilobytes into the vault on every re-pair.
 const MAX_ORIGIN: usize = 128;
 /// When a fill lands with less than this left on the idle timer, ask whether
 /// to stay unlocked. Long enough that the prompt is not a race.
 const EXTEND_PROMPT_SECS: u64 = 120;
-/// How long a token stays good without being used. A browser left closed for
-/// longer than this has to be paired again — the trade for a token that is
-/// worth something to steal.
-const TOKEN_TTL_SECS: i64 = 7 * 24 * 60 * 60;
-/// How old the current token may get before the next successful call
-/// replaces it. An hour: short enough that a token copied out of
-/// `chrome.storage.local` is stale before it is useful, long enough that a
-/// day of browsing costs one vault write.
-const TOKEN_ROTATE_SECS: i64 = 60 * 60;
-/// How long the token a rotation replaced keeps working. Only long enough to
-/// cover a call the browser had already sent when the swap happened.
-const TOKEN_GRACE_SECS: i64 = 30;
+/// How long a key stays good without being used. A browser left closed for
+/// longer than this has to be paired again.
+const KEY_TTL_SECS: i64 = 7 * 24 * 60 * 60;
+/// How old the current key may get before the app asks the browser to
+/// replace it. An hour: short enough that key material recovered from the
+/// browser profile is stale before it is useful, long enough that a day of
+/// browsing costs one vault write.
+const KEY_ROTATE_SECS: i64 = 60 * 60;
+/// How long the key a rekey replaced keeps working. Only long enough to cover
+/// a call the browser had already signed when the swap happened.
+const KEY_GRACE_SECS: i64 = 30;
 /// How long a password copied through `/copy` stays on the clipboard. Same
 /// TTL the app's own copy buttons use.
 const COPY_TTL: Duration = Duration::from_secs(60);
@@ -134,12 +168,16 @@ impl std::fmt::Debug for PairCode {
 #[derive(Default)]
 pub struct Bridge {
     pending: Mutex<Option<PairCode>>,
-    /// None until `start` has run; Some(err) when the port was unavailable.
+    /// None until `start` has run; Some(err) when no port was available.
     listen_error: Mutex<Option<String>>,
-    /// The last host an approval was asked about, and when. One dialog per
-    /// host per `APPROVE_REPROMPT`, so a refused call that the extension
-    /// retries does not put a second dialog on top of the first.
-    last_ask: Mutex<Option<(String, Instant)>>,
+
+    /// When the last approval dialog was asked for. One dialog per
+    /// `APPROVE_REPROMPT`, for *any* host, not one per host: a caller holding
+    /// the key can name whatever hosts it likes, and a per-host limit lets it
+    /// cycle them to put a dialog on screen as fast as it can ask. A stream
+    /// of prompts that keep pulling the window forward is how a person ends
+    /// up clicking Allow on one they did not read.
+    last_ask: Mutex<Option<Instant>>,
 }
 
 impl Bridge {
@@ -165,6 +203,7 @@ impl Bridge {
     pub fn listen_error(&self) -> Option<String> {
         self.listen_error.lock().unwrap().clone()
     }
+
 
     /// Check a submitted code, consuming it on success and burning it after
     /// `CODE_TRIES` failures.
@@ -198,16 +237,16 @@ impl Bridge {
         }
     }
 
-    /// True the first time a host comes up, and not again for
-    /// `APPROVE_REPROMPT`.
-    fn may_ask_about(&self, host: &str) -> bool {
+    /// True at most once per `APPROVE_REPROMPT`, whatever is being asked
+    /// about.
+    fn may_ask(&self) -> bool {
         let mut slot = self.last_ask.lock().unwrap();
-        if let Some((last, when)) = slot.as_ref() {
-            if last == host && when.elapsed() < APPROVE_REPROMPT {
+        if let Some(when) = slot.as_ref() {
+            if when.elapsed() < APPROVE_REPROMPT {
                 return false;
             }
         }
-        *slot = Some((host.to_string(), Instant::now()));
+        *slot = Some(Instant::now());
         true
     }
 }
@@ -226,25 +265,20 @@ fn ct_eq(a: &str, b: &str) -> bool {
 // Origin matching
 // ---------------------------------------------------------------------------
 
-/// ponytail: the correct answer is the Public Suffix List. This is the
-/// handful that actually turns up; swap in `publicsuffix` if a real miss
-/// ever shows up.
+/// Is this host a public suffix in its own right?
 ///
-/// Suffixes under which two hosts sharing the tail are still strangers:
-/// `a.co.uk` and `b.co.uk` are unrelated sites, and so are two apps on
-/// `vercel.app` or two blogs on `blogspot.com`.
-const MULTI_LABEL_SUFFIXES: &[&str] = &[
-    // Country-code second-level domains.
-    "co.uk", "org.uk", "ac.uk", "gov.uk", "co.jp", "or.jp", "com.au", "net.au", "org.au",
-    "com.br", "com.mx", "com.ar", "co.in", "co.za", "co.nz", "com.tr", "com.cn", "com.sg",
-    // Private suffixes: one company owns the domain, but every subdomain
-    // belongs to a different person, which is the same problem.
-    "github.io", "gitlab.io", "herokuapp.com", "vercel.app", "netlify.app", "pages.dev",
-    "workers.dev", "blogspot.com", "wordpress.com", "tumblr.com", "myshopify.com",
-    "azurewebsites.net", "cloudfront.net", "amazonaws.com", "s3.amazonaws.com",
-    "firebaseapp.com", "web.app", "glitch.me", "repl.co", "onrender.com", "fly.dev",
-    "ngrok.io", "serveo.net", "githubusercontent.com", "translate.goog",
-];
+/// It has to be the real Public Suffix List, because the answer decides
+/// whether one site's saved login may be offered to another. This was a
+/// hand-written table of the couple of dozen suffixes that had turned up so
+/// far, which is fine until the first one that has not: a login saved against
+/// a missing entry gets offered to every site under it.
+///
+/// The `psl` crate compiles the list in, private section included, so
+/// `github.io` and `vercel.app` are suffixes here too — two sites under those
+/// are strangers in exactly the way two sites under `co.uk` are.
+fn is_public_suffix(host: &str) -> bool {
+    psl::suffix_str(host) == Some(host)
+}
 
 /// `https` or `http` from a URL, lowercased. None for anything else.
 fn scheme_of(url: &str) -> Option<&'static str> {
@@ -292,7 +326,7 @@ pub(crate) fn host_covers(item_host: &str, origin_host: &str) -> bool {
     if item_host == origin_host {
         return true;
     }
-    if MULTI_LABEL_SUFFIXES.contains(&item_host) || item_host.matches('.').count() < 1 {
+    if is_public_suffix(item_host) || item_host.matches('.').count() < 1 {
         return false;
     }
     origin_host.ends_with(&format!(".{item_host}"))
@@ -456,41 +490,24 @@ pub(crate) fn credentials_for(
 // HTTP
 // ---------------------------------------------------------------------------
 
-fn json(status: u16, body: serde_json::Value) -> Response<std::io::Cursor<Vec<u8>>> {
+type Reply = Response<Full<Bytes>>;
+
+fn json(status: u16, body: serde_json::Value) -> Reply {
     json_raw(status, &body.to_string())
 }
 
-fn json_raw(status: u16, body: &str) -> Response<std::io::Cursor<Vec<u8>>> {
-    let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
-        .expect("static header");
-    // Deliberately no Access-Control-Allow-Origin: a page that guesses the
-    // port may reach the socket, but it may never read the answer.
-    Response::from_string(body)
-        .with_status_code(StatusCode(status))
-        .with_header(header)
+fn json_raw(status: u16, body: &str) -> Reply {
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        // Deliberately no Access-Control-Allow-Origin: a page that guesses the
+        // port may reach the socket, but it may never read the answer.
+        .body(Full::new(Bytes::copy_from_slice(body.as_bytes())))
+        .expect("a header map this small cannot fail")
 }
 
-fn fail(status: u16, message: &str) -> Response<std::io::Cursor<Vec<u8>>> {
+fn fail(status: u16, message: &str) -> Reply {
     json(status, serde_json::json!({ "error": message }))
-}
-
-fn header_value<'a>(req: &'a Request, name: &'static str) -> Option<&'a str> {
-    req.headers()
-        .iter()
-        .find(|h| h.field.equiv(name))
-        .map(|h| h.value.as_str())
-}
-
-fn read_body(req: &mut Request) -> Result<serde_json::Value, String> {
-    let mut buf = String::new();
-    req.as_reader()
-        .take(MAX_BODY)
-        .read_to_string(&mut buf)
-        .map_err(|e| e.to_string())?;
-    if buf.trim().is_empty() {
-        return Ok(serde_json::json!({}));
-    }
-    serde_json::from_str(&buf).map_err(|e| e.to_string())
 }
 
 fn field(body: &serde_json::Value, key: &str) -> String {
@@ -508,51 +525,104 @@ fn is_extension_origin(origin: &str) -> bool {
     origin.starts_with("chrome-extension://") || origin.starts_with("moz-extension://")
 }
 
-fn extension_origin(req: &Request) -> Option<String> {
-    let origin = header_value(req, "Origin")?;
-    is_extension_origin(origin).then(|| origin.to_string())
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn bearer(req: &Request) -> Option<String> {
-    header_value(req, "Authorization")?
-        .strip_prefix("Bearer ")
-        .map(str::to_string)
-}
-
-/// A token nobody has seen before: 32 random bytes, hex.
-fn new_token() -> String {
-    random_bytes(32).iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Seconds since this client's current token was minted.
-///
-/// A `token_issued_at` of zero is a pairing written before rotation existed.
-/// It reads as "exactly due for rotation" rather than "older than the TTL",
-/// so upgrading rotates every live pairing on its next call instead of
-/// unpairing every browser at once.
-fn token_age(client: &PairedClient, now: i64) -> i64 {
-    if client.token_issued_at == 0 {
-        TOKEN_ROTATE_SECS
-    } else {
-        now - client.token_issued_at
+fn from_hex(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 || s.len() > 512 {
+        return None;
     }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
 }
 
-/// Which paired client this request is, if its token is still live.
+/// One request, already read off the socket.
 ///
-/// An index rather than a reference, because the caller goes on to rotate
-/// the token, which needs the vault mutably.
-fn client_index(vault: &Vault, origin: &str, token: &str, now: i64) -> Option<usize> {
+/// Built while still async and then handed to the blocking router, so the
+/// runtime is never holding a lock or waiting on the disk.
+struct Incoming {
+    path: String,
+    origin: String,
+    /// The body exactly as it arrived. The signature covers these bytes, so
+    /// re-serialising the parsed JSON would break it.
+    raw_body: String,
+    body: serde_json::Value,
+    timestamp: i64,
+    signature: Vec<u8>,
+}
+
+// ---------------------------------------------------------------------------
+// Proof of possession
+// ---------------------------------------------------------------------------
+
+/// What the extension signs.
+///
+/// Path, clock and body, so a signature proves this exact call and nothing
+/// else: it cannot be lifted off one request and put on another, and it
+/// cannot be replayed once the clock has moved past the skew window. WebCrypto
+/// hashes this with SHA-256 before signing, and `verify` does the same.
+fn signed_payload(path: &str, timestamp: i64, raw_body: &str) -> String {
+    let digest = Sha256::digest(raw_body.as_bytes());
+    format!("{path}\n{timestamp}\n{}", to_hex(&digest))
+}
+
+/// Does this request carry a signature made by the private half of
+/// `public_key`?
+///
+/// There is no secret to compare here. The browser generated a P-256 key
+/// WebCrypto will not export, kept the private half, and sent the public
+/// point at pairing time. Reading the vault tells you how to *check* a
+/// signature, never how to make one.
+fn signed_by(public_key: &str, inc: &Incoming, now: i64) -> bool {
+    if public_key.is_empty() || inc.signature.len() != 64 {
+        return false;
+    }
+    if (now - inc.timestamp).abs() > SIGNATURE_SKEW_SECS {
+        return false;
+    }
+    let Some(point) = from_hex(public_key) else {
+        return false;
+    };
+    let Ok(key) = VerifyingKey::from_sec1_bytes(&point) else {
+        return false;
+    };
+    let Ok(sig) = Signature::from_slice(&inc.signature) else {
+        return false;
+    };
+    key.verify(signed_payload(&inc.path, inc.timestamp, &inc.raw_body).as_bytes(), &sig)
+        .is_ok()
+}
+
+/// Is this a P-256 public point the app could ever check a signature against?
+fn is_public_key(hex: &str) -> bool {
+    from_hex(hex)
+        .map(|b| VerifyingKey::from_sec1_bytes(&b).is_ok())
+        .unwrap_or(false)
+}
+
+/// Seconds since this client's current key was registered.
+fn key_age(client: &PairedClient, now: i64) -> i64 {
+    now - client.key_issued_at
+}
+
+/// Which paired client signed this request, if any did.
+///
+/// An index rather than a reference, because the caller may go on to replace
+/// the key, which needs the vault mutably.
+fn client_index(vault: &Vault, inc: &Incoming, now: i64) -> Option<usize> {
     vault.paired.iter().position(|c| {
-        if c.origin != origin {
+        if c.origin != inc.origin {
             return false;
         }
-        // The token this one replaced, for a few seconds: a call the browser
-        // had already sent when the rotation landed is not an intruder.
-        if !c.prev_token.is_empty() && now <= c.prev_until && ct_eq(&c.prev_token, token) {
+        // The key a rekey replaced, for a few seconds: a call the browser had
+        // already signed when the swap landed is not an intruder.
+        if now <= c.prev_until && signed_by(&c.prev_public_key, inc, now) {
             return true;
         }
-        ct_eq(&c.token, token) && token_age(c, now) <= TOKEN_TTL_SECS
+        key_age(c, now) <= KEY_TTL_SECS && signed_by(&c.public_key, inc, now)
     })
 }
 
@@ -571,7 +641,7 @@ fn approved(client: &PairedClient, host: &str) -> bool {
 /// `bridge_approve`, from a click in the app, which is the only place it can
 /// happen without the dialog being theatre.
 fn ask_approval(app: &AppHandle, label: &str, origin: &str, host: &str) {
-    if !app.state::<Bridge>().may_ask_about(host) {
+    if !app.state::<Bridge>().may_ask() {
         return;
     }
     let _ = app.emit(
@@ -582,65 +652,13 @@ fn ask_approval(app: &AppHandle, label: &str, origin: &str, host: &str) {
     crate::log_info!("bridge", "approval asked for host={host}");
 }
 
-/// Replace this client's token once it is older than `TOKEN_ROTATE_SECS`.
-///
-/// Returns the new token so it can ride back on the response the extension
-/// already asked for: no extra route, no extra round trip, and nothing to
-/// call if the extension forgets to.
-///
-/// A failed write puts the old token back. Handing out a string that this
-/// vault will not honour after a restart would unpair the browser for real.
-fn rotate_if_due(
-    state: &tauri::State<'_, AppState>,
-    vault: &mut Vault,
-    idx: usize,
-    now: i64,
-) -> Option<String> {
-    if token_age(&vault.paired[idx], now) < TOKEN_ROTATE_SECS {
-        return None;
-    }
-    let fresh = new_token();
-    let (previous, was) = {
-        let client = &mut vault.paired[idx];
-        let was = client.token_issued_at;
-        let previous = std::mem::replace(&mut client.token, fresh.clone());
-        client.token_issued_at = now;
-        (previous, was)
-    };
-    let (was_prev, was_until) = {
-        let client = &mut vault.paired[idx];
-        let was_prev = std::mem::replace(&mut client.prev_token, previous.clone());
-        let was_until = client.prev_until;
-        client.prev_until = now + TOKEN_GRACE_SECS;
-        (was_prev, was_until)
-    };
-    match crate::commands::save_unlocked(state, vault) {
-        Ok(()) => {
-            use zeroize::Zeroize;
-            let mut was_prev = was_prev;
-            was_prev.zeroize();
-            crate::log_info!("bridge", "token rotated origin={}", vault.paired[idx].origin);
-            Some(fresh)
-        }
-        Err(e) => {
-            let client = &mut vault.paired[idx];
-            client.token = previous;
-            client.token_issued_at = was;
-            client.prev_token = was_prev;
-            client.prev_until = was_until;
-            crate::log_warn!("bridge", "token rotation could not be saved: {e}");
-            None
-        }
-    }
-}
-
 /// A secret just left the vault for the browser.
 ///
 /// The handout deliberately does NOT reset the idle timer. It used to, and
-/// that quietly disabled auto-lock: anything holding a token could poll
-/// every few minutes and keep the vault open forever. Only a human at the
-/// app extends the session, so when a handout lands near the end of the
-/// timer we ask for one.
+/// that quietly disabled auto-lock: anything holding a key could poll every
+/// few minutes and keep the vault open forever. Only a human at the app
+/// extends the session, so when a handout lands near the end of the timer we
+/// ask for one.
 fn after_handout(app: &AppHandle, state: &tauri::State<'_, AppState>) {
     let remaining = state.autolock.lock().unwrap().remaining_secs();
     if remaining <= EXTEND_PROMPT_SECS {
@@ -650,10 +668,33 @@ fn after_handout(app: &AppHandle, state: &tauri::State<'_, AppState>) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Listening
+// ---------------------------------------------------------------------------
+
 pub fn start(app: &AppHandle) {
     let handle = app.clone();
-    let server = match tiny_http::Server::http(("127.0.0.1", PORT)) {
-        Ok(s) => s,
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                let msg = format!("the bridge could not start: {e}");
+                crate::log_warn!("bridge", "{msg}");
+                *handle.state::<Bridge>().listen_error.lock().unwrap() = Some(msg);
+                return;
+            }
+        };
+        rt.block_on(serve(handle));
+    });
+}
+
+async fn serve(app: AppHandle) {
+    let listener = match TcpListener::bind(("127.0.0.1", PORT)).await {
+        Ok(l) => l,
         Err(e) => {
             let msg = format!("port {PORT} is not available: {e}");
             crate::log_warn!("bridge", "{msg}");
@@ -662,62 +703,130 @@ pub fn start(app: &AppHandle) {
         }
     };
     crate::log_info!("bridge", "listening on 127.0.0.1:{PORT}");
-    // A few workers rather than one loop: a local process that opens a
-    // connection and then says nothing would otherwise stall every later
-    // request behind it.
-    // ponytail: four is enough for one browser; it is still a fixed pool, so
-    // four silent connections do stall the bridge. Add read timeouts if that
-    // ever turns up in practice.
-    let server = std::sync::Arc::new(server);
-    for _ in 0..BRIDGE_WORKERS {
-        let server = server.clone();
-        let handle = handle.clone();
-        std::thread::spawn(move || loop {
-            let Ok(mut req) = server.recv() else { return };
-            let response = route(&handle, &mut req);
-            let _ = req.respond(response);
+
+    // Two things a connection cannot do: live forever, or arrive in numbers.
+    // A process that opens a socket and then says nothing used to cost one OS
+    // thread for as long as it cared to hold it.
+    let live = std::sync::Arc::new(Semaphore::new(MAX_CONNECTIONS));
+    loop {
+        let stream = match listener.accept().await {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                // Out of file descriptors, usually. Retrying instantly turns
+                // that into a busy loop on a core, so give it a moment.
+                crate::log_warn!("bridge", "accept failed: {e}");
+                tokio::time::sleep(ACCEPT_BACKOFF).await;
+                continue;
+            }
+        };
+        let Ok(permit) = live.clone().try_acquire_owned() else {
+            // Dropping the stream closes it. Refusing is the right answer:
+            // one browser needs one connection at a time.
+            drop(stream);
+            continue;
+        };
+        let app = app.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            let io = TokioIo::new(stream);
+            let service = service_fn(move |req| serve_one(app.clone(), req));
+            let conn = http1::Builder::new().serve_connection(io, service);
+            // The deadline covers reading the request as well as answering it,
+            // which is the half tiny_http gave no way to bound.
+            let _ = tokio::time::timeout(CONN_DEADLINE, conn).await;
         });
     }
 }
 
-fn route(app: &AppHandle, req: &mut Request) -> Response<std::io::Cursor<Vec<u8>>> {
-    if req.method() != &tiny_http::Method::Post {
+async fn serve_one(
+    app: AppHandle,
+    req: Request<hyper::body::Incoming>,
+) -> Result<Reply, std::convert::Infallible> {
+    Ok(read_request(&app, req).await)
+}
+
+async fn read_request(app: &AppHandle, req: Request<hyper::body::Incoming>) -> Reply {
+    if req.method() != hyper::Method::POST {
         return fail(405, "POST only");
     }
-    let Some(origin) = extension_origin(req) else {
+    let (parts, body) = req.into_parts();
+    let head = |name: &str| {
+        parts
+            .headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string()
+    };
+    let origin = head("origin");
+    if !is_extension_origin(&origin) {
         // A browser tab's Origin never starts with chrome-extension://, so
         // this is where a curious web page stops.
         return fail(403, "not a browser extension");
+    }
+    let raw_body = match Limited::new(body, MAX_BODY).collect().await {
+        Ok(b) => match String::from_utf8(b.to_bytes().to_vec()) {
+            Ok(s) => s,
+            Err(_) => return fail(400, "malformed request"),
+        },
+        Err(_) => return fail(413, "that request is too large"),
     };
-    let body = match read_body(req) {
-        Ok(b) => b,
-        Err(_) => return fail(400, "malformed request"),
+    let body = if raw_body.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        match serde_json::from_str(&raw_body) {
+            Ok(v) => v,
+            Err(_) => return fail(400, "malformed request"),
+        }
     };
-    let path = req.url().split('?').next().unwrap_or("");
-    match path {
-        "/pair" => pair(app, &origin, &body),
-        "/status" => status(app, &origin, req),
-        "/matches" => matches(app, &origin, req, &body),
-        "/credentials" => credentials(app, &origin, req, &body),
-        "/copy" => copy(app, &origin, req, &body),
+    let inc = Incoming {
+        path: parts.uri.path().to_string(),
+        origin,
+        raw_body,
+        body,
+        timestamp: head("x-pm-timestamp").parse().unwrap_or(0),
+        signature: from_hex(&head("x-pm-signature")).unwrap_or_default(),
+    };
+    // Everything past here locks the vault and may write the disk, so it runs
+    // off the runtime rather than on it.
+    let app = app.clone();
+    match tokio::task::spawn_blocking(move || route(&app, &inc)).await {
+        Ok(reply) => reply,
+        Err(_) => fail(500, "the request could not be handled"),
+    }
+}
+
+fn route(app: &AppHandle, inc: &Incoming) -> Reply {
+    match inc.path.as_str() {
+        "/pair" => pair(app, inc),
+        "/rekey" => rekey(app, inc),
+        "/status" => status(app, inc),
+        "/matches" => matches(app, inc),
+        "/credentials" => credentials(app, inc),
+        "/copy" => copy(app, inc),
+        "/ask" => ask(app, inc),
         _ => fail(404, "no such endpoint"),
     }
 }
 
-fn pair(
-    app: &AppHandle,
-    origin: &str,
-    body: &serde_json::Value,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
+fn pair(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
     if !state.is_unlocked() {
-        // The same answer a good code gets when no pairing is in progress.
-        // A locked vault cannot have one anyway — the code is issued from
+        // The same answer a good code gets when no pairing is in progress. A
+        // locked vault cannot have one anyway — the code is issued from
         // Settings, which is behind the unlock — so saying "unlock first"
         // only ever told a local process that the vault was shut.
         return fail(403, "no pairing in progress");
     }
-    let redeemed = match app.state::<Bridge>().redeem(&field(body, "code")) {
+    let public_key = field(&inc.body, "publicKey");
+    if !is_public_key(&public_key) {
+        return fail(400, "that is not a P-256 public key");
+    }
+    let redeemed = match app.state::<Bridge>().redeem(&field(&inc.body, "code")) {
         Ok(code) => code,
         Err(e) => {
             crate::log_warn!("bridge", "pairing refused: {e}");
@@ -725,31 +834,30 @@ fn pair(
         }
     };
     let label = {
-        let l = field(body, "label");
+        let l = field(&inc.body, "label");
         let l = l.trim();
         if l.is_empty() { "Browser".to_string() } else { l.chars().take(40).collect() }
     };
-    let token = new_token();
     let now = chrono::Utc::now().timestamp();
 
     match crate::commands::add_paired_client(
         &state,
         PairedClient {
-            origin: origin.to_string(),
+            origin: inc.origin.clone(),
             label,
-            token: token.clone(),
+            public_key,
             paired_at: now,
-            token_issued_at: now,
-            prev_token: String::new(),
+            key_issued_at: now,
+            prev_public_key: String::new(),
             prev_until: 0,
-            // Pairing grants the ability to ask, not the vault. Every host
-            // is approved on screen, one at a time, from here on.
+            // Pairing grants the ability to ask, not the vault. Every host is
+            // approved on screen, one at a time, from here on.
             allowed_hosts: Vec::new(),
         },
     ) {
         Ok(()) => {
-            crate::log_info!("bridge", "paired origin={origin}");
-            json(200, serde_json::json!({ "token": token }))
+            crate::log_info!("bridge", "paired origin={}", inc.origin);
+            json(200, serde_json::json!({ "paired": true }))
         }
         Err(e) => {
             // The code was good; only the write failed. Give it back rather
@@ -762,35 +870,82 @@ fn pair(
     }
 }
 
+/// Register a new key, signed by the one it replaces.
+///
+/// This is why the key is asymmetric. A shared secret could only be rotated
+/// by sending the new secret over the wire, which means generating one the
+/// browser can export — and an exportable key is the thing this design
+/// exists to avoid. A public point can be shouted.
+///
+/// The old key stays valid for `KEY_GRACE_SECS`, because the browser may have
+/// signed another call before this one landed.
+fn rekey(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let fresh = field(&inc.body, "publicKey");
+    if !is_public_key(&fresh) {
+        return fail(400, "that is not a P-256 public key");
+    }
+    let now = chrono::Utc::now().timestamp();
+    let mut guard = state.vault.lock().unwrap();
+    let Some(vault) = guard.as_mut() else {
+        return fail(401, "not paired");
+    };
+    let Some(idx) = client_index(vault, inc, now) else {
+        return fail(401, "not paired");
+    };
+    let (was_key, was_issued, was_prev, was_until) = {
+        let c = &mut vault.paired[idx];
+        let was_key = std::mem::replace(&mut c.public_key, fresh);
+        let was_issued = c.key_issued_at;
+        let was_prev = std::mem::replace(&mut c.prev_public_key, was_key.clone());
+        let was_until = c.prev_until;
+        c.key_issued_at = now;
+        c.prev_until = now + KEY_GRACE_SECS;
+        (was_key, was_issued, was_prev, was_until)
+    };
+    if let Err(e) = crate::commands::save_unlocked(&state, vault) {
+        // Put the old key back. Accepting a key this vault will not honour
+        // after a restart would unpair the browser for real.
+        let c = &mut vault.paired[idx];
+        c.public_key = was_key;
+        c.key_issued_at = was_issued;
+        c.prev_public_key = was_prev;
+        c.prev_until = was_until;
+        crate::log_warn!("bridge", "rekey could not be saved: {e}");
+        return fail(500, "the new key could not be saved");
+    }
+    crate::log_info!("bridge", "rekeyed origin={}", inc.origin);
+    json(200, serde_json::json!({ "rekeyed": true }))
+}
+
 /// Is the vault open to *this* extension right now?
 ///
 /// There is no answer for anyone else. This used to reply `unlocked: false`
-/// without looking at the token, on the grounds that a locked vault has
-/// nothing to check a token against and the extension needs the state to put
-/// on screen. Both halves were true and the result was still an oracle: any
-/// process on the machine could poll this port and watch, in real time, for
-/// the moment the vault opened.
+/// without looking at the caller, on the grounds that a locked vault has
+/// nothing to check a signature against and the extension needs the state to
+/// put on screen. Both halves were true and the result was still an oracle:
+/// any process on the machine could poll this port and watch, in real time,
+/// for the moment the vault opened.
 ///
-/// So a locked vault answers exactly what a wrong token answers, because a
-/// locked vault genuinely cannot tell them apart. The extension reads 401 as
-/// "locked, or not paired any more", keeps its token, and says so.
-fn status(app: &AppHandle, origin: &str, req: &Request) -> Response<std::io::Cursor<Vec<u8>>> {
+/// So a locked vault answers exactly what an unsigned request answers,
+/// because a locked vault genuinely cannot tell them apart. The extension
+/// reads 401 as "locked, or not paired any more", keeps its key, and says so.
+fn status(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let mut vault = match authed(&state, origin, req) {
-        Ok(v) => v,
+    let session = match authed(&state, inc) {
+        Ok(s) => s,
         Err(r) => return r,
     };
-    let rotated = rotate(&state, &mut vault);
-    reply(serde_json::json!({ "unlocked": true, "paired": true }), rotated)
+    let due = rekey_due(&session);
+    reply(serde_json::json!({ "unlocked": true, "paired": true }), due)
 }
 
-/// An authenticated request: the unlocked vault, held open, plus which
-/// paired client is asking.
+/// An authenticated request: the unlocked vault, held open, plus which paired
+/// client signed it.
 struct Session<'a> {
     guard: std::sync::MutexGuard<'a, Option<Vault>>,
-    /// Index into `vault.paired`. An index and not a reference because the
-    /// token gets rotated on the way out, which needs the vault mutably.
     client: usize,
+    now: i64,
 }
 
 impl Session<'_> {
@@ -798,141 +953,177 @@ impl Session<'_> {
         self.guard.as_ref().expect("checked in authed")
     }
 
-    fn vault_mut(&mut self) -> &mut Vault {
-        self.guard.as_mut().expect("checked in authed")
-    }
-
     fn client(&self) -> &PairedClient {
         &self.vault().paired[self.client]
     }
 }
 
-/// Every route past `/pair` needs a live token *and* an open vault.
+/// Every route past `/pair` needs a live key *and* an open vault.
 ///
 /// One failure for both, always `401 not paired`. A locked vault cannot
-/// decrypt the token list, so it cannot tell a real extension from a
+/// decrypt its own key list, so it cannot tell a real extension from a
 /// stranger — and any status code that admitted the difference would tell
 /// every process on this machine when the vault was open.
-fn authed<'a>(
-    state: &'a tauri::State<'_, AppState>,
-    origin: &str,
-    req: &Request,
-) -> Result<Session<'a>, Response<std::io::Cursor<Vec<u8>>>> {
-    let token = bearer(req).ok_or_else(|| fail(401, "not paired"))?;
+// The Err is a whole HTTP response rather than a code to look up later.
+// clippy calls 144 bytes large; on a loopback endpoint answering one browser
+// it is not worth a Box and an extra deref at every route.
+#[allow(clippy::result_large_err)]
+fn authed<'a>(state: &'a tauri::State<'_, AppState>, inc: &Incoming) -> Result<Session<'a>, Reply> {
     let now = chrono::Utc::now().timestamp();
     let guard = state.vault.lock().unwrap();
     let client = guard
         .as_ref()
-        .and_then(|v| client_index(v, origin, &token, now))
+        .and_then(|v| client_index(v, inc, now))
         .ok_or_else(|| fail(401, "not paired"))?;
-    Ok(Session { guard, client })
+    Ok(Session { guard, client, now })
 }
 
-/// Swap this session's token for a new one if it has aged past the rotation
-/// window. The answer rides back on the response the caller is already
-/// sending.
-fn rotate(state: &tauri::State<'_, AppState>, session: &mut Session) -> Option<String> {
-    let now = chrono::Utc::now().timestamp();
-    let idx = session.client;
-    rotate_if_due(state, session.vault_mut(), idx, now)
+/// Is this client's key old enough that the browser should replace it?
+///
+/// The app keeps this clock rather than the extension, so there is one answer
+/// and clearing the browser's storage cannot quietly stop rotation.
+fn rekey_due(session: &Session) -> bool {
+    key_age(session.client(), session.now) >= KEY_ROTATE_SECS
 }
 
-/// A 200 that carries a rotated token when there is one.
-fn reply(
-    mut body: serde_json::Value,
-    rotated: Option<String>,
-) -> Response<std::io::Cursor<Vec<u8>>> {
-    if let Some(token) = rotated {
-        body["token"] = serde_json::Value::String(token);
+/// A 200, with a nudge to rekey when the key has aged.
+fn reply(mut body: serde_json::Value, rekey_due: bool) -> Reply {
+    if rekey_due {
+        body["rekey"] = serde_json::Value::Bool(true);
     }
     json(200, body)
 }
 
-fn matches(
-    app: &AppHandle,
-    origin: &str,
-    req: &Request,
-    body: &serde_json::Value,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, origin, req) {
+    let session = match authed(&state, inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
-    let page = field(body, "origin");
-    // Deliberately not gated on approval. The list carries titles and
-    // usernames, never a password, and gating it would leave the badge and
-    // the context menu blank on every site until the user had been to the
-    // app -- which trains people to approve without reading. The handout is
-    // what gets asked about.
+    let due = rekey_due(&session);
+    let page = field(&inc.body, "origin");
     let items = matches_for(session.vault(), &page);
-    let rotated = rotate(&state, &mut session);
+    let Some(host) = host_of(&page) else {
+        return reply(serde_json::json!({ "items": [] }), due);
+    };
+    if !approved(session.client(), &host) {
+        // A count, and nothing else. Gating the list outright would leave the
+        // badge and the context menu blank on every new site, so the only way
+        // to find out the vault had anything for it would be to go and ask —
+        // which teaches people to approve sites they have not looked at. A
+        // number says "there is something here" without naming an account.
+        crate::log_info!("bridge", "matches withheld host={host} n={}", items.len());
+        return reply(
+            serde_json::json!({
+                "items": [],
+                "count": items.len(),
+                "needsApproval": true,
+                "host": host,
+            }),
+            due,
+        );
+    }
     crate::log_info!("bridge", "matches n={}", items.len());
-    reply(serde_json::json!({ "items": items }), rotated)
+    reply(serde_json::json!({ "items": items }), due)
+}
+
+/// Ask the app to put the approval dialog up, and nothing else.
+///
+/// The popup and the context menu both need a way to say "let me use this
+/// site" that does not involve clicking an account and watching it fail.
+/// Nothing leaves the vault here, so this is the one route that hands back no
+/// information at all.
+fn ask(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    let Some(host) = host_of(&field(&inc.body, "origin")) else {
+        return fail(400, "not a web origin");
+    };
+    let (label, origin) = (session.client().label.clone(), session.client().origin.clone());
+    // The vault lock goes before the window comes forward. See `Gate::Ask`.
+    drop(session);
+    ask_approval(app, &label, &origin, &host);
+    reply(serde_json::json!({ "asked": true }), due)
+}
+
+/// What the gate below decided.
+enum Gate {
+    /// Cleared: this item, for this page origin.
+    Go(Uuid, String),
+    /// Refused outright, with the answer to send.
+    Stop(Reply),
+    /// Refused, and a human should be asked. The caller sends `reply` after
+    /// letting the vault lock go — `ask_approval` pulls the app window
+    /// forward, and doing that from inside the lock would have the bridge
+    /// holding the vault while it waits on the UI thread.
+    Ask { reply: Reply, label: String, origin: String, host: String },
 }
 
 /// The checks every route that hands out a secret runs, in one place.
 ///
-/// Returns the item id and the page origin, or the response to send instead.
 /// Both callers need the identical decision, and a second copy of it is how
-/// one of them ends up a version behind.
-fn cleared_to_hand_out(
-    app: &AppHandle,
-    session: &Session,
-    body: &serde_json::Value,
-) -> Result<(Uuid, String), Response<std::io::Cursor<Vec<u8>>>> {
-    let Ok(id) = Uuid::parse_str(&field(body, "id")) else {
-        return Err(fail(400, "not an item id"));
+/// one of them ends up a version behind. It decides and returns; it does not
+/// act, so that the acting can happen with no locks held.
+fn gate(session: &Session, inc: &Incoming) -> Gate {
+    let Ok(id) = Uuid::parse_str(&field(&inc.body, "id")) else {
+        return Gate::Stop(fail(400, "not an item id"));
     };
-    let page = field(body, "origin");
+    let page = field(&inc.body, "origin");
     let Some(host) = host_of(&page) else {
-        return Err(fail(400, "not a web origin"));
+        return Gate::Stop(fail(400, "not a web origin"));
     };
     if !approved(session.client(), &host) {
-        // The dialog goes up in the app, not here, and this call is refused
-        // either way. Approving is a click on screen; nothing the caller
-        // sends can stand in for it.
-        ask_approval(app, &session.client().label, &session.client().origin, &host);
-        return Err(json(
-            403,
-            serde_json::json!({
-                "error": format!("{host} is not approved for this browser yet"),
-                "needsApproval": true,
-                "host": host,
-            }),
-        ));
+        // Refused either way. Approving is a click in the app; nothing the
+        // caller sends can stand in for it.
+        return Gate::Ask {
+            reply: json(
+                403,
+                serde_json::json!({
+                    "error": format!("{host} is not approved for this browser yet"),
+                    "needsApproval": true,
+                    "host": host,
+                }),
+            ),
+            label: session.client().label.clone(),
+            origin: session.client().origin.clone(),
+            host,
+        };
     }
-    Ok((id, page))
+    Gate::Go(id, page)
 }
 
-fn credentials(
-    app: &AppHandle,
-    origin: &str,
-    req: &Request,
-    body: &serde_json::Value,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, origin, req) {
+    let session = match authed(&state, inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
-    let (id, page) = match cleared_to_hand_out(app, &session, body) {
-        Ok(v) => v,
-        Err(r) => return r,
+    let due = rekey_due(&session);
+    let (id, page) = match gate(&session, inc) {
+        Gate::Go(id, page) => (id, page),
+        Gate::Stop(r) => return r,
+        Gate::Ask { reply, label, origin, host } => {
+            drop(session);
+            ask_approval(app, &label, &origin, &host);
+            return reply;
+        }
     };
     match credentials_for(session.vault(), id, &page) {
         Ok((username, password)) => {
-            let rotated = rotate(&state, &mut session);
             drop(session);
             after_handout(app, &state);
             crate::log_info!("bridge", "filled one login");
-            // Zeroized on the way out. The response buffer tiny_http builds
-            // is still its own copy that this cannot reach, so this narrows
-            // the window rather than closing it.
             let mut out = serde_json::json!({ "username": username, "password": password });
-            if let Some(token) = rotated {
-                out["token"] = serde_json::Value::String(token);
+            if due {
+                out["rekey"] = serde_json::Value::Bool(true);
             }
+            // Zeroized on the way out. The response buffer hyper builds is
+            // still its own copy that this cannot reach, so this narrows the
+            // window rather than closing it.
             let body = Zeroizing::new(out.to_string());
             json_raw(200, &body)
         }
@@ -946,33 +1137,34 @@ fn credentials(
 /// Put a value on the clipboard **without letting the extension see it**.
 ///
 /// The filler matches login forms. A PIN box, a CVV, a second form on the
-/// same page -- those it cannot name, and the answer used to be nothing at
-/// all. Showing the password in the popup instead would park the plaintext
-/// in the popup's DOM until it closed, for a value the user is going to
-/// paste anyway.
+/// same page — those it cannot name, and the answer used to be nothing at
+/// all. Showing the password in the popup instead would park the plaintext in
+/// the popup's DOM until it closed, for a value the user is going to paste
+/// anyway.
 ///
 /// So the *app* does the copying, with the same 60-second clear its own copy
 /// buttons use, and the reply says only that it happened. Same origin check,
 /// same approval, same item rules as a fill: this is the same secret leaving
 /// by a different door.
-fn copy(
-    app: &AppHandle,
-    origin: &str,
-    req: &Request,
-    body: &serde_json::Value,
-) -> Response<std::io::Cursor<Vec<u8>>> {
+fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, origin, req) {
+    let session = match authed(&state, inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
-    let which = field(body, "field");
+    let due = rekey_due(&session);
+    let which = field(&inc.body, "field");
     if which != "password" && which != "username" {
         return fail(400, "copy password or username");
     }
-    let (id, page) = match cleared_to_hand_out(app, &session, body) {
-        Ok(v) => v,
-        Err(r) => return r,
+    let (id, page) = match gate(&session, inc) {
+        Gate::Go(id, page) => (id, page),
+        Gate::Stop(r) => return r,
+        Gate::Ask { reply, label, origin, host } => {
+            drop(session);
+            ask_approval(app, &label, &origin, &host);
+            return reply;
+        }
     };
     let value = match credentials_for(session.vault(), id, &page) {
         Ok((username, password)) => {
@@ -983,7 +1175,6 @@ fn copy(
             return fail(403, e);
         }
     };
-    let rotated = rotate(&state, &mut session);
     drop(session);
     if let Err(e) = crate::clipboard::copy_with_ttl(&value, COPY_TTL) {
         crate::log_warn!("bridge", "copy failed: {e}");
@@ -993,7 +1184,7 @@ fn copy(
     crate::log_info!("bridge", "copied {which} to the clipboard");
     reply(
         serde_json::json!({ "copied": which, "seconds": COPY_TTL.as_secs() }),
-        rotated,
+        due,
     )
 }
 
@@ -1449,120 +1640,214 @@ mod tests {
         let src = std::fs::read_to_string(file!()).unwrap();
         for route in ["fn credentials(", "fn copy("] {
             let body = body_of(&src, route);
-            assert!(
-                body.contains("cleared_to_hand_out("),
-                "{route} must go through the approval gate"
-            );
+            assert!(body.contains("gate(&session"), "{route} must go through the approval gate");
         }
         assert!(
-            body_of(&src, "fn cleared_to_hand_out(").contains("approved("),
+            body_of(&src, "fn gate(").contains("approved("),
             "the gate must actually check the approval list"
         );
     }
 
-    fn client(origin: &str, token: &str, issued: i64) -> PairedClient {
+    use p256::ecdsa::signature::Signer;
+    use p256::ecdsa::SigningKey;
+
+    const EXT: &str = "chrome-extension://abcdef";
+
+    /// A deterministic key pair, and its public point as the vault stores it.
+    fn keypair(seed: u8) -> (SigningKey, String) {
+        let mut scalar = [1u8; 32];
+        scalar[31] = seed;
+        let sk = SigningKey::from_bytes(&scalar.into()).expect("a valid scalar");
+        let point = sk.verifying_key().to_encoded_point(false);
+        (sk, to_hex(point.as_bytes()))
+    }
+
+    fn client(origin: &str, public_key: &str, issued: i64) -> PairedClient {
         PairedClient {
             origin: origin.to_string(),
             label: "Chrome".to_string(),
-            token: token.to_string(),
+            public_key: public_key.to_string(),
             paired_at: 0,
-            token_issued_at: issued,
-            prev_token: String::new(),
+            key_issued_at: issued,
+            prev_public_key: String::new(),
             prev_until: 0,
             allowed_hosts: Vec::new(),
         }
     }
 
-    const EXT: &str = "chrome-extension://abcdef";
+    /// A request signed the way the extension signs one.
+    fn signed(sk: &SigningKey, path: &str, body: &str, ts: i64) -> Incoming {
+        let sig: Signature = sk.sign(signed_payload(path, ts, body).as_bytes());
+        Incoming {
+            path: path.to_string(),
+            origin: EXT.to_string(),
+            raw_body: body.to_string(),
+            body: serde_json::from_str(body).expect("test body is json"),
+            timestamp: ts,
+            signature: sig.to_bytes().to_vec(),
+        }
+    }
 
-    #[test]
-    fn a_token_is_honoured_until_it_expires() {
-        let now = 1_700_000_000;
+    fn vault_with(client: PairedClient) -> Vault {
         let mut v = new_vault(vec![0; 16]);
-        v.paired.push(client(EXT, "tok", now - 60));
-        assert_eq!(client_index(&v, EXT, "tok", now), Some(0));
-
-        // A browser that has been shut for longer than the TTL pairs again.
-        let later = now + TOKEN_TTL_SECS + 1;
-        assert_eq!(client_index(&v, EXT, "tok", later), None);
+        v.paired.push(client);
+        v
     }
 
     #[test]
-    fn a_token_is_only_honoured_for_the_origin_it_was_issued_to() {
+    fn a_signed_request_is_matched_to_the_browser_that_signed_it() {
         let now = 1_700_000_000;
-        let mut v = new_vault(vec![0; 16]);
-        v.paired.push(client(EXT, "tok", now));
-        assert_eq!(client_index(&v, "chrome-extension://other", "tok", now), None);
-        assert_eq!(client_index(&v, EXT, "wrong", now), None);
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now - 60));
+        assert_eq!(
+            client_index(&v, &signed(&sk, "/status", "{}", now), now),
+            Some(0)
+        );
     }
 
     #[test]
-    fn a_pairing_written_before_rotation_existed_rotates_rather_than_dying() {
-        // token_issued_at defaults to 0 on an older vault. Read literally
-        // that is 1970, which would expire every live pairing the moment
-        // this shipped; it has to mean "due now" instead.
+    fn a_signature_from_another_key_is_nobody() {
+        // The vault holds a public point. Reading it tells you how to check a
+        // signature and never how to make one, which is the whole reason the
+        // key is asymmetric.
         let now = 1_700_000_000;
-        let old = client(EXT, "tok", 0);
-        assert_eq!(token_age(&old, now), TOKEN_ROTATE_SECS);
-
-        let mut v = new_vault(vec![0; 16]);
-        v.paired.push(old);
-        assert_eq!(client_index(&v, EXT, "tok", now), Some(0));
+        let (_, pk) = keypair(7);
+        let (other, _) = keypair(9);
+        let v = vault_with(client(EXT, &pk, now));
+        assert_eq!(client_index(&v, &signed(&other, "/status", "{}", now), now), None);
     }
 
     #[test]
-    fn a_token_is_due_for_rotation_only_once_it_is_old() {
+    fn a_signature_does_not_travel_to_another_request() {
         let now = 1_700_000_000;
-        assert!(token_age(&client(EXT, "t", now), now) < TOKEN_ROTATE_SECS);
-        assert!(token_age(&client(EXT, "t", now - TOKEN_ROTATE_SECS), now) >= TOKEN_ROTATE_SECS);
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now));
+
+        // Same signature, different route: signing covers the path.
+        let mut moved = signed(&sk, "/status", "{}", now);
+        moved.path = "/credentials".to_string();
+        assert_eq!(client_index(&v, &moved, now), None);
+
+        // Same signature, edited body: signing covers the bytes that arrived.
+        let mut tampered = signed(&sk, "/credentials", "{\"id\":\"a\"}", now);
+        tampered.raw_body = "{\"id\":\"b\"}".to_string();
+        assert_eq!(client_index(&v, &tampered, now), None);
+
+        // Same signature, later: signing covers the clock.
+        let stale = signed(&sk, "/status", "{}", now - SIGNATURE_SKEW_SECS - 1);
+        assert_eq!(client_index(&v, &stale, now), None);
+        // And a clock running ahead is refused the same way.
+        let ahead = signed(&sk, "/status", "{}", now + SIGNATURE_SKEW_SECS + 1);
+        assert_eq!(client_index(&v, &ahead, now), None);
     }
 
     #[test]
-    fn the_replaced_token_still_works_for_a_few_seconds() {
-        // The browser can have a call in flight when a rotation lands. Cut
-        // it off and the extension reports "not paired", which sends the
-        // user to re-pair a browser that was never actually unpaired.
+    fn a_key_is_honoured_until_it_expires() {
         let now = 1_700_000_000;
-        let mut c = client(EXT, "new", now);
-        c.prev_token = "old".to_string();
-        c.prev_until = now + TOKEN_GRACE_SECS;
-        let mut v = new_vault(vec![0; 16]);
-        v.paired.push(c);
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now - 60));
+        assert_eq!(client_index(&v, &signed(&sk, "/status", "{}", now), now), Some(0));
 
-        assert_eq!(client_index(&v, EXT, "new", now), Some(0));
-        assert_eq!(client_index(&v, EXT, "old", now), Some(0));
+        // A browser shut for longer than the TTL pairs again. The signature
+        // has to be made at the later time too, or the skew check catches it
+        // first and the test proves nothing about expiry.
+        let later = now + KEY_TTL_SECS + 1;
+        assert_eq!(client_index(&v, &signed(&sk, "/status", "{}", later), later), None);
+    }
+
+    #[test]
+    fn a_key_is_only_honoured_for_the_origin_it_was_issued_to() {
+        let now = 1_700_000_000;
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now));
+        let mut elsewhere = signed(&sk, "/status", "{}", now);
+        elsewhere.origin = "chrome-extension://other".to_string();
+        assert_eq!(client_index(&v, &elsewhere, now), None);
+    }
+
+    #[test]
+    fn a_key_is_due_for_replacement_only_once_it_is_old() {
+        let now = 1_700_000_000;
+        let (_, pk) = keypair(7);
+        assert!(key_age(&client(EXT, &pk, now), now) < KEY_ROTATE_SECS);
+        assert!(key_age(&client(EXT, &pk, now - KEY_ROTATE_SECS), now) >= KEY_ROTATE_SECS);
+    }
+
+    #[test]
+    fn the_replaced_key_still_works_for_a_few_seconds() {
+        // The browser can have a call signed and in flight when a rekey
+        // lands. Cut it off and the extension reports "not paired", which
+        // sends the user to re-pair a browser that was never unpaired.
+        let now = 1_700_000_000;
+        let (old_sk, old_pk) = keypair(7);
+        let (new_sk, new_pk) = keypair(9);
+        let mut c = client(EXT, &new_pk, now);
+        c.prev_public_key = old_pk;
+        c.prev_until = now + KEY_GRACE_SECS;
+        let v = vault_with(c);
+
+        assert_eq!(client_index(&v, &signed(&new_sk, "/status", "{}", now), now), Some(0));
+        assert_eq!(client_index(&v, &signed(&old_sk, "/status", "{}", now), now), Some(0));
+
         // And not a second longer than the grace window.
-        assert_eq!(client_index(&v, EXT, "old", now + TOKEN_GRACE_SECS + 1), None);
+        let after = now + KEY_GRACE_SECS + 1;
+        assert_eq!(client_index(&v, &signed(&old_sk, "/status", "{}", after), after), None);
     }
 
     #[test]
-    fn an_empty_previous_token_is_not_a_way_in() {
-        // Every field defaults to empty, and `field()` hands back an empty
-        // string for a missing key, so "" must never match anything.
+    fn a_pairing_with_no_key_is_not_a_way_in() {
+        // `public_key` defaults to empty on a vault written before signatures
+        // replaced tokens, and an empty string must never verify anything.
         let now = 1_700_000_000;
-        let mut v = new_vault(vec![0; 16]);
-        v.paired.push(client(EXT, "tok", now));
-        assert_eq!(client_index(&v, EXT, "", now), None);
+        let (sk, _) = keypair(7);
+        let v = vault_with(client(EXT, "", now));
+        assert_eq!(client_index(&v, &signed(&sk, "/status", "{}", now), now), None);
+
+        let mut unsigned = signed(&sk, "/status", "{}", now);
+        unsigned.signature = Vec::new();
+        assert_eq!(client_index(&vault_with(client(EXT, "", now)), &unsigned, now), None);
     }
 
     #[test]
-    fn two_tokens_are_never_the_same() {
-        let a = new_token();
-        assert_eq!(a.len(), 64);
-        assert_ne!(a, new_token());
+    fn only_a_real_public_point_can_be_paired() {
+        let (_, pk) = keypair(7);
+        assert!(is_public_key(&pk));
+        assert!(!is_public_key(""));
+        assert!(!is_public_key("nothex"));
+        // Right length, not a point on the curve.
+        assert!(!is_public_key(&"04".repeat(65)));
+    }
+
+    #[test]
+    fn a_public_suffix_is_recognised_from_the_real_list() {
+        // The hand-written table this replaced had two dozen entries, and a
+        // miss meant one site's login offered to every site under it.
+        for suffix in ["co.uk", "com.au", "github.io", "vercel.app", "com"] {
+            assert!(is_public_suffix(suffix), "{suffix} is a public suffix");
+        }
+        for domain in ["github.com", "hsbc.co.uk", "someone.github.io"] {
+            assert!(!is_public_suffix(domain), "{domain} is a domain");
+        }
+        // Entries the hand-written table never had.
+        assert!(!host_covers("s3.eu-west-1.amazonaws.com", "evil.s3.eu-west-1.amazonaws.com"));
+        assert!(!host_covers("ap-south-1.elasticbeanstalk.com", "evil.ap-south-1.elasticbeanstalk.com"));
+        // And a multi-label name that is *not* a suffix still covers its own
+        // subdomains: nsw.gov.au is one registrant, unlike co.uk.
+        assert!(host_covers("nsw.gov.au", "roads.nsw.gov.au"));
     }
 
     #[test]
     fn pairing_approves_nothing_on_its_own() {
-        // The whole point of the prompt: a token is permission to ask, and
-        // the answer only ever comes from a click in the app.
-        let fresh = client(EXT, "tok", 0);
-        assert!(!approved(&fresh, "github.com"));
+        // The whole point of the prompt: a key is permission to ask, and the
+        // answer only ever comes from a click in the app.
+        let (_, pk) = keypair(7);
+        assert!(!approved(&client(EXT, &pk, 0), "github.com"));
     }
 
     #[test]
     fn an_approval_covers_that_host_and_no_other() {
-        let mut c = client(EXT, "tok", 0);
+        let (_, pk) = keypair(7);
+        let mut c = client(EXT, &pk, 0);
         c.allowed_hosts.push("github.com".to_string());
         assert!(approved(&c, "github.com"));
         // Not the subdomain: the dialog said "github.com", so that is all it

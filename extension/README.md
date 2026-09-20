@@ -45,32 +45,43 @@ is Windows-only, so it is not on the list.
 ## How it reaches the vault
 
 The app listens on `127.0.0.1:38471` and answers nothing useful until a
-human pairs this extension: the app shows an eight-character code, you type
-it in here once, and the app hands back a token it stores **inside the
-encrypted vault**. Four rules hold it up, and `src-tauri/src/bridge.rs` is
-where they are enforced:
+human pairs this extension: the app shows an eight-character code, you type it in here once, and this browser generates a
+key pair and sends the app the public half. Four rules hold it up, and
+`src-tauri/src/bridge.rs` is where they are enforced:
 
 - **Loopback only.** It binds `127.0.0.1`, never `0.0.0.0`.
 - **A human pairs it.** No other process on the machine can read a code off
   your screen, so no other process can pair itself. The code lasts three
   minutes, works once, and dies after three wrong guesses.
-- **The token lives in the vault.** Encrypted at rest, and unverifiable the
-  moment the vault locks — which is exactly when the extension should stop
-  being able to ask for anything. Because a locked vault cannot tell a real
-  extension from a stranger, every route answers both the same way (`401`),
-  and the popup says "locked, or not paired any more" rather than guessing.
-  Anything more specific would be a free "is the vault open right now?"
-  signal for every process on the machine.
-- **The token does not stay the same token.** Any reply may carry a
-  replacement, and `vault.js` stores it before the caller sees the body. A
-  token older than an hour is swapped on its next use, and one unused for a
-  week stops working — so a copy lifted out of `chrome.storage.local` goes
-  stale on its own, and whichever side ends up holding the dead string gets
-  a 401 you can see.
+- **There is no token.** This browser signs what it sends. Pairing generates
+  a P-256 key pair with `extractable: false`; the private half stays in
+  IndexedDB as a `CryptoKey` that WebCrypto will not turn back into bytes for
+  anyone, `vault.js` included, and the app keeps only the public point. Every
+  request carries a signature over its path, a timestamp and a hash of its
+  body, so a signature proves one call and is worth nothing on another or a
+  minute later.
+
+  That is not the same as unstealable: Chrome writes non-extractable key
+  material into the profile like everything else, and a program that parses
+  that format can recover it. What it removes is the string you could copy
+  out of `chrome.storage.local` in one line, and everything a captured
+  request used to be worth.
+- **Keys age out.** The app decides when one is stale and says so on the next
+  reply; this browser answers with `/rekey`, sending a new public point
+  signed by the old key — which is only possible because the key is
+  asymmetric. Unused for a week, a key stops working and you pair again.
+- **The key list lives in the vault.** Unreadable the moment the vault locks,
+  which is exactly when the extension should stop being able to ask for
+  anything. Because a locked vault cannot tell a real extension from a
+  stranger, every route answers both the same way (`401`), and the popup says
+  "locked, or not paired any more" rather than guessing. Anything more
+  specific would be a free "is the vault open right now?" signal for every
+  process on the machine.
 - **Pairing lets a browser ask, not read.** The first time it wants a
   password for a site, the app comes forward and asks you; the call that
-  triggered it is refused either way. Approved sites are listed under
-  **Settings → Browser extension** and can be taken back one at a time.
+  triggered it is refused either way. Until then the account list for that
+  site comes back as a count and nothing else. Approved sites are listed
+  under **Settings → Browser extension** and can be taken back one at a time.
 - **Rust decides what an origin may see.** This extension says which origin
   it is acting for; the app filters every lookup by it. Naming an item id is
   not enough — the origin has to own it. A bug up here cannot turn into one
@@ -80,8 +91,8 @@ No response carries an `Access-Control-Allow-Origin` header and every
 request must arrive with a `chrome-extension://` `Origin`, so a web page
 that guesses the port still cannot read a thing.
 
-Unpair from **Settings → Browser extension**; that revokes the token
-immediately, whatever the browser still has stored.
+Unpair from **Settings → Browser extension**; that drops the public key
+immediately, so whatever the browser still has stored signs nothing.
 
 A field the filler cannot name — a PIN, a CVV, a second form on the page —
 has a **Copy** button beside each account instead. That routes through the
@@ -97,16 +108,18 @@ asks whether to stay unlocked — only an answer there extends it.
 
 ## What this does not defend against
 
-- **A local process running as you.** The token lives in
-  `chrome.storage.local`, a file in the browser profile, so malware can read
-  it and use these routes directly. It needs the vault unlocked, and
-  unpairing kills it, but it is a shorter path to plaintext than existed
-  before. This is a deliberate trade for one-click autofill.
-- **Harvesting the item list.** Per-site approval gates *passwords*, not the
-  list: a token holder can still walk a list of domains and collect the
-  titles and usernames saved for them. Gating the list too would leave the
-  badge and the menu blank on every new site until you had been to the app,
-  which trains people to approve without reading.
+- **A local process running as you.** The signing key is non-extractable to
+  JavaScript, not to a program reading the browser profile off disk. Doing it
+  that way is real work rather than a `grep`, and the key is replaced hourly,
+  but a determined local attacker gets there. It also needs the vault
+  unlocked, and unpairing kills it. This is a deliberate trade for one-click
+  autofill.
+- **Counting what the vault holds.** An unapproved site gets a number and no
+  accounts, so names and usernames stay in the vault — but walking a list of
+  domains still tells the walker which ones you have logins for. Dropping the
+  count as well would leave the badge and the menu blank on every new site,
+  so the only way to find out would be to go and approve it, which trains
+  people to approve sites they have not looked at.
 - **A forged `Origin` header.** Browsers will not let a page forge it, so
   pages really are shut out — but any local process can set it to anything.
   The pairing code and the token are what actually hold the door.

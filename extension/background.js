@@ -24,7 +24,7 @@
  * blink out mid-use, so nothing is cleared until the tab actually
  * navigates.
  */
-import { matches, credentials } from "./vault.js";
+import { matches, credentials, ask } from "./vault.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
 const ext = globalThis.browser ?? globalThis.chrome;
@@ -32,6 +32,7 @@ const ext = globalThis.browser ?? globalThis.chrome;
 const BADGE = "●";
 const BADGE_COLOUR = "#7C9CFF";
 const ROOT_ID = "pm-root";
+const ASK_ID = "pm-ask";
 const KEY = "tabState";
 
 /** Matches the app's own naming in src/lib/methods.tsx. */
@@ -70,7 +71,22 @@ async function renderMenu(state) {
   } catch {
     return;
   }
-  if (!state || !state.items || state.items.length === 0) return;
+  if (!state) return;
+
+  // A site the user has not approved yet. The window that needs the menu most
+  // is the toolbar-less OAuth popup, where there is no other way to ask, so
+  // the menu offers the question rather than a list of accounts it is not
+  // allowed to show.
+  if (state.needsApproval) {
+    if (!state.count) return;
+    ext.contextMenus.create({
+      id: ASK_ID,
+      title: `Approve ${state.host} in Password Manager…`,
+      contexts: ["editable"],
+    });
+    return;
+  }
+  if (!state.items || state.items.length === 0) return;
 
   ext.contextMenus.create({ id: ROOT_ID, title: "Password Manager", contexts: ["editable"] });
   for (const item of state.items) {
@@ -98,14 +114,14 @@ async function onDetectedLogin(tabId, origin) {
     await renderMenu(known);
     return;
   }
-  let items = [];
+  let found = { items: [], count: 0, needsApproval: false, host: "" };
   try {
-    items = await matches(origin);
+    found = await matches(origin);
   } catch {
     // Not paired, app closed, or vault locked. The popup explains all three;
     // a menu that cannot fill anything is just noise.
   }
-  const state = { origin, items };
+  const state = { origin, ...found };
   await setTabState(tabId, state);
   await renderMenu(state);
 }
@@ -161,7 +177,13 @@ ext.tabs.onActivated.addListener(async ({ tabId }) => {
 
 ext.contextMenus.onClicked.addListener(async (info, tab) => {
   const id = String(info.menuItemId || "");
-  if (!id.startsWith("pm:") || !tab || tab.id === undefined) return;
+  if (!tab || tab.id === undefined) return;
+  if (id === ASK_ID) {
+    const state = (await allTabState())[tab.id];
+    if (state && state.origin) await ask(state.origin).catch(() => {});
+    return;
+  }
+  if (!id.startsWith("pm:")) return;
   // Read back rather than trusting a variable: the worker may have been
   // killed and restarted between building this menu and clicking it.
   const state = (await allTabState())[tab.id];

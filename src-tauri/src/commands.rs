@@ -1036,14 +1036,12 @@ pub(crate) fn add_paired_client(
 ) -> Result<(), String> {
     let mut guard = state.vault.lock().unwrap();
     let vault = guard.as_mut().ok_or_else(|| "locked".to_string())?;
-    // Re-pairing the same extension replaces its token rather than stacking
-    // a second one, so "unpair" always means the browser really is cut off.
+    // Re-pairing the same extension replaces its key rather than stacking a
+    // second one, so "unpair" always means the browser really is cut off.
     // The approvals go with it: a browser that had to be paired again is not
     // obviously the same browser, and re-approving a handful of sites is
     // cheaper than a stale grant nobody remembers making.
     if let Some(old) = vault.paired.iter_mut().find(|c| c.origin == client.origin) {
-        use zeroize::Zeroize;
-        old.token.zeroize();
         *old = client;
     } else {
         vault.paired.push(client);
@@ -1148,18 +1146,11 @@ pub fn bridge_state(app: AppHandle, state: State<'_, AppState>) -> Result<Bridge
 
 #[tauri::command]
 pub fn bridge_unpair(origin: String, state: State<'_, AppState>) -> Result<(), String> {
-    use zeroize::Zeroize;
     let mut guard = state.vault.lock().unwrap();
     let vault = guard.as_mut().ok_or_else(|| "locked".to_string())?;
 
     let before = vault.paired.len();
-    for mut client in std::mem::take(&mut vault.paired) {
-        if client.origin == origin {
-            client.token.zeroize();
-        } else {
-            vault.paired.push(client);
-        }
-    }
+    vault.paired.retain(|c| c.origin != origin);
     if vault.paired.len() == before {
         return Err("that extension is not paired".to_string());
     }

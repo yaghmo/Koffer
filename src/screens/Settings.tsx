@@ -569,8 +569,9 @@ export default function Settings({ accountId, onLock }: Props) {
         <p className="text-body-sm text-on-surface-variant">
           Pairing lets a browser <em>ask</em>. The first time it wants a password for a site,
           this window asks you, and the site is remembered below — so a stolen pairing cannot
-          quietly walk through the vault. Its token is also replaced as it is used, and dies
-          after a week unused.
+          quietly walk through the vault. There is no shared password between the two: the
+          browser signs what it sends with a key it cannot export, and that key is replaced
+          hourly and dies after a week unused.
         </p>
 
         {bridge?.listen_error ? (

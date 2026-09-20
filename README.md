@@ -59,7 +59,7 @@ cd src-tauri && cargo test  # backend
 - Window close locks the vault
 - Master key lives in Rust memory only; never crosses the IPC boundary
 - Only network call: fetching a site's title and favicon when you enter a login URL (public hosts only, size-capped). Vault contents are never sent.
-- The browser extension talks to the app over `127.0.0.1:38471` — loopback only, and only after you pair it by hand. Its token is replaced as it is used and expires unused; a password for a site it has not been approved for raises a dialog here first. `extension/README.md` has the whole model, including what it does not defend against.
+- The browser extension talks to the app over `127.0.0.1:38471` — loopback only, and only after you pair it by hand. There is no shared token: the browser signs each request with a key its own JavaScript cannot export, and a password for a site it has not been approved for raises a dialog here first. `extension/README.md` has the whole model, including what it does not defend against.
 
 ## Out of scope (v1)
 

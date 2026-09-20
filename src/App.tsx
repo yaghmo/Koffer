@@ -71,7 +71,10 @@ export default function App() {
     });
     const unlistenApprove = onApproveRequest((req) => {
       logUi("info", "app", `extension asked to be approved for ${req.host}`);
-      setApproveAsk(req);
+      // First come, first served. A second request while one is on screen is
+      // dropped rather than swapped in: re-rendering this dialog under the
+      // pointer would change which site the next click approves.
+      setApproveAsk((current) => current ?? req);
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -291,9 +294,10 @@ export default function App() {
         {view === "personal" && <PersonalInfoScreen />}
         {view === "stats" && <Stats onViewItem={(id) => setViewingId(id)} />}
         {/* Only a person here may extend the session. The fill itself does
-            not touch the idle timer, or a pairing token would be enough to
-            hold the vault open indefinitely. */}
-        {extendAsk !== null && status === "unlocked" && (
+            not touch the idle timer, or a paired browser would be enough to
+            hold the vault open indefinitely. Held back while an approval is
+            on screen so the two never stack. */}
+        {extendAsk !== null && approveAsk === null && status === "unlocked" && (
           <ConfirmDialog
             title="Keep the vault unlocked?"
             message={`The browser extension just filled a login, and the vault locks in about ${Math.max(

@@ -179,25 +179,31 @@ pub struct PairedClient {
     pub origin: String,
     /// What to call it in Settings, e.g. "Chrome".
     pub label: String,
-    pub token: String,
-    pub paired_at: i64,
-    /// Unix seconds the *current* token was minted. Tokens rotate on use and
-    /// expire outright, so this is the clock both of those read from —
-    /// `paired_at` stays put and answers "paired since when".
+    /// The browser's P-256 public point, SEC1 uncompressed, hex.
     ///
-    /// Zero on a vault written before rotation existed. Treated as "due for
-    /// rotation right now" rather than "expired", so upgrading does not
-    /// silently unpair every browser.
+    /// Not a secret, and that is the point. The browser generated the pair
+    /// with WebCrypto and kept a private half it cannot export, so this field
+    /// says how to *check* what that browser signs and never how to sign as
+    /// it. There is no bearer string in this file to steal.
+    ///
+    /// Empty on a vault written before signatures replaced tokens. Empty
+    /// never matches, so those pairings are dead and the browser pairs again.
     #[serde(default)]
-    pub token_issued_at: i64,
-    /// The token this one replaced, and the moment it stops being honoured.
+    pub public_key: String,
+    pub paired_at: i64,
+    /// Unix seconds the *current* key was registered. Keys are replaced on a
+    /// schedule and expire outright, so this is the clock both of those read
+    /// from — `paired_at` stays put and answers "paired since when".
+    #[serde(default)]
+    pub key_issued_at: i64,
+    /// The key this one replaced, and the moment it stops being honoured.
     ///
-    /// Rotation happens on whatever call comes in first. A second call that
-    /// the browser had already sent with the old string would otherwise come
-    /// back `401`, and the extension would tell the user to pair again over
+    /// A rekey lands on whatever call comes in first. A second call the
+    /// browser had already signed with the old key would otherwise come back
+    /// `401`, and the extension would tell the user to pair again over
     /// nothing. A few seconds of overlap costs far less than that.
     #[serde(default)]
-    pub prev_token: String,
+    pub prev_public_key: String,
     #[serde(default)]
     pub prev_until: i64,
     /// Hosts this browser has been allowed to be handed a password for, one
@@ -292,12 +298,10 @@ pub fn zeroize_secrets(vault: &mut Vault) {
     if let Some(b) = vault.backup.as_mut() {
         b.put_token.zeroize();
     }
-    // Same treatment: the origin and label are not secrets and clearing them
-    // would look like an unpairing, but the token is a live credential.
-    for client in vault.paired.iter_mut() {
-        client.token.zeroize();
-        client.prev_token.zeroize();
-    }
+    // `paired` is left alone on purpose. It used to hold a bearer token, which
+    // had to be wiped; it now holds a public key, which is not a secret and
+    // cannot be turned into one. Nothing in that list is worth clearing, and
+    // clearing the origin or the label would look like an unpairing.
 }
 
 pub fn is_pinned(vault: &Vault, id: Uuid) -> bool {

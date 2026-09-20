@@ -14,6 +14,7 @@ import {
   pair,
   status,
   matches,
+  ask,
   credentials,
   copy,
 } from "./vault.js";
@@ -212,7 +213,53 @@ function renderProviderHint(item) {
   return row;
 }
 
-function renderItems(items, tabId, origin) {
+/**
+ * A site this browser has not been approved for.
+ *
+ * The app sent a count and no accounts, which is the point: "there is
+ * something here" is worth knowing, "which account" is not worth handing over
+ * before the user has said yes. The button only asks the app to put its
+ * dialog up — the answer happens there.
+ */
+function renderApproval(result, origin) {
+  const head = document.createElement("div");
+  head.className = "muted";
+  head.textContent =
+    result.count === 0
+      ? `No saved login for ${origin}.`
+      : `${result.count} saved login${result.count === 1 ? "" : "s"} for ${result.host}.`;
+
+  const note = document.createElement("div");
+  note.className = "dim";
+  note.textContent =
+    result.count === 0
+      ? `This browser has not been approved for ${result.host} either.`
+      : "This browser has not been approved for this site yet.";
+
+  const go = document.createElement("button");
+  go.className = "primary";
+  go.type = "button";
+  go.textContent = "Approve in the app";
+  go.addEventListener("click", async () => {
+    go.disabled = true;
+    try {
+      await ask(origin);
+      note.textContent = "The app is asking. Say yes there, then reopen this.";
+    } catch (e) {
+      note.textContent = describe(e);
+      go.disabled = false;
+    }
+  });
+
+  vaultEl.replaceChildren(head, note, go);
+}
+
+function renderItems(result, tabId, origin) {
+  if (result.needsApproval) {
+    renderApproval(result, origin);
+    return;
+  }
+  const items = result.items;
   if (items.length === 0) {
     text(vaultEl, `No saved login for ${origin}.`);
     return;
