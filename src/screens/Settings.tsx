@@ -5,6 +5,7 @@ import { refreshSiteLogos } from "../lib/logos";
 import type { BackupState, BridgeState, SecurityState, VaultStorage } from "../lib/types";
 import { SettingsIcon, ShieldIcon, ImageIcon, XIcon, DatabaseIcon, KeyIcon, CloudIcon } from "../components/Icon";
 import RecoveryCodeDialog from "../components/RecoveryCodeDialog";
+import ApprovedSites from "../components/ApprovedSites";
 import { useHotkey } from "../lib/useHotkey";
 
 function formatBytes(n: number): string {
@@ -38,6 +39,7 @@ export default function Settings({ accountId, onLock }: Props) {
   const [resetPassword, setResetPassword] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
   const [logosBusy, setLogosBusy] = useState(false);
+  const [showApproved, setShowApproved] = useState(false);
   const [logosResult, setLogosResult] = useState<string | null>(null);
   const [autoRefreshIcons, setAutoRefreshIcons] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
@@ -133,6 +135,11 @@ export default function Settings({ accountId, onLock }: Props) {
       setBridgeError(String(err));
     }
   }
+
+  const approvedTotal = (bridge?.clients ?? []).reduce(
+    (n, c) => n + c.allowed_hosts.length,
+    0
+  );
 
   /** Take one site's approval back. The browser stays paired. */
   async function revokeHost(origin: string, host: string) {
@@ -619,26 +626,13 @@ export default function Settings({ accountId, onLock }: Props) {
                     Unpair
                   </button>
                 </div>
-                {c.allowed_hosts.length === 0 ? (
-                  <span className="text-label-md text-on-surface-variant opacity-70">
-                    No sites approved yet — it will ask on the first fill.
-                  </span>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {c.allowed_hosts.map((host) => (
-                      <button
-                        key={host}
-                        type="button"
-                        title={`Stop filling ${host} in ${c.label}`}
-                        aria-label={`Stop filling ${host} in ${c.label}`}
-                        onClick={() => revokeHost(c.origin, host)}
-                        className="rounded-control border border-white/8 px-2 py-0.5 font-mono text-label-md text-on-surface-variant hover:border-error hover:text-error"
-                      >
-                        {host} ×
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <span className="text-label-md text-on-surface-variant opacity-70">
+                  {c.allowed_hosts.length === 0
+                    ? "No sites approved yet — it will ask on the first fill."
+                    : `Approved for ${c.allowed_hosts.length} ${
+                        c.allowed_hosts.length === 1 ? "site" : "sites"
+                      }.`}
+                </span>
               </li>
             ))}
           </ul>
@@ -647,6 +641,40 @@ export default function Settings({ accountId, onLock }: Props) {
         {bridgeError && (
           <p role="alert" className="text-body-sm text-error">
             {bridgeError}
+          </p>
+        )}
+      </div>
+
+      {/* Its own card rather than a row of chips inside the pairing panel.
+          The list only grows — one entry per site you ever log into — and a
+          growing list tucked under something else is one nobody reads. */}
+      <div className="card flex flex-col gap-3 p-5">
+        <div className="flex items-center gap-2 text-on-surface">
+          <ShieldIcon size={16} />
+          <h2 className="text-body-md font-semibold">Approved sites</h2>
+          <span className="text-label-md text-on-surface-variant opacity-70">
+            · {approvedTotal} {approvedTotal === 1 ? "site" : "sites"}
+          </span>
+        </div>
+
+        <p className="text-body-sm text-on-surface-variant">
+          Pairing lets a browser <em>ask</em>; this is what it may be answered for. A site lands
+          here when you say yes to the dialog this window raises, and revoking one puts it back
+          to asking.
+        </p>
+
+        <button
+          type="button"
+          className="btn-secondary self-start"
+          onClick={() => setShowApproved(true)}
+          disabled={(bridge?.clients.length ?? 0) === 0}
+        >
+          {approvedTotal === 0 ? "See the list" : "See all approved sites"}
+        </button>
+
+        {(bridge?.clients.length ?? 0) === 0 && (
+          <p className="text-body-sm text-on-surface-variant opacity-70">
+            Nothing to show until a browser is paired.
           </p>
         )}
       </div>
@@ -812,6 +840,14 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {recoveryCode && (
         <RecoveryCodeDialog code={recoveryCode} onDone={() => setRecoveryCode(null)} />
+      )}
+
+      {showApproved && (
+        <ApprovedSites
+          clients={bridge?.clients ?? []}
+          onRevoke={revokeHost}
+          onClose={() => setShowApproved(false)}
+        />
       )}
 
       {showResetModal && (

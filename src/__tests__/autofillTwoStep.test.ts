@@ -83,7 +83,7 @@ describe("two-step login", () => {
   it("writes the password when the second step mounts", async () => {
     document.body.innerHTML = '<form><input name="email" type="email"></form>';
     const out = fill({ email: "me@test.example", password: "hunter2" });
-    expect(out.twoStep).toBe(true);
+    expect(out.deferred).toBe(true);
     expect(out.missing).toContain("password");
     expect(valueOf('input[name="email"]')).toBe("me@test.example");
 
@@ -108,11 +108,41 @@ describe("two-step login", () => {
 
   it("lets go of it after a minute", async () => {
     document.body.innerHTML = '<form><input name="email" type="email"></form>';
-    expect(fill({ email: "me@test.example", password: "hunter2" }).twoStep).toBe(true);
+    expect(fill({ email: "me@test.example", password: "hunter2" }).deferred).toBe(true);
 
     await settle(61_000);
     document.body.innerHTML = '<form><input name="password" type="password"></form>';
     await settle();
+    expect(valueOf('input[name="password"]')).toBe("");
+  });
+
+  it("carries the username across too, not just the password", async () => {
+    // Twitch: no login form on the page at all until its own button opens a
+    // modal. Holding only the password filled the modal's password box and
+    // left the username empty.
+    document.body.innerHTML = "<div>no form here</div>";
+    const out = fill({ username: "me", password: "hunter2" });
+    expect(out.deferred).toBe(true);
+    expect(out.filled).toEqual([]);
+
+    document.body.innerHTML =
+      '<form><input name="username"><input name="password" type="password"></form>';
+    await settle();
+    expect(valueOf('input[name="username"]')).toBe("me");
+    expect(valueOf('input[name="password"]')).toBe("hunter2");
+  });
+
+  it("waits for a sign-in form, not a sign-up one", async () => {
+    document.body.innerHTML = "<div>no form here</div>";
+    expect(fill({ username: "me", password: "hunter2" }).deferred).toBe(true);
+
+    // Two password boxes is a registration form. Writing a saved login into
+    // one is the mistake the badge has always refused to make.
+    document.body.innerHTML =
+      '<form><input name="username"><input name="password" type="password">' +
+      '<input name="confirm-password" type="password"></form>';
+    await settle();
+    expect(valueOf('input[name="username"]')).toBe("");
     expect(valueOf('input[name="password"]')).toBe("");
   });
 
@@ -122,7 +152,7 @@ describe("two-step login", () => {
     document.body.innerHTML =
       '<form><input name="username"><input name="password" type="password"></form>';
     const out = fill({ username: "me", password: "hunter2" });
-    expect(out.twoStep).toBe(false);
+    expect(out.deferred).toBe(false);
     expect(valueOf('input[name="password"]')).toBe("hunter2");
 
     document.body.innerHTML = '<form><input name="password" type="password"></form>';

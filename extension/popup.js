@@ -125,7 +125,7 @@ function paired() {
   const note = document.createElement("div");
   note.className = "dim";
   note.textContent = "Open this again on a login page to fill from your vault.";
-  vaultEl.replaceChildren(done, note);
+  vaultEl.replaceChildren(stack(done, note));
   setTimeout(() => window.close(), 1200);
 }
 
@@ -166,7 +166,15 @@ function renderUnavailable() {
   again.type = "button";
   again.textContent = "Pair again";
   again.addEventListener("click", () => renderPairing());
-  vaultEl.replaceChildren(note, hint, again);
+  vaultEl.replaceChildren(stack(note, hint, again));
+}
+
+/** One message and one action, centred. */
+function stack(...children) {
+  const box = document.createElement("div");
+  box.className = "stack";
+  box.append(...children);
+  return box;
 }
 
 /** Matches the app's own naming in src/lib/methods.tsx. */
@@ -251,7 +259,7 @@ function renderApproval(result, origin) {
     }
   });
 
-  vaultEl.replaceChildren(head, note, go);
+  vaultEl.replaceChildren(stack(head, note, go));
 }
 
 function renderItems(result, tabId, origin) {
@@ -293,8 +301,8 @@ function renderItems(result, tabId, origin) {
     const copyBtn = document.createElement("button");
     copyBtn.className = "copy";
     copyBtn.type = "button";
-    copyBtn.textContent = "Copy";
-    copyBtn.title = "Copy the password — the app clears it after a minute";
+    copyBtn.textContent = "Copy password";
+    copyBtn.title = "Put the password on the clipboard — the app clears it after a minute";
     copyBtn.addEventListener("click", () => copyPassword(copyBtn, item, origin));
 
     const row = document.createElement("div");
@@ -303,7 +311,11 @@ function renderItems(result, tabId, origin) {
     li.append(row);
     list.append(li);
   }
-  vaultEl.replaceChildren(list);
+  const caption = document.createElement("div");
+  caption.className = "caption";
+  caption.textContent =
+    "Click an account to fill it. Copy password puts it on the clipboard for a minute instead — for boxes the filler cannot reach.";
+  vaultEl.replaceChildren(list, caption);
 }
 
 async function copyPassword(button, item, origin) {
@@ -311,7 +323,7 @@ async function copyPassword(button, item, origin) {
   const was = button.textContent;
   try {
     const { seconds } = await copy(item.id, origin, "password");
-    button.textContent = `${seconds}s`;
+    button.textContent = `Copied · ${seconds}s`;
   } catch (e) {
     text(vaultEl, `Could not copy: ${describe(e)}`);
     return;
@@ -335,16 +347,22 @@ async function fill(button, item, tabId, origin) {
       text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
       return;
     }
-    if (!out || out.filled.length === 0) {
-      text(vaultEl, "Nothing on this page matched those fields.");
+    // Checked before "nothing matched", because a deferred fill usually
+    // *is* a page where nothing matched yet — that was the whole confusion:
+    // it said nothing could be filled and then filled the modal a moment
+    // later.
+    if (out && out.deferred) {
+      text(
+        vaultEl,
+        out.filled.length > 0
+          ? "Filled what is on the page. The rest goes in when the next step appears."
+          : "No login form here yet. It fills as soon as one opens — click the site's login button.",
+        "muted"
+      );
       return;
     }
-    if (out.twoStep) {
-      // Step one of a Google/Microsoft-style login: the identifier box is
-      // all there is. The content script holds the password for a minute and
-      // writes it when the second step appears, so closing here would be a
-      // lie about what happened.
-      text(vaultEl, "Filled your username. The password goes in on the next step.", "muted");
+    if (!out || out.filled.length === 0) {
+      text(vaultEl, "Nothing on this page matched those fields.");
       return;
     }
     // No report on the way out. What landed cannot be checked honestly from

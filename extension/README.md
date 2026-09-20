@@ -95,7 +95,7 @@ Unpair from **Settings → Browser extension**; that drops the public key
 immediately, so whatever the browser still has stored signs nothing.
 
 A field the filler cannot name — a PIN, a CVV, a second form on the page —
-has a **Copy** button beside each account instead. That routes through the
+has a **Copy password** button beside each account instead. That routes through the
 app: the app puts the value on the clipboard and clears it a minute later,
 and the reply says only that it happened. The plaintext never reaches the
 extension, which is why this is offered rather than showing the password in
@@ -154,18 +154,29 @@ app, which has no way to tell the extension, so the extension watches for the
 answer and redraws itself; it also asks the app first whether the question is
 already settled, rather than putting the same dialog up twice.
 
-## Two-step logins
+## Forms that are not there yet
 
-Google and Microsoft ask for the identifier first and the password on a
-second screen. The popup has closed by the time that screen exists, so
-`content.js` keeps the password — in the isolated world, which the page's
-own scripts cannot read — and writes it when a password box appears. It
-lets go on the first successful write, after a minute, when the origin
-changes, and when the page goes away.
+Two shapes of the same problem. Google and Microsoft ask for the identifier
+first and the password on a second screen. Twitch shows no login form at all
+until you click its own button and a modal mounts. Either way the popup has
+closed by the time the field exists.
 
-If the second step arrives as a full page load rather than in the same
-document, this script is torn down and the value goes with it. Fill that
-page from the popup like any other.
+So `content.js` keeps whatever did not land — in the isolated world, which
+the page's own scripts cannot read — and writes it when a sign-in form
+appears. *Whatever did not land*, not just the password: holding only the
+password is what filled Twitch's modal and left the username box empty.
+
+It writes only into a form with exactly one password box, the same rule the
+badge uses, so a registration form that mounts instead gets nothing. It lets
+go on the first successful write, after a minute, when the origin changes,
+and when the page goes away. The write is not debounced — the field is
+filled the moment it appears — and attribute changes are watched as well as
+nodes, because a modal is as likely to be revealed by a class change as
+mounted.
+
+If the next step arrives as a full page load rather than in the same
+document, this script is torn down and the values go with it. Fill that page
+from the popup like any other.
 
 ## Why the popup, and not an automatic fill
 

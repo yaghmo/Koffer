@@ -6,8 +6,8 @@
  * this file only supplies the URL and the plumbing.
  *
  * Nothing here holds a credential except in one case, spelled out at
- * `pending` below: the second step of a two-step login, where the password
- * arrives before the box that takes it exists.
+ * `pending` below: a fill that arrived before the form that takes it
+ * existed.
  */
 (function () {
   "use strict";
@@ -19,32 +19,43 @@
   var SETTLE_MS = 400;
 
   /**
-   * How long a password may wait for the second step of a two-step login.
+   * How long a fill may wait for the form it is meant for.
    *
-   * Long enough to type an email address and click Next; short enough that
-   * a page left open does not keep it.
+   * Long enough to type an email address and click Next, or to click a
+   * site's own "Log in" button; short enough that a page left open does not
+   * keep it.
    */
   var PENDING_MS = 60000;
 
+  /** Floor between two attempts, so a page that mutates hard is not hot. */
+  var PENDING_THROTTLE_MS = 50;
+
   /**
-   * A password with nowhere to go yet.
+   * A fill with nowhere to go yet.
    *
-   * Step one of a two-step login (Google, Microsoft) shows the identifier
-   * box and nothing else, so the password that came with the fill lands in
-   * no field at all -- the popup has closed by the time the password box
-   * exists. This is what writes it when the second step mounts.
+   * Two shapes of the same problem. Step one of a two-step login (Google,
+   * Microsoft) shows the identifier box and nothing else. A site like Twitch
+   * shows no login form at all until you click its own button and a modal
+   * mounts. Either way the popup has closed by the time the field exists,
+   * and this is what writes into it when it turns up.
    *
-   * Only the SPA case: a step two that arrives as a real page load tears
-   * this script down and takes the value with it, and the user fills that
-   * page from the popup like any other.
+   * It holds *everything* that did not land, not just the password. Holding
+   * only the password is what filled Twitch's modal with a password and left
+   * the username box empty.
+   *
+   * Only within the same document: a next step that arrives as a real page
+   * load tears this script down and takes the values with it, and that page
+   * is filled from the popup like any other.
    *
    * It lives in the isolated world, which the page's own scripts cannot
    * read, and it is dropped on the first successful write, after PENDING_MS,
-   * or the moment the origin changes. Holding a password in memory at all is
-   * a real cost; it buys the only version of this flow that finishes.
+   * when the origin changes, and when the page goes away. Holding a password
+   * in memory at all is a real cost; it buys the only version of this flow
+   * that finishes.
    */
   var pending = null;
   var pendingTimer = null;
+  var lastAttempt = 0;
 
   function clearPending() {
     pending = null;
@@ -52,22 +63,28 @@
     pendingTimer = null;
   }
 
-  function armPending(password) {
+  function armPending(data) {
     clearPending();
-    pending = { password: password, origin: location.origin };
+    pending = { data: data, origin: location.origin };
     pendingTimer = setTimeout(clearPending, PENDING_MS);
   }
 
   function fillPending() {
     if (!pending) return;
-    // A redirect between the two steps is exactly the case where writing
-    // blind would type the password into somebody else's form.
+    var at = Date.now();
+    if (at - lastAttempt < PENDING_THROTTLE_MS) return;
+    lastAttempt = at;
+    // A redirect while waiting is exactly the case where writing blind would
+    // type the password into somebody else's form.
     if (pending.origin !== location.origin) {
       clearPending();
       return;
     }
-    if (window.Autofill.detect(document).passwords === 0) return;
-    var out = window.Autofill.fill(document, { password: pending.password });
+    // Exactly one password box is a sign-in, which is the same rule
+    // `isLogin` uses. None means the form still is not here. Two or more is
+    // a sign-up, and a saved login must not be typed into one.
+    if (window.Autofill.detect(document).passwords !== 1) return;
+    var out = window.Autofill.fill(document, pending.data);
     if (out.filled.length > 0) clearPending();
   }
 
@@ -94,10 +111,7 @@
   var timer = null;
   function reportSoon() {
     clearTimeout(timer);
-    timer = setTimeout(function () {
-      fillPending();
-      report();
-    }, SETTLE_MS);
+    timer = setTimeout(report, SETTLE_MS);
   }
 
   ext.runtime.onMessage.addListener(function (msg, _sender, respond) {
@@ -118,14 +132,23 @@
         return false;
       }
       var out = window.Autofill.fill(document, msg.data);
-      // Nothing took the password and there is no password box on the page:
-      // this is step one of a two-step login, not a form that refused the
-      // value. Hold it for the step that asks.
-      var twoStep =
-        !!msg.data.password &&
-        out.missing.indexOf("password") !== -1 &&
+      // Whatever was asked for and is not in the page now. `missing` uses
+      // the same names as the data keys, so this is the leftover fill.
+      var leftover = {};
+      out.missing.forEach(function (name) {
+        var value = msg.data[name];
+        if (value !== undefined && value !== null && String(value) !== "") {
+          leftover[name] = value;
+        }
+      });
+      // A password with no password box to put it in means the form is not
+      // here yet -- the second step of a two-step login, or a modal the site
+      // has not opened. Anything else is a form that refused the value, and
+      // retrying harder does not beat a page that is actively clearing it.
+      var deferred =
+        leftover.password !== undefined &&
         window.Autofill.detect(document).passwords === 0;
-      if (twoStep) armPending(msg.data.password);
+      if (deferred) armPending(leftover);
       else clearPending();
       // Only field names and counts go back — never the values that were
       // written, which would put the password back on the message channel
@@ -136,7 +159,7 @@
           return f.field;
         }),
         missing: out.missing,
-        twoStep: twoStep,
+        deferred: deferred,
       });
       return false;
     }
@@ -149,8 +172,21 @@
   window.addEventListener("pagehide", clearPending);
 
   report();
-  new MutationObserver(reportSoon).observe(document.documentElement, {
+  // `fillPending` is not debounced: the whole point is that the field is
+  // written the moment it appears, and waiting out a settle timer that every
+  // further mutation resets is exactly how it ended up feeling slow. It
+  // costs one null check when nothing is waiting, which is almost always.
+  //
+  // Attributes are watched as well as nodes because a login modal is as
+  // likely to be revealed by a class change as mounted, and because the
+  // site's own "show password" eye flips `type` without touching the tree.
+  new MutationObserver(function () {
+    fillPending();
+    reportSoon();
+  }).observe(document.documentElement, {
     childList: true,
     subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden", "type"],
   });
 })();

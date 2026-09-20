@@ -47,6 +47,8 @@ vi.mock("../lib/api", () => ({
     bridgePairCode: vi.fn().mockResolvedValue("K7F2Q9MR"),
     bridgeCancelPairing: vi.fn().mockResolvedValue(undefined),
     bridgeUnpair: vi.fn().mockResolvedValue(undefined),
+    bridgeRevokeHost: vi.fn().mockResolvedValue(undefined),
+    bridgeApprove: vi.fn().mockResolvedValue(undefined),
     setBackupConfig: vi.fn().mockResolvedValue(undefined),
     clearBackupConfig: vi.fn().mockResolvedValue(undefined),
     backupNow: vi.fn().mockResolvedValue(undefined),
@@ -286,6 +288,38 @@ describe("Settings browser extension card", () => {
     fireEvent.click(screen.getByRole("button", { name: /unpair/i }));
     await waitFor(() =>
       expect(api.bridgeUnpair).toHaveBeenCalledWith("chrome-extension://abcdef")
+    );
+  });
+
+  it("opens the approved-sites list and revokes one site", async () => {
+    // The list only grows, so it lives in its own panel rather than as a row
+    // of chips buried under the pairing controls.
+    const { api } = await import("../lib/api");
+    vi.mocked(api.bridgeState).mockResolvedValue({
+      listen_error: "",
+      port: 38471,
+      clients: [
+        {
+          origin: "chrome-extension://abcdef",
+          label: "Chrome",
+          paired_at: 1_700_000_000,
+          allowed_hosts: ["github.com", "twitch.tv"],
+        },
+      ],
+    });
+    render(<Settings accountId="a1" onLock={() => {}} />);
+
+    // The summary counts them; the sites themselves are behind the button.
+    expect(await screen.findByText(/Approved for 2 sites/i)).toBeTruthy();
+    expect(screen.queryByText("twitch.tv")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /see all approved sites/i }));
+    expect(await screen.findByRole("dialog", { name: /approved sites/i })).toBeTruthy();
+    expect(screen.getByText("twitch.tv")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /stop filling twitch\.tv in Chrome/i }));
+    await waitFor(() =>
+      expect(api.bridgeRevokeHost).toHaveBeenCalledWith("chrome-extension://abcdef", "twitch.tv")
     );
   });
 
