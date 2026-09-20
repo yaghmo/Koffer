@@ -30,7 +30,11 @@
     password: {
       typeRe: /^password$/,
       autocomplete: "current-password",
-      nameRe: /^password$|current[-_]?password|passwd|\bpwd\b|user[-_]?pass/i,
+      // Matched against `fieldMeta`, which is name, id, placeholder and
+      // autocomplete joined into one string -- so an anchored /^password$/
+      // never fires, however obvious the field looks. Word boundaries are
+      // what actually work here.
+      nameRe: /(^|[^a-z])(current[-_]?)?(password|passwd|pwd)([^a-z]|$)|user[-_]?pass/i,
       report: "password",
     },
     email: {
@@ -98,6 +102,37 @@
     return parts.join(" ").toLowerCase();
   }
 
+  /**
+   * Is this a password box, masked or not?
+   *
+   * `type="password"` is the easy half. The other half is a box the site's
+   * own "show password" eye has flipped to `type="text"` -- still the
+   * password field, still what a fill should write into, and invisible to a
+   * detector that counts only the masked type. A page scanned after the eye
+   * was clicked used to read as "no login here".
+   *
+   * Only a plain text input is ever promoted, and only on a name match. That
+   * keeps `type="email"`, `type="search"` and every select and textarea out
+   * of it -- which also means a fill can no longer land a password in a
+   * search box named "passwd", the way the bare name match allowed.
+   */
+  function isPasswordBox(el) {
+    var type = String(el.type || "").toLowerCase();
+    if (type === "password") return true;
+    if (el.tagName !== "INPUT" || (type !== "text" && type !== "")) return false;
+    return !!roleMatches(ROLES.password, el);
+  }
+
+  /**
+   * `roleMatches`, plus the one rule that is not about the name: whatever
+   * takes the password has to be a password box. Used everywhere a role is
+   * matched for writing, so `fill` and `pending` cannot disagree about it.
+   */
+  function matchesRole(roleKey, el) {
+    if (roleKey === "password" && !isPasswordBox(el)) return null;
+    return roleMatches(ROLES[roleKey], el);
+  }
+
   function roleMatches(role, el) {
     if (role.typeRe && role.typeRe.test(el.type || "")) return "type";
     var auto = (el.getAttribute("autocomplete") || "").toLowerCase();
@@ -122,18 +157,17 @@
   /**
    * What kind of credential form, if any, is on this page right now.
    *
-   *   { passwords: <visible password boxes>, identifier: <bool> }
+   *   { passwords: <visible password boxes, revealed ones included>,
+   *     identifier: <bool> }
    *
    * Counts only. `isLogin` turns them into a verdict, because that needs
    * the page URL and this function deliberately only looks at the DOM.
    */
   function detect(scope) {
     var inputs = collectInputs(scope);
-    var passwords = inputs.filter(function (el) {
-      return String(el.type || "").toLowerCase() === "password";
-    });
+    var passwords = inputs.filter(isPasswordBox);
     var identifier = inputs.some(function (el) {
-      if (String(el.type || "").toLowerCase() === "password") return false;
+      if (isPasswordBox(el)) return false;
       return !!(roleMatches(ROLES.username, el) || roleMatches(ROLES.email, el));
     });
     return { passwords: passwords.length, identifier: identifier };
@@ -172,7 +206,7 @@
       for (var i = 0; i < inputs.length; i++) {
         var el = inputs[i];
         if (claimed.indexOf(el) !== -1) continue;
-        if (roleMatches(ROLES[role], el)) {
+        if (matchesRole(role, el)) {
           match = el;
           break;
         }
@@ -183,7 +217,7 @@
       }
       setValue(match, String(value).trim());
       claimed.push(match);
-      filled.push({ field: ROLES[role].report, value: value, matchedBy: roleMatches(ROLES[role], match) });
+      filled.push({ field: ROLES[role].report, value: value, matchedBy: matchesRole(role, match) });
     });
 
     return {
@@ -211,7 +245,7 @@
       if (value === undefined || value === null || String(value).trim() === "") return;
       var wanted = String(value).trim();
       var landed = inputs.some(function (el) {
-        return roleMatches(ROLES[role], el) && el.value === wanted;
+        return matchesRole(role, el) && el.value === wanted;
       });
       if (!landed) left[role] = value;
     });

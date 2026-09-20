@@ -44,6 +44,36 @@ describe("detect", () => {
     expect(Autofill.detect(document)).toEqual({ passwords: 1, identifier: true });
   });
 
+  it("counts a password box the site's own eye has revealed", () => {
+    // Clicking "show password" flips the field to type="text". Counting only
+    // the masked type read this page as "no login here", and the badge, the
+    // menu and the popup all went quiet on a form that was right there.
+    document.body.innerHTML = `
+      <form>
+        <input name="username">
+        <input name="password" type="text">
+      </form>`;
+    expect(Autofill.detect(document)).toEqual({ passwords: 1, identifier: true });
+  });
+
+  it("still sees a sign-up form as two boxes once they are revealed", () => {
+    // The count is the guard that stops a saved login being offered on a
+    // registration form, so revealing the boxes must not disarm it.
+    document.body.innerHTML = `
+      <form>
+        <input name="email" type="email">
+        <input name="password" type="text">
+        <input name="confirm-password" type="text">
+      </form>`;
+    expect(Autofill.detect(document).passwords).toBe(2);
+  });
+
+  it("does not mistake a search box for a revealed password", () => {
+    document.body.innerHTML = `
+      <input type="search" name="password-search" placeholder="Search passwords">`;
+    expect(Autofill.detect(document).passwords).toBe(0);
+  });
+
   it("counts both boxes on a sign-up form", () => {
     // The count is what keeps a saved login from being offered here.
     document.body.innerHTML = `
@@ -211,5 +241,29 @@ describe("fill finds a revealed password box", () => {
     expect(
       document.querySelector<HTMLInputElement>('input[name="confirmPassword"]')!.value
     ).toBe("");
+  });
+});
+
+describe("filling a revealed password", () => {
+  it("writes into the unmasked box", () => {
+    document.body.innerHTML = `
+      <form>
+        <input name="username">
+        <input name="password" type="text">
+      </form>`;
+    const out = Autofill.fill(document, { username: "me", password: "hunter2" });
+    expect(out.missing).not.toContain("password");
+    expect((document.querySelector('input[name="password"]') as HTMLInputElement).value).toBe(
+      "hunter2"
+    );
+  });
+
+  it("never writes a password into a search box that happens to be named one", () => {
+    // The name match alone used to be enough, which meant a password could
+    // be typed into a site's own search field and submitted with it.
+    document.body.innerHTML = `<input type="search" name="passwd">`;
+    const out = Autofill.fill(document, { password: "hunter2" });
+    expect(out.missing).toContain("password");
+    expect((document.querySelector("input") as HTMLInputElement).value).toBe("");
   });
 });
