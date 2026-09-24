@@ -1687,6 +1687,7 @@ mod tests {
             totp: String::new(),
             previous_passwords: vec![],
             last_seen: None,
+            password_from_browser: false,
         }
     }
 

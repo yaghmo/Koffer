@@ -47,6 +47,11 @@ pub struct LoginFields {
     /// not this one and the user chose not to update. Shown as a warning.
     #[serde(default)]
     pub last_seen: Option<LastSeen>,
+    /// Whether the browser, not the user in this app, set the current
+    /// password. Browser writes evict browser-set history first, so a stolen
+    /// extension key cannot push a password the user chose out of history.
+    #[serde(default)]
+    pub password_from_browser: bool,
 }
 
 fn default_login_method() -> String {
@@ -57,6 +62,10 @@ fn default_login_method() -> String {
 pub struct PreviousPassword {
     pub password: String,
     pub replaced_at: i64,
+    /// This password had been set by the browser. See
+    /// `LoginFields::password_from_browser`.
+    #[serde(default)]
+    pub from_browser: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -414,18 +423,45 @@ pub fn get_item(vault: &Vault, id: Uuid) -> Option<&Item> {
     vault.items.iter().find(|i| i.id() == id)
 }
 
-/// Change a login's password, keeping the old one in its history.
+/// Change a login's password from the app, keeping the old one in its
+/// history.
 pub fn set_password(fields: &mut LoginFields, new: String, now: i64) {
+    set_password_from(fields, new, now, false);
+}
+
+/// Change a login's password, keeping the old one in its history.
+///
+/// A write from the browser makes room by dropping the oldest password the
+/// browser itself set, and only falls back to the oldest overall when there
+/// is none. So however many updates a stolen key sends, the passwords the
+/// user chose stay until the user's own changes age them out.
+pub fn set_password_from(fields: &mut LoginFields, new: String, now: i64, from_browser: bool) {
     if fields.password == new {
         return;
     }
     let old = std::mem::replace(&mut fields.password, new);
     if !old.is_empty() {
-        fields
-            .previous_passwords
-            .insert(0, PreviousPassword { password: old, replaced_at: now });
-        fields.previous_passwords.truncate(MAX_PREVIOUS);
+        fields.previous_passwords.insert(
+            0,
+            PreviousPassword {
+                password: old,
+                replaced_at: now,
+                from_browser: fields.password_from_browser,
+            },
+        );
+        while fields.previous_passwords.len() > MAX_PREVIOUS {
+            let victim = if from_browser {
+                fields.previous_passwords.iter().rposition(|p| p.from_browser)
+            } else {
+                None
+            };
+            match victim {
+                Some(i) => fields.previous_passwords.remove(i),
+                None => fields.previous_passwords.pop().expect("longer than MAX_PREVIOUS"),
+            };
+        }
     }
+    fields.password_from_browser = from_browser;
     if fields.last_seen.as_ref().is_some_and(|s| s.password == fields.password) {
         fields.last_seen = None;
     }
@@ -436,6 +472,7 @@ pub fn set_password(fields: &mut LoginFields, new: String, now: i64) {
 pub fn carry_history(new: &mut LoginFields, old: &LoginFields, now: i64) {
     new.previous_passwords = old.previous_passwords.clone();
     new.last_seen = old.last_seen.clone();
+    new.password_from_browser = old.password_from_browser;
     let typed = std::mem::replace(&mut new.password, old.password.clone());
     set_password(new, typed, now);
 }
@@ -715,6 +752,7 @@ mod tests {
                 totp: String::new(),
                 previous_passwords: vec![],
                 last_seen: None,
+                password_from_browser: false,
             },
         }
     }
@@ -1031,6 +1069,7 @@ mod tests {
             totp: String::new(),
             previous_passwords: vec![],
             last_seen: None,
+            password_from_browser: false,
         }
     }
 
@@ -1044,6 +1083,22 @@ mod tests {
         let kept: Vec<_> = f.previous_passwords.iter().map(|p| p.password.as_str()).collect();
         assert_eq!(kept, ["p6", "p5", "p4", "p3", "p2"]);
         assert_eq!(f.previous_passwords[0].replaced_at, 7);
+    }
+
+    #[test]
+    fn browser_writes_evict_browser_passwords_first() {
+        let mut f = fields("mine");
+        for i in 0..8 {
+            set_password_from(&mut f, format!("b{i}"), i, true);
+        }
+        let kept: Vec<_> = f.previous_passwords.iter().map(|p| p.password.as_str()).collect();
+        assert!(kept.contains(&"mine"), "{kept:?}");
+        assert_eq!(kept.len(), MAX_PREVIOUS);
+        // An app change is the user's own: plain oldest-first eviction.
+        for i in 0..8 {
+            set_password(&mut f, format!("u{i}"), 20 + i);
+        }
+        assert!(!f.previous_passwords.iter().any(|p| p.password == "mine"));
     }
 
     #[test]
@@ -1073,7 +1128,7 @@ mod tests {
     fn an_editor_save_keeps_history_it_never_saw() {
         // The editor sends only the fields it shows, so history arrives empty.
         let mut old = fields("old");
-        old.previous_passwords = vec![PreviousPassword { password: "older".into(), replaced_at: 1 }];
+        old.previous_passwords = vec![PreviousPassword { password: "older".into(), replaced_at: 1, from_browser: false }];
         old.last_seen = Some(LastSeen { password: "seen".into(), seen_at: 2 });
         let mut typed = fields("typed");
         carry_history(&mut typed, &old, 3);
@@ -1088,7 +1143,7 @@ mod tests {
         let mut v = new_vault(vec![0; 16]);
         let id = Uuid::new_v4();
         let mut f = fields("current");
-        f.previous_passwords = vec![PreviousPassword { password: "before".into(), replaced_at: 1 }];
+        f.previous_passwords = vec![PreviousPassword { password: "before".into(), replaced_at: 1, from_browser: false }];
         f.last_seen = Some(LastSeen { password: "seen".into(), seen_at: 2 });
         add_item(
             &mut v,

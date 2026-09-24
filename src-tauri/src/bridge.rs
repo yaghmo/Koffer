@@ -45,8 +45,11 @@
 //! **The browser can also write, never destroy.** `/save`, `/update`,
 //! `/seen` and `/never` let the extension offer to keep a login the user
 //! just typed. Save and update need the host approved; every password they
-//! replace goes into the item's history, so a wrong capture or a stolen key
-//! cannot lose one. `/seen` and `/never` answer identically whatever they
+//! replace goes into the item's history, and a browser write only ever
+//! evicts history the browser itself wrote, so neither a wrong capture nor a
+//! stolen key can push out a password the user set in the app. (`/save` is
+//! not rate-limited: a key holder could add junk items, which is visible
+//! and deletable, not destructive.) `/seen` and `/never` answer identically whatever they
 //! did. `/offer` says `never` for a silenced site even unapproved — that
 //! tells a key holder the user visited it, not what the vault holds.
 //!
@@ -1450,6 +1453,7 @@ mod tests {
                 totp: String::new(),
                 previous_passwords: vec![],
                 last_seen: None,
+                password_from_browser: false,
             },
         }
     }

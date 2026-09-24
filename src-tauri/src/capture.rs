@@ -72,7 +72,9 @@ pub fn offer_for(
     } else if !current.is_empty() {
         logins_for(vault, origin).find(|(_, f)| f.password == current)
     } else {
-        None
+        // The password step of a two-step sign-in has no username box. A
+        // login whose password matches is this one; nothing else can be.
+        logins_for(vault, origin).find(|(_, f)| f.password == password)
     };
     match found {
         Some((b, f)) if f.password == password => Offer::Same { id: b.id },
@@ -105,6 +107,7 @@ pub fn save_new(vault: &mut Vault, origin: &str, username: &str, password: &str,
                 totp: String::new(),
                 previous_passwords: vec![],
                 last_seen: None,
+                password_from_browser: true,
             },
         },
     );
@@ -123,7 +126,7 @@ pub fn update_password(
         Some(Item::Login { base, fields })
             if fields.method == "credentials" && url_covers(&fields.url, origin) =>
         {
-            vault::set_password(fields, password.to_string(), now);
+            vault::set_password_from(fields, password.to_string(), now, true);
             base.updated_at = now;
             Ok(())
         }
@@ -266,6 +269,27 @@ mod tests {
         assert_eq!(fields.last_seen.as_ref().unwrap().password, "other");
         assert!(clear_last_seen(&mut v, id));
         assert!(!clear_last_seen(&mut v, id));
+    }
+
+    #[test]
+    fn a_password_only_step_matches_its_login_by_password() {
+        // Two-step sign-ins ask for the password on a page with no username.
+        let (v, id) = vault_with("me", "pw");
+        assert_eq!(offer_for(&v, true, SITE, "", "pw", ""), Offer::Same { id });
+    }
+
+    #[test]
+    fn a_stolen_key_cannot_push_a_user_set_password_out_of_history() {
+        let (mut v, id) = vault_with("me", "user-set");
+        // Make it a password the user chose in the app.
+        let Some(Item::Login { fields, .. }) = v.items.iter_mut().find(|i| i.id() == id) else { panic!() };
+        fields.password_from_browser = false;
+        for i in 0..20 {
+            update_password(&mut v, id, SITE, &format!("junk{i}"), 10 + i).unwrap();
+        }
+        let Some(Item::Login { fields, .. }) = vault::get_item(&v, id) else { panic!() };
+        assert!(fields.previous_passwords.iter().any(|p| p.password == "user-set"));
+        assert!(fields.previous_passwords.len() <= vault::MAX_PREVIOUS);
     }
 
     #[test]
