@@ -1,0 +1,103 @@
+import { describe, expect, it, vi } from "vitest";
+// @ts-expect-error untyped extension source
+import { createTracker, sameSite, HOLD_MS, CONFIRM_MS } from "../../extension/capture.js";
+
+function harness(state: { login: boolean; origin: string } | null) {
+  const saved = new Map<number, unknown>();
+  let clock = 1_000;
+  const timers: (() => Promise<void> | void)[] = [];
+  const onSuccess = vi.fn();
+  const tracker = createTracker({
+    store: {
+      get: async (t: number) => saved.get(t) ?? null,
+      set: async (t: number, v: unknown) => void (v === null ? saved.delete(t) : saved.set(t, v)),
+    },
+    askState: async () => state,
+    onSuccess,
+    now: () => clock,
+    setTimer: (fn: () => void) => timers.push(fn),
+  });
+  return {
+    tracker,
+    onSuccess,
+    saved,
+    tick: (ms: number) => (clock += ms),
+    fire: async () => {
+      for (const fn of timers.splice(0)) await fn();
+    },
+  };
+}
+
+const cap = { origin: "https://accounts.site.test", username: "me", password: "pw", current: "" };
+
+describe("sameSite", () => {
+  it("treats subdomains of one site as one site", () => {
+    expect(sameSite("https://accounts.site.test", "https://www.site.test")).toBe(true);
+    expect(sameSite("https://a.example.co.uk", "https://b.example.co.uk")).toBe(true);
+  });
+  it("does not treat an OAuth hop as the same site", () => {
+    expect(sameSite("https://site.test", "https://accounts.google.com")).toBe(false);
+    expect(sameSite("https://one.co.uk", "https://two.co.uk")).toBe(false);
+  });
+});
+
+describe("tracker", () => {
+  it("succeeds once the form has stayed gone", async () => {
+    const h = harness({ login: false, origin: "https://www.site.test" });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: false, origin: "https://www.site.test" });
+    expect(h.onSuccess).not.toHaveBeenCalled();
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).toHaveBeenCalledWith(1, expect.objectContaining({ username: "me", password: "pw" }));
+  });
+
+  it("never succeeds while the login form is still up", async () => {
+    const h = harness({ login: true, origin: cap.origin });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: true, origin: cap.origin });
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("does not succeed if the form came back before the check", async () => {
+    const h = harness({ login: true, origin: cap.origin });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: false, origin: cap.origin });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("waits through a hop to another site", async () => {
+    const h = harness({ login: false, origin: "https://accounts.google.com" });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: false, origin: "https://accounts.google.com" });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+    expect(h.saved.has(1)).toBe(true);
+  });
+
+  it("drops a capture older than two minutes", async () => {
+    const h = harness({ login: false, origin: cap.origin });
+    await h.tracker.captured(1, cap);
+    h.tick(HOLD_MS + 1);
+    await h.tracker.detected(1, { login: false, origin: cap.origin });
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+    expect(h.saved.has(1)).toBe(false);
+  });
+
+  it("offers only the second of two attempts", async () => {
+    const h = harness({ login: false, origin: cap.origin });
+    await h.tracker.captured(1, { ...cap, password: "wrong" });
+    await h.tracker.detected(1, { login: true, origin: cap.origin });
+    await h.tracker.captured(1, { ...cap, password: "right" });
+    await h.tracker.detected(1, { login: false, origin: cap.origin });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).toHaveBeenCalledTimes(1);
+    expect(h.onSuccess.mock.calls[0][1].password).toBe("right");
+  });
+});

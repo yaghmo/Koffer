@@ -453,6 +453,48 @@
   }
 
   /**
+   * What a submitted form signs in with, for the offer to save it.
+   *
+   * `{ username, password, current }`, or null when no password box has a
+   * value. `current` is only set on a change-password form, where the
+   * account is often found by its old password because there is no
+   * username box at all.
+   */
+  function captured(scope) {
+    var inputs = collectInputs(scope);
+    var boxes = inputs.filter(function (el) {
+      return isPasswordBox(el) && el.value;
+    });
+    if (boxes.length === 0) return null;
+    var values = boxes.map(function (el) {
+      return el.value;
+    });
+    var password = values[0];
+    var current = "";
+    var distinct = values.filter(function (v, i) {
+      return values.indexOf(v) === i;
+    });
+    if (distinct.length > 1) {
+      // A change-password form: the new one is the box that says so, else
+      // the last; the current one is the box that says so, else the first.
+      var fresh = boxes.filter(function (el) {
+        return hasAuto(el, "new-password");
+      });
+      var old = boxes.filter(function (el) {
+        return hasAuto(el, "current-password");
+      });
+      password = (fresh.length ? fresh[fresh.length - 1] : boxes[boxes.length - 1]).value;
+      var was = (old.length ? old[0] : boxes[0]).value;
+      if (was !== password) current = was;
+    }
+    var user = inputs.filter(function (el) {
+      if (isPasswordBox(el) || !el.value) return false;
+      return !!(roleMatches(ROLES.username, el) || roleMatches(ROLES.email, el));
+    })[0];
+    return { username: user ? user.value.trim() : "", password: password, current: current };
+  }
+
+  /**
    * "+1 555-123-4567" as its dial code and the rest.
    *
    * Done here rather than in the app so no country table has to cross the
@@ -692,5 +734,5 @@
     return out;
   }
 
-  global.Autofill = { fill: fill, detect: detect, isLogin: isLogin };
+  global.Autofill = { fill: fill, detect: detect, isLogin: isLogin, captured: captured };
 })(typeof window !== "undefined" ? window : this);

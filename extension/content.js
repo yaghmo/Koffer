@@ -114,6 +114,65 @@
     timer = setTimeout(report, SETTLE_MS);
   }
 
+  /**
+   * Buttons that look like they send a login. Many sites use a plain
+   * `type="button"` with a click handler rather than a form submit.
+   */
+  var SUBMITTISH = /log\s?in|sign\s?(in|up)|register|continue|next|submit|create|join|save/i;
+
+  /**
+   * Hand a submitted login to the background script and keep nothing.
+   * Every attempt is sent; the background keeps only the newest, so a click
+   * on the page's own eye toggle is harmless -- its form never goes away,
+   * so it is never offered.
+   */
+  function capture(from) {
+    var scope = (from && from.closest && from.closest("form")) || document;
+    var got = window.Autofill.captured(scope);
+    if (!got) return;
+    try {
+      var sent = ext.runtime.sendMessage({
+        type: "captured",
+        origin: location.origin,
+        username: got.username,
+        password: got.password,
+        current: got.current,
+      });
+      if (sent && typeof sent.catch === "function") sent.catch(function () {});
+    } catch (e) {
+      // Worker asleep: this login is simply not offered.
+    }
+  }
+
+  // Capture phase and `isTrusted`: the page's own handlers cannot hide a
+  // submit from us, and a page script cannot forge one.
+  document.addEventListener(
+    "submit",
+    function (e) {
+      if (e.isTrusted) capture(e.target);
+    },
+    true
+  );
+  document.addEventListener(
+    "click",
+    function (e) {
+      if (!e.isTrusted || !e.target || !e.target.closest) return;
+      var b = e.target.closest('button, input[type="submit"], [role="button"]');
+      // A real submit button also fires `submit`, which already captured.
+      if (!b || b.type === "submit") return;
+      var words = (b.textContent || "") + " " + (b.value || "") + " " + (b.getAttribute("aria-label") || "");
+      if (SUBMITTISH.test(words)) capture(b);
+    },
+    true
+  );
+  document.addEventListener(
+    "keydown",
+    function (e) {
+      if (e.isTrusted && e.key === "Enter" && e.target && e.target.tagName === "INPUT") capture(e.target);
+    },
+    true
+  );
+
   ext.runtime.onMessage.addListener(function (msg, _sender, respond) {
     if (msg && msg.type === "state") {
       respond({ login: isLoginPage(), origin: location.origin });
