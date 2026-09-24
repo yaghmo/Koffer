@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod autolock;
 pub mod bridge;
+pub mod capture;
 pub mod clipboard;
 pub mod cloud;
 pub mod commands;
