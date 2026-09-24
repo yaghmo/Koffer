@@ -6,6 +6,7 @@ import type { BackupState, BridgeState, SecurityState, VaultStorage } from "../l
 import { SettingsIcon, ShieldIcon, ImageIcon, XIcon, DatabaseIcon, KeyIcon, CloudIcon } from "../components/Icon";
 import RecoveryCodeDialog from "../components/RecoveryCodeDialog";
 import ApprovedSites from "../components/ApprovedSites";
+import NeverSaveSites from "../components/NeverSaveSites";
 import { useHotkey } from "../lib/useHotkey";
 
 function formatBytes(n: number): string {
@@ -678,6 +679,8 @@ export default function Settings({ accountId, onLock }: Props) {
           </p>
         )}
       </div>
+
+      <NeverSaveSites />
 
       <div className="card flex flex-col gap-3 p-5">
         <div className="flex items-center gap-2 text-on-surface">

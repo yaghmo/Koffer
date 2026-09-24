@@ -41,6 +41,8 @@ vi.mock("../lib/api", () => ({
     securityState: vi.fn().mockResolvedValue({ has_recovery: true, last_export_secs: 0 }),
     createRecoveryCode: vi.fn().mockResolvedValue("K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"),
     saveRecoveryCode: vi.fn().mockResolvedValue(undefined),
+    listNeverSave: vi.fn().mockResolvedValue(["ads.example", "forum.example"]),
+    removeNeverSave: vi.fn().mockResolvedValue(undefined),
     changeMasterPassword: vi.fn().mockResolvedValue(undefined),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
     getBackupConfig: vi.fn().mockResolvedValue({ configured: false, url: "", last_backup_secs: 0, last_backup_error: "" }),
@@ -112,6 +114,16 @@ describe("Settings — security", () => {
     await waitFor(() => expect(api.createRecoveryCode).toHaveBeenCalledWith("hunter2hunter"));
     const dialog = await screen.findByRole("dialog", { name: /recovery code/i });
     expect(within(dialog).getByLabelText(/recovery code/i).textContent).toContain("K7F2Q");
+  });
+
+  it("lists sites that never offer saving and lets one ask again", async () => {
+    const { api } = await import("../lib/api");
+    render(<Settings accountId="acct-1" onLock={() => {}} />);
+    const list = await screen.findByRole("list", { name: /never offer to save/i });
+    await waitFor(() => expect(list.textContent).toContain("forum.example"));
+    fireEvent.click(within(list).getByRole("button", { name: /remove forum\.example/i }));
+    await waitFor(() => expect(api.removeNeverSave).toHaveBeenCalledWith("forum.example"));
+    await waitFor(() => expect(list.textContent).not.toContain("forum.example"));
   });
 
   async function openRecoveryCode() {
