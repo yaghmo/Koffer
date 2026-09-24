@@ -73,6 +73,27 @@ describe("content capture", () => {
   });
 });
 
+describe("detect reports", () => {
+  it("say how many password boxes the page has, and whether it just loaded", async () => {
+    // The first report of a document is the fresh one; later ones are not.
+    await new Promise((r) => setTimeout(r, 600));
+    const first = sent.find((m) => m.type === "detect");
+    sent.length = 0;
+    login({ email: "", password: "" });
+    await new Promise((r) => setTimeout(r, 600));
+    const later = sent.filter((m) => m.type === "detect").pop();
+    expect(later).toMatchObject({ passwords: 1, fresh: false });
+    if (first) expect(first).toHaveProperty("fresh");
+  });
+
+  it("answer the state question with the password box count", () => {
+    login({ email: "", password: "" });
+    let reply: Record<string, unknown> = {};
+    listener({ type: "state" }, null, (r) => (reply = r as Record<string, unknown>));
+    expect(reply).toMatchObject({ passwords: 1 });
+  });
+});
+
 describe("offer bar plumbing", () => {
   type Show = (view: unknown, onChoice: (c: string) => void) => unknown;
   const bar = () => (window as unknown as { PMBar: { show: Show; hide: () => void } }).PMBar;

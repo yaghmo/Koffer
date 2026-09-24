@@ -2,10 +2,15 @@
  * capture.js — did the login the user just submitted work?
  *
  * The extension cannot see the site's answer, so it watches the page: a
- * login that worked makes the form go away. "Gone" has to hold for
- * `CONFIRM_MS`, because single-page apps briefly drop their form while
- * rebuilding it. A wrong password leaves the form up, so nothing is ever
- * offered for it; the capture expires, or the next attempt replaces it.
+ * login that worked makes every password box go away. "Gone" has to hold
+ * for `CONFIRM_MS`, because single-page apps briefly drop their form while
+ * rebuilding it. A wrong password leaves the form up, so nothing is offered
+ * for it; and when a freshly loaded page serves the password box again --
+ * the server answered with the form -- the attempt is dropped, so wandering
+ * off afterwards cannot make it look like a success.
+ *
+ * Step one of a two-step sign-in (username, then password on the next
+ * page) is held as a username alone, and lent to the password step.
  *
  * Kept free of `chrome.*` so it can be tested: the caller supplies storage,
  * a way to ask a tab for its state, and timers.
@@ -40,6 +45,11 @@ function siteOf(origin) {
   return labels.slice(shortSecond ? -3 : -2).join(".");
 }
 
+/** Is an open offer, or a capture, still young enough to act on? */
+export function isFresh(record, now) {
+  return !!record && now - record.at <= HOLD_MS;
+}
+
 export function sameSite(a, b) {
   const s = siteOf(a);
   return s !== "" && s === siteOf(b);
@@ -59,30 +69,37 @@ export function createTracker({ store, askState, onSuccess, now = Date.now, setT
   return {
     /** A form was submitted. The newest attempt replaces any earlier one. */
     async captured(tabId, capture) {
-      await store.set(tabId, { ...capture, at: now() });
+      if (!capture.password && !capture.username) return;
+      const next = { ...capture };
+      const prev = await live(tabId);
+      // The password step of a two-step sign-in: borrow step one's username.
+      if (next.password && !next.username && prev && !prev.password && sameSite(prev.origin, next.origin)) {
+        next.username = prev.username;
+      }
+      await store.set(tabId, { ...next, at: now() });
     },
 
-    /** The tab reported whether it shows a login form. */
+    /** The tab reported whether it shows a login form, and its password boxes. */
     async detected(tabId, msg) {
       const c = await live(tabId);
-      if (!c || msg.login || !sameSite(c.origin, msg.origin)) return;
+      if (!c || !c.password || !sameSite(c.origin, msg.origin)) return;
+      if (msg.passwords !== 0) {
+        // A new page came back with a password box: the site served the
+        // form again, which is what a rejected password looks like.
+        if (msg.fresh) await store.set(tabId, null);
+        return;
+      }
       const at = c.at;
       setTimer(async () => {
         const again = await live(tabId);
         // Replaced by a newer attempt, or already handled.
         if (!again || again.at !== at) return;
         const state = await askState(tabId);
-        if (!state || state.login || !sameSite(again.origin, state.origin)) return;
+        if (!state || state.passwords !== 0 || !sameSite(again.origin, state.origin)) return;
         await store.set(tabId, null);
         onSuccess(tabId, again);
       }, CONFIRM_MS);
     },
 
-    /** Take a capture out, e.g. after the bar was answered. */
-    async take(tabId) {
-      const c = await live(tabId);
-      await store.set(tabId, null);
-      return c;
-    },
   };
 }

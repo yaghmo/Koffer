@@ -92,12 +92,28 @@
     return window.Autofill.isLogin(window.Autofill.detect(document), location.href);
   }
 
+  /**
+   * The first report of this document is `fresh`: the page just loaded.
+   * A fresh page that still has a password box after a login attempt is
+   * the site serving the form again, which is how a rejected password
+   * looks after a full reload.
+   */
+  var reported = false;
+
+  function passwordBoxes() {
+    return window.Autofill.detect(document).passwords;
+  }
+
   function report() {
     try {
+      var fresh = !reported;
+      reported = true;
       var sent = ext.runtime.sendMessage({
         type: "detect",
         login: isLoginPage(),
         origin: location.origin,
+        passwords: passwordBoxes(),
+        fresh: fresh,
       });
       // MV3 hands back a promise in both browsers, and it rejects whenever
       // the worker is asleep or gone. Unhandled, that fills the page's own
@@ -175,7 +191,7 @@
 
   ext.runtime.onMessage.addListener(function (msg, _sender, respond) {
     if (msg && msg.type === "state") {
-      respond({ login: isLoginPage(), origin: location.origin });
+      respond({ login: isLoginPage(), origin: location.origin, passwords: passwordBoxes() });
       return false;
     }
     if (msg && msg.type === "offer") {

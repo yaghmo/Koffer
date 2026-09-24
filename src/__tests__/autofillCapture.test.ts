@@ -58,4 +58,9 @@ describe("captured", () => {
     });
     expect(Autofill.captured(d)).toBeNull();
   });
+
+  it("reads the username alone on step one of a two-step sign-in", () => {
+    const d = page('<form><input name="email" type="email"></form>', { email: "me@site.test" });
+    expect(Autofill.captured(d)).toEqual({ username: "me@site.test", password: "", current: "" });
+  });
 });

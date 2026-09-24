@@ -34,7 +34,7 @@
  * showing the other window's accounts.
  */
 import { matches, credentials, ask, offer, saveLogin, updateLogin, seen, never, NOT_PAIRED } from "./vault.js";
-import { createTracker } from "./capture.js";
+import { createTracker, isFresh } from "./capture.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
 const ext = globalThis.browser ?? globalThis.chrome;
@@ -234,12 +234,14 @@ async function offerFor(tabId, capture) {
   } catch (e) {
     if (e.message !== NOT_PAIRED) return; // app closed: say nothing
     // Locked, or not paired: keep the capture and let the user retry.
-    await sessionSet(OFFER_KEY + tabId, { capture, kind: "locked" });
+    await sessionSet(OFFER_KEY + tabId, { capture, kind: "locked", at: capture.at });
     return showBar(tabId, "locked", capture);
   }
   if (res.offer === "never" || res.offer === "same") return;
   const kind = res.offer === "needsApproval" ? "approve" : res.offer;
-  await sessionSet(OFFER_KEY + tabId, { capture, kind, id: res.id || "" });
+  // `at` from the capture: an unanswered offer holds the password no longer
+  // than the capture would have.
+  await sessionSet(OFFER_KEY + tabId, { capture, kind, id: res.id || "", at: capture.at });
   return showBar(tabId, kind, capture);
 }
 
@@ -252,10 +254,20 @@ function say(tabId, text, done) {
   return ext.tabs.sendMessage(tabId, { type: "offer-say", text, done }).catch(() => {});
 }
 
+/** An offer nobody answered goes when its capture would have. */
+async function dropStaleOffer(tabId) {
+  const open = await sessionGet(OFFER_KEY + tabId);
+  if (open && !isFresh(open, Date.now())) await sessionSet(OFFER_KEY + tabId, null);
+}
+
 /** A button on the bar. The capture is forgotten once it is answered. */
 async function onChoice(tabId, choice) {
   const open = await sessionGet(OFFER_KEY + tabId);
   if (!open) return;
+  if (!isFresh(open, Date.now())) {
+    await sessionSet(OFFER_KEY + tabId, null);
+    return say(tabId, "That was a while ago. Log in again to be offered it.", true);
+  }
   const { capture, kind, id } = open;
   try {
     if (choice === "never") {
@@ -307,6 +319,7 @@ ext.runtime.onMessage.addListener((msg, sender) => {
   }
   if (msg.type !== "detect") return false;
   tracker.detected(tabId, msg);
+  dropStaleOffer(tabId);
   if (msg.login) {
     ext.action.setBadgeText({ tabId, text: BADGE });
     ext.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOUR });

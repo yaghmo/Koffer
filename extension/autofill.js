@@ -456,16 +456,26 @@
    * What a submitted form signs in with, for the offer to save it.
    *
    * `{ username, password, current }`, or null when no password box has a
-   * value. `current` is only set on a change-password form, where the
-   * account is often found by its old password because there is no
-   * username box at all.
+   * value -- except step one of a two-step sign-in, a username with no
+   * password box at all, which comes back with `password: ""`. `current`
+   * is only set on a change-password form, where the account is often
+   * found by its old password because there is no username box at all.
    */
   function captured(scope) {
     var inputs = collectInputs(scope);
+    var user = inputs.filter(function (el) {
+      if (isPasswordBox(el) || !el.value) return false;
+      return !!(roleMatches(ROLES.username, el) || roleMatches(ROLES.email, el));
+    })[0];
     var boxes = inputs.filter(function (el) {
       return isPasswordBox(el) && el.value;
     });
-    if (boxes.length === 0) return null;
+    if (boxes.length === 0) {
+      // Step one of a two-step sign-in: a username and no password box at
+      // all. Held so the password step can be matched to its account.
+      var anyBox = inputs.some(isPasswordBox);
+      return user && !anyBox ? { username: user.value.trim(), password: "", current: "" } : null;
+    }
     var values = boxes.map(function (el) {
       return el.value;
     });
@@ -487,10 +497,6 @@
       var was = (old.length ? old[0] : boxes[0]).value;
       if (was !== password) current = was;
     }
-    var user = inputs.filter(function (el) {
-      if (isPasswordBox(el) || !el.value) return false;
-      return !!(roleMatches(ROLES.username, el) || roleMatches(ROLES.email, el));
-    })[0];
     return { username: user ? user.value.trim() : "", password: password, current: current };
   }
 

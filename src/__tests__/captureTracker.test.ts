@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 // @ts-expect-error untyped extension source
-import { createTracker, sameSite, HOLD_MS, CONFIRM_MS } from "../../extension/capture.js";
+import { createTracker, sameSite, isFresh, HOLD_MS, CONFIRM_MS } from "../../extension/capture.js";
 
-function harness(state: { login: boolean; origin: string } | null) {
+function harness(state: { login: boolean; origin: string; passwords?: number } | null) {
   const saved = new Map<number, unknown>();
   let clock = 1_000;
   const timers: (() => Promise<void> | void)[] = [];
@@ -43,9 +43,9 @@ describe("sameSite", () => {
 
 describe("tracker", () => {
   it("succeeds once the form has stayed gone", async () => {
-    const h = harness({ login: false, origin: "https://www.site.test" });
+    const h = harness({ login: false, origin: "https://www.site.test", passwords: 0 });
     await h.tracker.captured(1, cap);
-    await h.tracker.detected(1, { login: false, origin: "https://www.site.test" });
+    await h.tracker.detected(1, { login: false, origin: "https://www.site.test", passwords: 0 });
     expect(h.onSuccess).not.toHaveBeenCalled();
     h.tick(CONFIRM_MS);
     await h.fire();
@@ -90,14 +90,65 @@ describe("tracker", () => {
   });
 
   it("offers only the second of two attempts", async () => {
-    const h = harness({ login: false, origin: cap.origin });
+    const h = harness({ login: false, origin: cap.origin, passwords: 0 });
     await h.tracker.captured(1, { ...cap, password: "wrong" });
     await h.tracker.detected(1, { login: true, origin: cap.origin });
     await h.tracker.captured(1, { ...cap, password: "right" });
-    await h.tracker.detected(1, { login: false, origin: cap.origin });
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
     h.tick(CONFIRM_MS);
     await h.fire();
     expect(h.onSuccess).toHaveBeenCalledTimes(1);
     expect(h.onSuccess.mock.calls[0][1].password).toBe("right");
+  });
+
+  it("does not count a sign-up page that is still up as success", async () => {
+    // Two password boxes: not a "login" page, but the form is still there.
+    const h = harness({ login: false, origin: cap.origin, passwords: 2 });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 2 });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("drops the attempt when a fresh page serves the form again", async () => {
+    // Wrong password, full reload with the form: then the user wanders off.
+    const h = harness({ login: false, origin: cap.origin, passwords: 0 });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: true, origin: cap.origin, passwords: 1, fresh: true });
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+    expect(h.saved.has(1)).toBe(false);
+  });
+
+  it("carries the username from step one into a password-only step", async () => {
+    const h = harness({ login: false, origin: cap.origin, passwords: 0 });
+    await h.tracker.captured(1, { ...cap, password: "" });
+    // Step two loads fresh with a password box: that is not a failure.
+    await h.tracker.detected(1, { login: true, origin: cap.origin, passwords: 1, fresh: true });
+    await h.tracker.captured(1, { ...cap, username: "", password: "pw" });
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess.mock.calls[0][1]).toMatchObject({ username: "me", password: "pw" });
+  });
+
+  it("never offers a username with no password", async () => {
+    const h = harness({ login: false, origin: cap.origin, passwords: 0 });
+    await h.tracker.captured(1, { ...cap, password: "" });
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("isFresh", () => {
+  it("keeps an open offer no longer than a capture", () => {
+    expect(isFresh({ at: 0 }, HOLD_MS)).toBe(true);
+    expect(isFresh({ at: 0 }, HOLD_MS + 1)).toBe(false);
+    expect(isFresh(null, 0)).toBe(false);
   });
 });
