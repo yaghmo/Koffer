@@ -18,6 +18,7 @@ vi.mock("../lib/api", () => ({
     saveItem: vi.fn().mockResolvedValue(undefined),
     listItems: vi.fn().mockResolvedValue([]),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
+    totpFromClipboard: vi.fn(),
     fetchUrlMetadata: vi.fn().mockResolvedValue({
       title: null,
       favicon_data_url: null,
@@ -46,6 +47,27 @@ describe("ItemEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     expect(await screen.findByText(/password is required/i)).toBeTruthy();
     expect(api.saveItem).not.toHaveBeenCalled();
+  });
+
+  it("fills the 2FA key from a QR code on the clipboard, and saves it", async () => {
+    const { api } = await import("../lib/api");
+    const link = "otpauth://totp/Site:me?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    vi.mocked(api.totpFromClipboard).mockResolvedValueOnce(link);
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    fireEvent.change(await screen.findByLabelText(/title/i), { target: { value: "Site" } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: "pw" } });
+    fireEvent.click(screen.getByRole("button", { name: /paste qr code/i }));
+    expect(await screen.findByDisplayValue(link)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(api.saveItem).toHaveBeenCalledWith(expect.objectContaining({ totp: link })));
+  });
+
+  it("says why when the clipboard holds no QR code", async () => {
+    const { api } = await import("../lib/api");
+    vi.mocked(api.totpFromClipboard).mockRejectedValueOnce("No QR code found in the copied image.");
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /paste qr code/i }));
+    expect(await screen.findByText(/no qr code found/i)).toBeTruthy();
   });
 
   it("keeps the kind selector locked when editing an existing item", async () => {

@@ -47,9 +47,12 @@ sha2 = "0.10"
 # The real Public Suffix List, compiled in. The hand-written table it
 # replaces decided whether one site's saved login may be offered to another.
 psl = "2"
+totp-rs = { version = "5.7.2", features = ["otpauth"] }
+rqrr = "0.10.1"
 
 [target.'cfg(windows)'.dependencies]
 clipboard-win = "5"
 
 [dev-dependencies]
+qrcode = { version = "0.14.1", default-features = false }
 tempfile = "3"

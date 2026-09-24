@@ -33,6 +33,7 @@ const emptyLogin = (): LoginFields => ({
   username: "",
   password: "",
   phone: "",
+  totp: "",
 });
 const emptyNote = (): NoteFields => ({ body: "" });
 const emptyCard = (): CardFields => ({ cardholder: "", number: "", exp: "", cvv: "" });
@@ -196,6 +197,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
             username: item.username,
             password: item.password,
             phone: item.phone || "",
+            totp: item.totp || "",
           });
         } else if (item.type === "note") {
           setNote({ body: item.body });
@@ -654,6 +656,51 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
             </Section>
           )}
 
+          {kind === "login" && (
+            <Section title="Two-factor codes" icon={ShieldIcon}>
+              <p className="text-body-sm text-on-surface-variant">
+                When a site turns on an authenticator app, it shows a QR code. Screenshot it
+                (Win+Shift+S) and paste it here, or type the key it offers under "can't scan it?".
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  value={login.totp}
+                  onChange={(e) => {
+                    setLogin({ ...login, totp: e.target.value });
+                    markDirty();
+                  }}
+                  aria-label="2FA key"
+                  placeholder="2FA key"
+                  spellCheck={false}
+                  autoComplete="off"
+                  className="field flex-1 font-mono"
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={async () => {
+                    setFieldErrors(({ totp: _, ...rest }) => rest);
+                    try {
+                      const link = await api.totpFromClipboard();
+                      setLogin({ ...login, totp: link });
+                      markDirty();
+                      logUi("info", "item-editor", "2FA key read from a QR code");
+                    } catch (e) {
+                      setFieldErrors((f) => ({ ...f, totp: String(e) }));
+                    }
+                  }}
+                >
+                  Paste QR code
+                </button>
+              </div>
+              {fieldErrors.totp && (
+                <p role="alert" className="text-body-sm text-error">
+                  {fieldErrors.totp}
+                </p>
+              )}
+            </Section>
+          )}
+
           {showGenerator && (
             <Generator
               onClose={() => setShowGenerator(false)}
@@ -935,6 +982,7 @@ function NewAccountModal({
         username: normalizeAccount(username.trim()),
         password,
         phone: "",
+        totp: "",
       };
       await api.saveItem(item);
       logUi("info", "new-account", `created provider=${providerMethod}`);

@@ -18,6 +18,14 @@ export interface LoginFields {
   password: string;
   /** "+1 555-123-4567", for sites that sign you in by phone. May be empty. */
   phone: string;
+  /** 2FA key: an `otpauth://totp/...` link or a base32 key. May be empty. */
+  totp: string;
+}
+
+/** One authenticator code, and how long until the next. */
+export interface TotpCode {
+  code: string;
+  seconds_left: number;
 }
 
 export interface NoteFields {

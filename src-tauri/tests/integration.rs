@@ -24,6 +24,7 @@ fn full_vault_lifecycle() {
             username: "octocat".to_string(),
             password: "s3cret".to_string(),
             phone: String::new(),
+            totp: String::new(),
         },
     };
     add_item(&mut v, item.clone());

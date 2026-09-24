@@ -17,6 +17,7 @@ vi.mock("../lib/api", () => ({
       password: "s3cret",
     }),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
+    totpCode: vi.fn().mockResolvedValue({ code: "287082", seconds_left: 12 }),
     deleteItem: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -37,6 +38,26 @@ describe("ItemViewer", () => {
     expect(pwInput.value).toMatch(/[•]/);
     fireEvent.click(screen.getByRole("button", { name: /^show$/i }));
     expect(pwInput.value).toBe("s3cret");
+  });
+
+  it("shows the 2FA code with its countdown, and copies it without the space", async () => {
+    const { api } = await import("../lib/api");
+    vi.mocked(api.getItem).mockResolvedValueOnce({
+      type: "login", id: "1", title: "GitHub", notes: "", created_at: 0, updated_at: 0, favicon: "",
+      method: "credentials", url: "https://github.com", username: "octocat", password: "s3cret",
+      phone: "", totp: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+    });
+    render(<ItemViewer id="1" onEdit={() => {}} onClose={() => {}} onDelete={() => {}} />);
+    expect(await screen.findByDisplayValue("287 082")).toBeTruthy();
+    expect(screen.getByText("12s")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /copy 2fa code/i }));
+    await waitFor(() => expect(api.copyToClipboard).toHaveBeenCalledWith("287082", 30));
+  });
+
+  it("shows no 2FA row for a login without a key", async () => {
+    render(<ItemViewer id="1" onEdit={() => {}} onClose={() => {}} onDelete={() => {}} />);
+    await screen.findByDisplayValue("GitHub");
+    expect(screen.queryByLabelText(/2fa code/i)).toBeNull();
   });
 
   it("fires onEdit when the Edit button is clicked", async () => {

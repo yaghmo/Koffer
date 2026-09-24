@@ -1248,6 +1248,7 @@ mod tests {
                 username: user.to_string(),
                 password: pass.to_string(),
                 phone: String::new(),
+                totp: String::new(),
             },
         }
     }

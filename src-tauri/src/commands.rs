@@ -391,6 +391,13 @@ pub fn save_item(item: Item, state: State<'_, AppState>) -> Result<(), String> {
         let k = state.key.lock().unwrap();
         k.as_ref().ok_or_else(|| "locked".to_string())?.clone()
     };
+    // A 2FA key that cannot make a code is caught here, while the site's
+    // setup page is still open, not the first time a code is needed.
+    if let Item::Login { fields, .. } = &item {
+        if !fields.totp.trim().is_empty() {
+            crate::totp::parse(&fields.totp)?;
+        }
+    }
     let mut vault = state.vault.lock().unwrap();
     let vault = vault.as_mut().ok_or_else(|| "locked".to_string())?;
     let now = chrono::Utc::now().timestamp();
@@ -586,6 +593,31 @@ pub fn copy_to_clipboard(
     crate::clipboard::copy_with_ttl(&text, ttl).map_err(|e| e.to_string())?;
     state.autolock.lock().unwrap().reset();
     Ok(())
+}
+
+/// The current 2FA code for a login item.
+#[tauri::command]
+pub fn totp_code(id: String, state: State<'_, AppState>) -> Result<crate::totp::Code, String> {
+    let vault = state.vault.lock().unwrap();
+    let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
+    let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    let Some(Item::Login { fields, .. }) = vault::get_item(vault, uuid) else {
+        return Err("not found".into());
+    };
+    let totp = crate::totp::parse(&fields.totp)?;
+    let now = chrono::Utc::now().timestamp().max(0) as u64;
+    Ok(crate::totp::code_at(&totp, now))
+}
+
+/// Read a 2FA setup QR code out of a screenshot on the clipboard.
+#[tauri::command]
+pub fn totp_from_clipboard() -> Result<String, String> {
+    let image = arboard::Clipboard::new()
+        .and_then(|mut c| c.get_image())
+        .map_err(|_| "No image on the clipboard. Screenshot the QR code first.".to_string())?;
+    let link = crate::totp::qr_from_rgba(image.width, image.height, &image.bytes)?;
+    crate::log_info!("totp_from_clipboard", "read a 2FA setup code");
+    Ok(link)
 }
 
 fn current_account(state: &State<'_, AppState>) -> Result<accounts::Account, String> {
@@ -1540,6 +1572,7 @@ mod tests {
             username: username.to_string(),
             password: password.to_string(),
             phone: String::new(),
+            totp: String::new(),
         }
     }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { Item } from "../lib/types";
+import type { Item, TotpCode } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon, ExternalIcon, CardBrandIcon, NoteIcon } from "../components/Icon";
 import { methodLabel, MethodChip } from "../lib/methods";
 import { useHotkey } from "../lib/useHotkey";
@@ -98,6 +98,65 @@ function SecretField({
           onClick={onCopy}
           disabled={!value}
           aria-label={`Copy ${label}`}
+          className={`btn-secondary ${copied ? "!border-secondary !text-secondary" : ""}`}
+        >
+          {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The current authenticator code. Asked of the app once a second rather than
+ * worked out here, so the key never has to be decoded in the webview.
+ */
+function TotpField({ id, onCopy, copied }: { id: string; onCopy: (code: string) => void; copied: boolean }) {
+  const [totp, setTotp] = useState<TotpCode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    const tick = () =>
+      api
+        .totpCode(id)
+        .then((t) => live && (setTotp(t), setError(null)))
+        .catch((e) => live && setError(String(e)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [id]);
+
+  if (error) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <p className="label-md">2FA code</p>
+        <p role="alert" className="text-body-sm text-error">{error}</p>
+      </div>
+    );
+  }
+  // Split in half so it reads like the phone apps show it: "123 456".
+  const shown = totp ? totp.code.replace(/^(\d{3,4})(\d{3,4})$/, "$1 $2") : "";
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="label-md">2FA code</p>
+      <div className="flex items-center gap-2">
+        <input className="field flex-1 font-mono tracking-widest" value={shown} readOnly aria-label="2FA code" />
+        <span
+          className={`w-8 text-right font-mono text-body-sm ${totp && totp.seconds_left <= 5 ? "text-error" : "text-on-surface-variant"}`}
+          aria-label={totp ? `${totp.seconds_left} seconds left` : undefined}
+        >
+          {totp ? `${totp.seconds_left}s` : ""}
+        </span>
+        <button
+          type="button"
+          onClick={() => totp && onCopy(totp.code)}
+          disabled={!totp}
+          aria-label="Copy 2FA code"
           className={`btn-secondary ${copied ? "!border-secondary !text-secondary" : ""}`}
         >
           {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
@@ -265,6 +324,9 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
                 )}
               </>
             ) : null}
+            {item.totp && (
+              <TotpField id={item.id} onCopy={(code) => copy("totp", code)} copied={copied === "totp"} />
+            )}
           </>
         )}
         {item.type === "note" && (

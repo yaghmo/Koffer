@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, BackupState, BridgeState, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, UrlMetadata, VaultStats, VaultStorage } from "./types";
+import type { Account, BackupState, BridgeState, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, TotpCode, UrlMetadata, VaultStats, VaultStorage } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -33,6 +33,10 @@ export const api = {
 
   copyToClipboard: (text: string, ttlSecs?: number) =>
     invoke<void>("copy_to_clipboard", { text, ttlSecs: ttlSecs ?? null }),
+
+  totpCode: (id: string) => invoke<TotpCode>("totp_code", { id }),
+  /** The 2FA link inside a QR code screenshotted to the clipboard. */
+  totpFromClipboard: () => invoke<string>("totp_from_clipboard"),
 
   getConfig: () => invoke<Config>("get_config"),
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),

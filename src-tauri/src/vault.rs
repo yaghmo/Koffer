@@ -33,6 +33,10 @@ pub struct LoginFields {
     /// username. Empty on every login saved before this existed.
     #[serde(default)]
     pub phone: String,
+    /// The 2FA key: an `otpauth://totp/...` link or a bare base32 key.
+    /// Empty when the account has no authenticator codes. See `totp`.
+    #[serde(default)]
+    pub totp: String,
 }
 
 fn default_login_method() -> String {
@@ -619,6 +623,7 @@ mod tests {
                 username: "octocat".to_string(),
                 password: "s3cret".to_string(),
                 phone: String::new(),
+                totp: String::new(),
             },
         }
     }

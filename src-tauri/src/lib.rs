@@ -11,6 +11,7 @@ pub mod metadata;
 pub mod password;
 pub mod recovery;
 pub mod storage;
+pub mod totp;
 pub mod tray;
 pub mod vault;
 
@@ -71,6 +72,8 @@ pub fn run() {
             commands::set_item_pinned,
             commands::generate_password,
             commands::copy_to_clipboard,
+            commands::totp_code,
+            commands::totp_from_clipboard,
             commands::get_config,
             commands::set_autolock_mins,
             commands::set_auto_refresh_icons,
