@@ -51,9 +51,11 @@ is Windows-only, so it is not on the list.
 | File | Does |
 | --- | --- |
 | `manifest.json` | MV3 manifest, Chromium and Firefox from one file. |
-| `autofill.js` | Dependency-free DOM library: `detect`, `isLogin`, `fill`. No browser APIs, so it is unit-tested in `src/__tests__/autofillDetect.test.ts`. |
+| `autofill.js` | Dependency-free DOM library: `detect`, `isLogin`, `fill`, `captured`. No browser APIs, so it is unit-tested in `src/__tests__/autofillDetect.test.ts`. |
 | `content.js` | Runs `autofill.js` on every page, reports the verdict, fills on request, and holds the password for the second step of a two-step login. |
-| `background.js` | Service worker. Per-tab badge, and the right-click menu. |
+| `background.js` | Service worker. Per-tab badge, the right-click menu, and the offer to save a login. |
+| `capture.js` | Did a submitted login work? Free of browser APIs, tested in `src/__tests__/captureTracker.test.ts`. |
+| `bar.js` | The "Save this login?" bar, in a closed shadow root. |
 | `popup.js` / `popup.html` | Where a fill is normally started. |
 | `vault.js` | The one seam that talks to the desktop app. |
 | `demo.html` | Open directly in a browser to exercise `autofill.js` by hand. |
@@ -165,6 +167,29 @@ the approval dialog instead of listing accounts. Answering it happens in the
 app, which has no way to tell the extension, so the extension watches for the
 answer and redraws itself; it also asks the app first whether the question is
 already settled, rather than putting the same dialog up twice.
+
+## Offering to save a login
+
+Log in or sign up and, once the page has moved on, a bar in the top-right
+corner offers to **Save** the login or **Update** the password you already
+have. It shows the site and the username, never the password, and it lives
+in a closed shadow root the page can neither read nor click.
+
+- It only offers after the login looks like it worked: the login form has
+  been gone for a second and a half. A wrong password keeps the form up,
+  so nothing is offered.
+- On a site this browser is not approved for yet, **Save** first raises the
+  app's approval dialog; click Save again once you have said yes.
+- **Not now** on an update still remembers the password that worked; the
+  app shows a warning on that login with the option to use it.
+- **Never for this site** silences it. Settings → *Never offer to save*
+  lists those sites and lets one ask again.
+- Nothing is lost: every replaced password goes to the login's *Previous
+  passwords* in the app (the last five).
+- Turn off the browser's own "offer to save passwords", or both will ask.
+
+What was typed is held by the extension in session storage (memory, never
+disk) for at most two minutes, and dropped when the offer is answered.
 
 ## Phone numbers
 
