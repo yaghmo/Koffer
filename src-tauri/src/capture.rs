@@ -114,6 +114,24 @@ pub fn save_new(vault: &mut Vault, origin: &str, username: &str, password: &str,
     id
 }
 
+/// `save_new`, written straight away; if the write fails the item is taken
+/// back out, so a retry cannot leave two copies behind.
+pub fn save_new_or_undo(
+    vault: &mut Vault,
+    origin: &str,
+    username: &str,
+    password: &str,
+    now: i64,
+    write: impl FnOnce(&Vault) -> Result<(), String>,
+) -> Result<Uuid, String> {
+    let id = save_new(vault, origin, username, password, now);
+    if let Err(e) = write(vault) {
+        vault::delete_item(vault, id);
+        return Err(e);
+    }
+    Ok(id)
+}
+
 /// "Update" on the bar. Only an item this origin would be offered.
 pub fn update_password(
     vault: &mut Vault,
@@ -170,8 +188,12 @@ pub fn clear_last_seen(vault: &mut Vault, id: Uuid) -> bool {
     }
 }
 
+/// Most hosts the never list holds. It is the one write a key holder can
+/// make for an unapproved host, so it must not grow without bound.
+pub const MAX_NEVER: usize = 500;
+
 pub fn add_never(vault: &mut Vault, host: &str) -> bool {
-    if host.is_empty() || vault.never_save.iter().any(|h| h == host) {
+    if host.is_empty() || vault.never_save.len() >= MAX_NEVER || vault.never_save.iter().any(|h| h == host) {
         return false;
     }
     vault.never_save.push(host.to_string());
@@ -290,6 +312,25 @@ mod tests {
         let Some(Item::Login { fields, .. }) = vault::get_item(&v, id) else { panic!() };
         assert!(fields.previous_passwords.iter().any(|p| p.password == "user-set"));
         assert!(fields.previous_passwords.len() <= vault::MAX_PREVIOUS);
+    }
+
+    #[test]
+    fn the_never_list_stops_growing_at_its_cap() {
+        let (mut v, _) = vault_with("me", "pw");
+        for i in 0..MAX_NEVER + 10 {
+            add_never(&mut v, &format!("site{i}.test"));
+        }
+        assert_eq!(v.never_save.len(), MAX_NEVER);
+    }
+
+    #[test]
+    fn a_save_that_cannot_be_written_leaves_nothing_behind() {
+        let mut v = new_vault(vec![0; 16]);
+        let failed = save_new_or_undo(&mut v, SITE, "me", "pw", 1, |_| Err("disk full".into()));
+        assert!(failed.is_err());
+        assert!(v.items.is_empty());
+        let id = save_new_or_undo(&mut v, SITE, "me", "pw", 1, |_| Ok(())).unwrap();
+        assert!(vault::get_item(&v, id).is_some());
     }
 
     #[test]

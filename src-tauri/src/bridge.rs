@@ -1188,17 +1188,23 @@ fn save(app: &AppHandle, inc: &Incoming) -> Reply {
         return needs_approval(&host);
     }
     let now = chrono::Utc::now().timestamp();
-    let id = crate::capture::save_new(
+    let written = crate::capture::save_new_or_undo(
         session.vault_mut(),
         &origin,
         &field(&inc.body, "username"),
         &password,
         now,
+        |v| crate::commands::save_unlocked(&state, v),
     );
-    if let Err(e) = persist(app, session) {
-        crate::log_warn!("bridge", "save could not be written: {e}");
-        return fail(500, "the login could not be saved");
-    }
+    drop(session);
+    let id = match written {
+        Ok(id) => id,
+        Err(e) => {
+            crate::log_warn!("bridge", "save could not be written: {e}");
+            return fail(500, "the login could not be saved");
+        }
+    };
+    let _ = app.emit("vault://items-changed", ());
     crate::log_info!("bridge", "saved id={id}");
     reply(serde_json::json!({ "saved": true, "id": id.to_string() }), due)
 }
@@ -1894,6 +1900,17 @@ mod tests {
             body_of(&src, "fn gate(").contains("approved("),
             "the gate must actually check the approval list"
         );
+    }
+
+    #[test]
+    fn a_browser_write_never_skips_the_approval_check() {
+        // `/offer` must not answer past `never` for an unapproved host, and
+        // save, update and seen must not write for one. Pinned like the
+        // handout routes above.
+        let src = std::fs::read_to_string(file!()).unwrap();
+        for route in ["fn offer(", "fn save(", "fn update(", "fn seen("] {
+            assert!(body_of(&src, route).contains("approved("), "{route} must check approval");
+        }
     }
 
     use p256::ecdsa::signature::Signer;
