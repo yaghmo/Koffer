@@ -17,6 +17,22 @@ Edge, Brave, Opera and Vivaldi are the same steps — same MV3, same APIs.
 `about:debugging` → **This Firefox** → **Load Temporary Add-on** → pick
 `manifest.json`. Then pair exactly as above.
 
+A temporary add-on is gone after a restart. To keep it, have Mozilla sign
+it as an *unlisted* add-on — signed for you to install, not published on
+addons.mozilla.org:
+
+1. Create API credentials at
+   <https://addons.mozilla.org/developers/addon/api/key/> (a free AMO
+   account).
+2. From the repo root, with those two values in the environment:
+   `WEB_EXT_API_KEY=… WEB_EXT_API_SECRET=… npm run ext:sign`
+3. Open the `.xpi` it drops in `dist-ext/` with Firefox and accept the
+   install. Pair again: a new install is a new browser to the app.
+
+Bump `version` in `manifest.json` before signing again; AMO will not sign
+the same version twice. `npm run ext:lint` runs Mozilla's checks first.
+`npm run ext:build` makes the zip the Chrome Web Store asks for.
+
 Two things differ, and both are handled:
 
 - Firefox has no background service worker, so the manifest declares
