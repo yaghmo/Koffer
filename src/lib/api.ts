@@ -38,6 +38,13 @@ export const api = {
   /** The 2FA link inside a QR code screenshotted to the clipboard. */
   totpFromClipboard: () => invoke<string>("totp_from_clipboard"),
 
+  useLastSeen: (id: string) => invoke<void>("use_last_seen", { id }),
+  dismissLastSeen: (id: string) => invoke<void>("dismiss_last_seen", { id }),
+  restorePreviousPassword: (id: string, index: number) =>
+    invoke<void>("restore_previous_password", { id, index }),
+  listNeverSave: () => invoke<string[]>("list_never_save"),
+  removeNeverSave: (host: string) => invoke<void>("remove_never_save", { host }),
+
   getConfig: () => invoke<Config>("get_config"),
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
   setAutoRefreshIcons: (on: boolean) => invoke<void>("set_auto_refresh_icons", { on }),

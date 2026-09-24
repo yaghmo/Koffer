@@ -628,6 +628,64 @@ pub fn totp_from_clipboard() -> Result<String, String> {
     Ok(link)
 }
 
+/// Run one edit on the open vault, then write it.
+fn edit_vault<T>(
+    state: &State<'_, AppState>,
+    edit: impl FnOnce(&mut vault::Vault) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut guard = state.vault.lock().unwrap();
+    let vault = guard.as_mut().ok_or_else(|| "locked".to_string())?;
+    let out = edit(vault)?;
+    save_unlocked(state, vault)?;
+    state.autolock.lock().unwrap().reset();
+    Ok(out)
+}
+
+/// "Use this one" on a login's last-seen warning.
+#[tauri::command]
+pub fn use_last_seen(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().timestamp();
+    crate::log_info!("use_last_seen", "id={id}");
+    edit_vault(&state, |v| vault::use_last_seen(v, uuid, now))
+}
+
+#[tauri::command]
+pub fn dismiss_last_seen(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    edit_vault(&state, |v| vault::dismiss_last_seen(v, uuid))
+}
+
+#[tauri::command]
+pub fn restore_previous_password(
+    id: String,
+    index: usize,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().timestamp();
+    crate::log_info!("restore_previous_password", "id={id} index={index}");
+    edit_vault(&state, |v| vault::restore_previous(v, uuid, index, now))
+}
+
+/// Sites the extension will not offer to save logins on.
+#[tauri::command]
+pub fn list_never_save(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let guard = state.vault.lock().unwrap();
+    let vault = guard.as_ref().ok_or_else(|| "locked".to_string())?;
+    let mut hosts = vault.never_save.clone();
+    hosts.sort();
+    Ok(hosts)
+}
+
+#[tauri::command]
+pub fn remove_never_save(host: String, state: State<'_, AppState>) -> Result<(), String> {
+    edit_vault(&state, |v| {
+        crate::capture::remove_never(v, &host);
+        Ok(())
+    })
+}
+
 fn current_account(state: &State<'_, AppState>) -> Result<accounts::Account, String> {
     state
         .current_account

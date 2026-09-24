@@ -20,6 +20,20 @@ export interface LoginFields {
   phone: string;
   /** 2FA key: an `otpauth://totp/...` link or a base32 key. May be empty. */
   totp: string;
+  /** Replaced passwords, newest first. Sent by the app; the editor leaves it alone. */
+  previous_passwords?: PreviousPassword[];
+  /** The password a browser login last worked with, when it differs. */
+  last_seen?: LastSeen | null;
+}
+
+export interface PreviousPassword {
+  password: string;
+  replaced_at: number;
+}
+
+export interface LastSeen {
+  password: string;
+  seen_at: number;
 }
 
 /** One authenticator code, and how long until the next. */

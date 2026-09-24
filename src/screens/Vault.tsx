@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { onItemsChanged } from "../lib/events";
 import { logUi } from "../lib/log";
 import type { ItemKind, ItemMeta } from "../lib/types";
 import ItemList, { PinnedTiles } from "../components/ItemList";
@@ -163,6 +164,15 @@ export default function Vault({
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, kind, refreshKey]);
+
+  // The browser extension can add or change a login while this is open.
+  useEffect(() => {
+    const unlisten = onItemsChanged(() => refresh());
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, kind]);
 
   useHotkey("ctrl+k", () => {
     document.getElementById("vault-search")?.focus();

@@ -37,3 +37,8 @@ export function onApproveRequest(
 ): Promise<UnlistenFn> {
   return listen<ApproveRequest>("vault://approve-request", (e) => handler(e.payload));
 }
+
+/** The browser saved or changed a login; lists should reload. */
+export function onItemsChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen<void>("vault://items-changed", () => handler());
+}

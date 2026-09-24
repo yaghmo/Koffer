@@ -25,6 +25,15 @@ const ITEMS: ItemMeta[] = [
   meta({ id: "5", kind: "card", title: "Visa", pinned: true }),
 ];
 
+// The extension can change the list while it is open; this is its signal.
+let itemsChanged: () => void = () => {};
+vi.mock("../lib/events", () => ({
+  onItemsChanged: (fn: () => void) => {
+    itemsChanged = fn;
+    return Promise.resolve(() => {});
+  },
+}));
+
 vi.mock("../lib/api", () => ({
   api: {
     listItems: vi.fn().mockResolvedValue([]),
@@ -57,6 +66,15 @@ describe("Vault", () => {
     render(<Vault filter="all" {...editorProps} />);
     expect((await screen.findAllByText("GitHub")).length).toBeGreaterThan(0);
     expect(await screen.findByText("wifi")).toBeTruthy();
+  });
+
+  it("reloads when the browser extension saves a login", async () => {
+    const { api } = await import("../lib/api");
+    render(<Vault filter="all" {...editorProps} />);
+    await waitFor(() => expect(api.listItems).toHaveBeenCalled());
+    const before = (api.listItems as any).mock.calls.length;
+    itemsChanged();
+    await waitFor(() => expect((api.listItems as any).mock.calls.length).toBe(before + 1));
   });
 
   it("filters by kind when a filter button is clicked", async () => {
