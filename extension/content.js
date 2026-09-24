@@ -178,6 +178,24 @@
       respond({ login: isLoginPage(), origin: location.origin });
       return false;
     }
+    if (msg && msg.type === "offer") {
+      // "Save" stays open: the background answers with a message, and may
+      // need a second click after the app's approval dialog.
+      window.PMBar.show(msg.view, function (choice) {
+        if (choice !== "save") window.PMBar.hide();
+        try {
+          var sent = ext.runtime.sendMessage({ type: "offer-choice", choice: choice });
+          if (sent && typeof sent.catch === "function") sent.catch(function () {});
+        } catch (e) {
+          // Worker gone: the capture went with it, so there is nothing to do.
+        }
+      });
+      return false;
+    }
+    if (msg && msg.type === "offer-say") {
+      window.PMBar.say(msg.text, !!msg.done);
+      return false;
+    }
     if (msg && msg.type === "fill") {
       // The popup read this tab's origin when it opened and the app checked
       // the item against *that* origin. If the tab has navigated since --

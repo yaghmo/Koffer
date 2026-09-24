@@ -5,6 +5,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sent: Record<string, unknown>[] = [];
+type Listener = (msg: Record<string, unknown>, sender: unknown, respond: (r: unknown) => void) => boolean;
+let listener: Listener;
 
 beforeAll(async () => {
   Element.prototype.getClientRects = function (this: Element) {
@@ -18,11 +20,17 @@ beforeAll(async () => {
         sent.push(m);
         return Promise.resolve();
       },
-      onMessage: { addListener: () => {} },
+      onMessage: {
+        addListener: (fn: Listener) => {
+          listener = fn;
+        },
+      },
     },
   };
   // @ts-expect-error untyped extension source
   await import("../../extension/autofill.js");
+  // @ts-expect-error untyped extension source
+  await import("../../extension/bar.js");
   // @ts-expect-error untyped extension source
   await import("../../extension/content.js");
 });
@@ -62,5 +70,27 @@ describe("content capture", () => {
   it("sends nothing for a form with no password typed", () => {
     login({ email: "me@site.test" }).requestSubmit();
     expect(captures()).toEqual([]);
+  });
+});
+
+describe("offer bar plumbing", () => {
+  type Show = (view: unknown, onChoice: (c: string) => void) => unknown;
+  const bar = () => (window as unknown as { PMBar: { show: Show; hide: () => void } }).PMBar;
+
+  it("shows the bar the background asks for", () => {
+    listener({ type: "offer", view: { kind: "new", host: "site.test", username: "me" } }, null, () => {});
+    expect(document.querySelector("[data-pm-bar]")).not.toBeNull();
+    bar().hide();
+  });
+
+  it("sends the choice back to the background", () => {
+    const show = vi.spyOn(bar(), "show");
+    listener({ type: "offer", view: { kind: "update", host: "site.test", username: "me" } }, null, () => {});
+    const onChoice = show.mock.calls[0][1];
+    onChoice("later");
+    expect(sent).toContainEqual({ type: "offer-choice", choice: "later" });
+    // Anything but Save closes the bar at once.
+    expect(document.querySelector("[data-pm-bar]")).toBeNull();
+    show.mockRestore();
   });
 });

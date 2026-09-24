@@ -33,7 +33,8 @@
  * not fire for a window switch, so without that the menu could also be left
  * showing the other window's accounts.
  */
-import { matches, credentials, ask } from "./vault.js";
+import { matches, credentials, ask, offer, saveLogin, updateLogin, seen, never, NOT_PAIRED } from "./vault.js";
+import { createTracker } from "./capture.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
 const ext = globalThis.browser ?? globalThis.chrome;
@@ -180,10 +181,132 @@ async function waitForApproval(tabId, origin) {
   }
 }
 
+/**
+ * Offer to save a login the user just typed.
+ *
+ * Captures and the open offer live in `storage.session` under their own
+ * keys, not in the tab state a navigation wipes: a login's success shows up
+ * on the *next* page. Session storage is memory only, and a capture is
+ * dropped after two minutes (`capture.js`).
+ */
+const CAPTURE_KEY = "capture:";
+const OFFER_KEY = "offer:";
+
+async function sessionGet(key) {
+  try {
+    return (await ext.storage.session.get(key))[key] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function sessionSet(key, value) {
+  try {
+    if (value === null) await ext.storage.session.remove(key);
+    else await ext.storage.session.set({ [key]: value });
+  } catch {
+    // No session storage: this login is simply not offered.
+  }
+}
+
+const tracker = createTracker({
+  store: {
+    get: (tabId) => sessionGet(CAPTURE_KEY + tabId),
+    set: (tabId, v) => sessionSet(CAPTURE_KEY + tabId, v),
+  },
+  askState: (tabId) => ext.tabs.sendMessage(tabId, { type: "state" }).catch(() => null),
+  onSuccess: (tabId, capture) => offerFor(tabId, capture),
+});
+
+function hostOf(origin) {
+  try {
+    return new URL(origin).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/** Ask the app what to offer and put the bar up. */
+async function offerFor(tabId, capture) {
+  let res;
+  try {
+    res = await offer(capture.origin, capture.username, capture.password, capture.current);
+  } catch (e) {
+    if (e.message !== NOT_PAIRED) return; // app closed: say nothing
+    // Locked, or not paired: keep the capture and let the user retry.
+    await sessionSet(OFFER_KEY + tabId, { capture, kind: "locked" });
+    return showBar(tabId, "locked", capture);
+  }
+  if (res.offer === "never" || res.offer === "same") return;
+  const kind = res.offer === "needsApproval" ? "approve" : res.offer;
+  await sessionSet(OFFER_KEY + tabId, { capture, kind, id: res.id || "" });
+  return showBar(tabId, kind, capture);
+}
+
+function showBar(tabId, kind, capture) {
+  const view = { kind, host: hostOf(capture.origin), username: capture.username };
+  return ext.tabs.sendMessage(tabId, { type: "offer", view }).catch(() => {});
+}
+
+function say(tabId, text, done) {
+  return ext.tabs.sendMessage(tabId, { type: "offer-say", text, done }).catch(() => {});
+}
+
+/** A button on the bar. The capture is forgotten once it is answered. */
+async function onChoice(tabId, choice) {
+  const open = await sessionGet(OFFER_KEY + tabId);
+  if (!open) return;
+  const { capture, kind, id } = open;
+  try {
+    if (choice === "never") {
+      await never(capture.origin);
+    } else if (choice === "later") {
+      if (kind === "update") await seen(capture.origin, capture.username, capture.password);
+    } else if (kind === "new") {
+      await saveLogin(capture.origin, capture.username, capture.password);
+      await say(tabId, "Saved to Password Manager.", true);
+    } else if (kind === "update") {
+      await updateLogin(id, capture.origin, capture.password);
+      await say(tabId, "Password updated.", true);
+    } else if (kind === "approve") {
+      // The first click raises the app's dialog; the next asks again.
+      await ask(capture.origin);
+      await sessionSet(OFFER_KEY + tabId, { ...open, kind: "recheck" });
+      return say(tabId, "Approve this site in the app, then click Save again.");
+    } else {
+      // "recheck" or "locked": ask the app again from the top.
+      await sessionSet(OFFER_KEY + tabId, null);
+      return offerFor(tabId, capture);
+    }
+  } catch (e) {
+    return say(
+      tabId,
+      e.message === NOT_PAIRED
+        ? "Unlock Password Manager, then click Save again."
+        : "That did not work. Try again from the app."
+    );
+  }
+  await sessionSet(OFFER_KEY + tabId, null);
+}
+
 ext.runtime.onMessage.addListener((msg, sender) => {
-  if (!msg || msg.type !== "detect") return false;
   const tabId = sender.tab && sender.tab.id;
-  if (tabId === undefined) return false;
+  if (!msg || tabId === undefined) return false;
+  if (msg.type === "captured") {
+    tracker.captured(tabId, {
+      origin: msg.origin,
+      username: msg.username || "",
+      password: msg.password || "",
+      current: msg.current || "",
+    });
+    return false;
+  }
+  if (msg.type === "offer-choice") {
+    onChoice(tabId, msg.choice);
+    return false;
+  }
+  if (msg.type !== "detect") return false;
+  tracker.detected(tabId, msg);
   if (msg.login) {
     ext.action.setBadgeText({ tabId, text: BADGE });
     ext.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOUR });
@@ -219,7 +342,11 @@ ext.tabs.onUpdated.addListener((tabId, changeInfo) => {
   ext.contextMenus.removeAll().catch(() => {});
 });
 
-ext.tabs.onRemoved.addListener((tabId) => setTabState(tabId, null));
+ext.tabs.onRemoved.addListener((tabId) => {
+  setTabState(tabId, null);
+  sessionSet(CAPTURE_KEY + tabId, null);
+  sessionSet(OFFER_KEY + tabId, null);
+});
 
 /**
  * Context menus are global, not per-tab, so switching tabs has to swap the

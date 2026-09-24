@@ -293,17 +293,14 @@ export async function status() {
 }
 
 /**
- * What the vault has for this origin.
- *
- * `{ items }` for an approved site. For one the user has not approved yet,
- * `{ items: [], count, needsApproval, host }` — a number, so the popup and
- * the badge can say there is something here without naming an account.
+ * What the vault has for this origin: `{ items }` for an approved site, and
+ * for any other `{ items: [], needsApproval, host }` -- the same reply
+ * whether the vault holds anything there or not.
  */
 export async function matches(origin) {
   const data = await signedPost("/matches", { origin });
   return {
     items: data.items || [],
-    count: data.count || (data.items ? data.items.length : 0),
     needsApproval: !!data.needsApproval,
     host: data.host || "",
   };
@@ -331,4 +328,26 @@ export async function credentials(id, origin) {
  */
 export async function copy(id, origin, which) {
   return signedPost("/copy", { id, origin, field: which });
+}
+
+/** What to offer after a login that looks like it worked. */
+export async function offer(origin, username, password, current) {
+  return signedPost("/offer", { origin, username, password, current });
+}
+
+export async function saveLogin(origin, username, password) {
+  return signedPost("/save", { origin, username, password });
+}
+
+export async function updateLogin(id, origin, password) {
+  return signedPost("/update", { id, origin, password });
+}
+
+/** "Not now" on an update: the app remembers what worked. */
+export async function seen(origin, username, password) {
+  return signedPost("/seen", { origin, username, password });
+}
+
+export async function never(origin) {
+  return signedPost("/never", { origin });
 }
