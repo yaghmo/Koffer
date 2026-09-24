@@ -35,6 +35,12 @@ describe("sameSite", () => {
     expect(sameSite("https://accounts.site.test", "https://www.site.test")).toBe(true);
     expect(sameSite("https://a.example.co.uk", "https://b.example.co.uk")).toBe(true);
   });
+  it("keeps short real domains whole", () => {
+    expect(sameSite("https://login.gmx.de", "https://www.gmx.de")).toBe(true);
+    expect(sameSite("https://id.web.de", "https://web.de")).toBe(true);
+    expect(sameSite("https://gmx.de", "https://web.de")).toBe(false);
+  });
+
   it("does not treat an OAuth hop as the same site", () => {
     expect(sameSite("https://site.test", "https://accounts.google.com")).toBe(false);
     expect(sameSite("https://one.co.uk", "https://two.co.uk")).toBe(false);
@@ -142,6 +148,43 @@ describe("tracker", () => {
     h.tick(CONFIRM_MS);
     await h.fire();
     expect(h.onSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("overlapping checks", () => {
+  it("offers once even when two checks wait on the tab together", async () => {
+    const saved = new Map<number, unknown>();
+    const timers: (() => Promise<void>)[] = [];
+    const waiting: ((v: unknown) => void)[] = [];
+    const onSuccess = vi.fn();
+    const tracker = createTracker({
+      store: {
+        get: async (t: number) => saved.get(t) ?? null,
+        set: async (t: number, v: unknown) => void (v === null ? saved.delete(t) : saved.set(t, v)),
+      },
+      // Slow tab: both checks are waiting on it at once.
+      askState: () => new Promise((r) => waiting.push(r)),
+      onSuccess,
+      now: () => 1_000,
+      setTimer: (fn: () => Promise<void>) => timers.push(fn),
+    });
+    await tracker.captured(1, cap);
+    await tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
+    await tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
+    const both = Promise.all(timers.map((fn) => fn()));
+    await new Promise((r) => setTimeout(r, 0));
+    for (const r of waiting.splice(0)) r({ login: false, origin: cap.origin, passwords: 0 });
+    await both;
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts the attempt back when the check finds the form still there", async () => {
+    const h = harness({ login: true, origin: cap.origin, passwords: 1 });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.saved.has(1)).toBe(true);
   });
 });
 

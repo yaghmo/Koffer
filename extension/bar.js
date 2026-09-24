@@ -65,6 +65,9 @@
     bar.addEventListener("submit", function (e) {
       e.preventDefault();
       if (!e.isTrusted || !e.submitter) return;
+      // One choice at a time: a double-click must not save twice. `say`
+      // hands the buttons back when the answer wants another click.
+      setBusy(true);
       onChoice(e.submitter.value);
     });
     bar.appendChild(el("p", "title", TITLES[view.kind] || TITLES.new));
@@ -80,11 +83,19 @@
     return root;
   }
 
+  function setBusy(busy) {
+    if (!root) return;
+    root.querySelectorAll("button").forEach(function (b) {
+      b.disabled = busy;
+    });
+  }
+
   /** Replace the message. `done` drops the buttons and closes shortly. */
   function say(text, done) {
     if (!root) return;
     var who = root.querySelector(".who");
     if (who) who.textContent = text;
+    setBusy(false);
     if (done) {
       var row = root.querySelector(".row");
       if (row) row.remove();

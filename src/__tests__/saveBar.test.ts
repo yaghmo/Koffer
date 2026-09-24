@@ -35,9 +35,8 @@ describe("save bar", () => {
 
   it("offers never and not now", () => {
     const onChoice = vi.fn();
-    const root = Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice);
-    press(root, /never/i);
-    press(root, /not now/i);
+    press(Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice), /never/i);
+    press(Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice), /not now/i);
     expect(onChoice.mock.calls.map((c) => c[0])).toEqual(["never", "later"]);
   });
 
@@ -64,5 +63,17 @@ describe("save bar", () => {
     vi.advanceTimersByTime(3000);
     expect(document.querySelector("[data-pm-bar]")).toBeNull();
     vi.useRealTimers();
+  });
+
+  it("takes one Save however fast it is clicked, until it has an answer", () => {
+    const onChoice = vi.fn();
+    const root = Bar.show({ kind: "approve", host: "site.test", username: "me" }, onChoice);
+    press(root, /^save$/i);
+    press(root, /^save$/i);
+    expect(onChoice).toHaveBeenCalledTimes(1);
+    // An answer that wants another click hands the buttons back.
+    Bar.say("Approve this site in the app, then click Save again.");
+    press(root, /^save$/i);
+    expect(onChoice).toHaveBeenCalledTimes(2);
   });
 });

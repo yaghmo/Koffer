@@ -23,9 +23,16 @@ export const HOLD_MS = 120000;
 export const CONFIRM_MS = 1500;
 
 /**
+ * Second-level labels that are a suffix under a two-letter country code
+ * (`co.uk`, `com.au`, `ne.jp`). A short label alone is not enough: `gmx.de`
+ * and `web.de` are sites, not suffixes.
+ */
+const SECOND_LEVEL = /^(co|com|net|org|ac|gov|edu|ne|or|go|gob|mil|nic|ltd|plc|sch)$/;
+
+/**
  * The registrable part of a host, near enough without the Public Suffix
- * List: the last two labels, or three when the second-to-last is a short
- * second level like `co` in `co.uk`.
+ * List: the last two labels, or three under a country code's own second
+ * level, like `co.uk`.
  *
  * ponytail: heuristic, wrong for suffixes like `github.io` (two users' pages
  * count as one site); the app still checks every write against the real
@@ -41,8 +48,8 @@ function siteOf(origin) {
   }
   const labels = host.split(".");
   if (labels.length <= 2) return host;
-  const shortSecond = labels[labels.length - 1].length === 2 && labels[labels.length - 2].length <= 3;
-  return labels.slice(shortSecond ? -3 : -2).join(".");
+  const underCountry = labels[labels.length - 1].length === 2 && SECOND_LEVEL.test(labels[labels.length - 2]);
+  return labels.slice(underCountry ? -3 : -2).join(".");
 }
 
 /** Is an open offer, or a capture, still young enough to act on? */
@@ -56,6 +63,10 @@ export function sameSite(a, b) {
 }
 
 export function createTracker({ store, askState, onSuccess, now = Date.now, setTimer = (fn, ms) => setTimeout(fn, ms) }) {
+  // Checks already running, by tab and attempt. Taken synchronously, before
+  // any await, which the async store cannot do on its own.
+  const checking = new Set();
+
   async function live(tabId) {
     const c = await store.get(tabId);
     if (!c) return null;
@@ -91,13 +102,24 @@ export function createTracker({ store, askState, onSuccess, now = Date.now, setT
       }
       const at = c.at;
       setTimer(async () => {
-        const again = await live(tabId);
-        // Replaced by a newer attempt, or already handled.
-        if (!again || again.at !== at) return;
-        const state = await askState(tabId);
-        if (!state || state.passwords !== 0 || !sameSite(again.origin, state.origin)) return;
-        await store.set(tabId, null);
-        onSuccess(tabId, again);
+        // One check per attempt at a time, or two could both offer it.
+        const key = tabId + ":" + at;
+        if (checking.has(key)) return;
+        checking.add(key);
+        try {
+          const again = await live(tabId);
+          // Replaced by a newer attempt, or already handled.
+          if (!again || again.at !== at) return;
+          const state = await askState(tabId);
+          if (!state || state.passwords !== 0 || !sameSite(again.origin, state.origin)) return;
+          // Still ours? A newer attempt may have arrived while we asked.
+          const still = await live(tabId);
+          if (!still || still.at !== at) return;
+          await store.set(tabId, null);
+          onSuccess(tabId, again);
+        } finally {
+          checking.delete(key);
+        }
       }, CONFIRM_MS);
     },
 
