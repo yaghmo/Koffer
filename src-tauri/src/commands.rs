@@ -875,6 +875,32 @@ pub fn reset_vault(
     }
 }
 
+/// Write a just-shown recovery code to a `.txt` file the user picked.
+///
+/// Only a valid recovery code, and only to a `.txt`: this must not become a
+/// general "write anything anywhere" command for the webview.
+#[tauri::command]
+pub fn save_recovery_code(dest: String, code: String) -> Result<(), String> {
+    let path = std::path::Path::new(&dest);
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("txt"))
+    {
+        return Err("The file must end in .txt.".into());
+    }
+    crate::recovery::decode(&code).map_err(|e| e.to_string())?;
+    let text = format!(
+        "Password Manager recovery code\r\n\r\n{code}\r\n\r\n\
+         This code opens your vault if you forget the master password.\r\n\
+         Anyone with this code and a copy of your vault file can open it.\r\n\
+         Move this file off this computer (print it, or keep it on a USB stick),\r\n\
+         then delete it here.\r\n"
+    );
+    std::fs::write(path, text).map_err(|e| e.to_string())?;
+    crate::log_info!("save_recovery_code", "written");
+    Ok(())
+}
+
 #[tauri::command]
 pub fn export_vault(dest: String, state: State<'_, AppState>) -> Result<(), String> {
     let account = {
@@ -1465,6 +1491,26 @@ pub(crate) fn login_password<'a>(vault: &'a Vault, fields: &'a LoginFields) -> O
 mod tests {
     use super::*;
     use crate::vault::{new_vault, ItemBase};
+
+    #[test]
+    fn recovery_file_takes_only_a_real_code_and_only_a_txt() {
+        let (_, code) = crate::recovery::generate();
+        let dir = std::env::temp_dir();
+        let txt = dir.join(format!("recovery-{}.txt", Uuid::new_v4()));
+        let other = dir.join(format!("recovery-{}.bat", Uuid::new_v4()));
+        let dest = |p: &std::path::Path| p.to_string_lossy().to_string();
+
+        assert!(save_recovery_code(dest(&other), code.clone()).is_err());
+        assert!(!other.exists());
+        assert!(save_recovery_code(dest(&txt), "echo anything".into()).is_err());
+        assert!(!txt.exists());
+
+        save_recovery_code(dest(&txt), code.clone()).unwrap();
+        let written = std::fs::read_to_string(&txt).unwrap();
+        let _ = std::fs::remove_file(&txt);
+        assert!(written.contains(&code));
+        assert!(written.contains("Move this file off this computer"));
+    }
 
     #[test]
     fn backup_state_never_carries_the_token() {

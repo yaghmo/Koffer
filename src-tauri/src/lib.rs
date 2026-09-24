@@ -83,6 +83,7 @@ pub fn run() {
             commands::reset_vault,
             commands::security_state,
             commands::create_recovery_code,
+            commands::save_recovery_code,
             commands::recover_vault,
             commands::change_master_password,
             commands::export_vault,

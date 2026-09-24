@@ -61,6 +61,7 @@ export const api = {
     invoke<void>("change_master_password", { current, newPassword }),
 
   exportVault: (dest: string) => invoke<void>("export_vault", { dest }),
+  saveRecoveryCode: (dest: string, code: string) => invoke<void>("save_recovery_code", { dest, code }),
   importVault: (src: string, name: string) =>
     invoke<Account>("import_vault", { src, name }),
 

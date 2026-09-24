@@ -40,6 +40,7 @@ vi.mock("../lib/api", () => ({
     exportVault: vi.fn().mockResolvedValue(undefined),
     securityState: vi.fn().mockResolvedValue({ has_recovery: true, last_export_secs: 0 }),
     createRecoveryCode: vi.fn().mockResolvedValue("K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"),
+    saveRecoveryCode: vi.fn().mockResolvedValue(undefined),
     changeMasterPassword: vi.fn().mockResolvedValue(undefined),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
     getBackupConfig: vi.fn().mockResolvedValue({ configured: false, url: "", last_backup_secs: 0, last_backup_error: "" }),
@@ -111,11 +112,50 @@ describe("Settings — security", () => {
     await waitFor(() => expect(api.createRecoveryCode).toHaveBeenCalledWith("hunter2hunter"));
     const dialog = await screen.findByRole("dialog", { name: /recovery code/i });
     expect(within(dialog).getByLabelText(/recovery code/i).textContent).toContain("K7F2Q");
-    // The dialog will not close until the code is acknowledged.
-    const done = within(dialog).getByRole("button", { name: /done/i }) as HTMLButtonElement;
+  });
+
+  async function openRecoveryCode() {
+    render(<Settings accountId="acct-1" onLock={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /issue a new code/i }));
+    fireEvent.change(screen.getByLabelText(/^master password$/i), { target: { value: "hunter2hunter" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate code/i }));
+    return screen.findByRole("dialog", { name: /recovery code/i });
+  }
+
+  it("will not close the recovery code until it is typed back correctly", async () => {
+    fireEvent.click(within(await openRecoveryCode()).getByRole("button", { name: /next/i }));
+    const confirm = await screen.findByRole("dialog", { name: /confirm recovery code/i });
+    // The code is no longer on screen to copy from.
+    expect(within(confirm).queryByText(/K7F2Q/)).toBeNull();
+    const done = within(confirm).getByRole("button", { name: /done/i }) as HTMLButtonElement;
+    const input = within(confirm).getByLabelText(/type your recovery code/i);
     expect(done.disabled).toBe(true);
-    fireEvent.click(within(dialog).getByRole("checkbox"));
+
+    fireEvent.change(input, { target: { value: "K7F2Q9MRXB4TWHE3NYD8P6VJS2GZK6" } });
+    expect(within(confirm).getByRole("alert").textContent).toMatch(/doesn't match/i);
+    expect(done.disabled).toBe(true);
+
+    // Lowercase and dashes read the way the recovery screen reads them.
+    fireEvent.change(input, { target: { value: "k7f2q-9mrxb-4twhe-3nyd8-p6vjs-2gzk5" } });
     expect(done.disabled).toBe(false);
+  });
+
+  it("goes back to the code from the confirm step", async () => {
+    fireEvent.click(within(await openRecoveryCode()).getByRole("button", { name: /next/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /show the code again/i }));
+    const dialog = await screen.findByRole("dialog", { name: /recovery code/i });
+    expect(within(dialog).getByLabelText(/recovery code/i).textContent).toContain("K7F2Q");
+  });
+
+  it("saves the recovery code as a .txt and warns to move it", async () => {
+    const { api } = await import("../lib/api");
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    vi.mocked(save).mockResolvedValueOnce("D:/usb/recovery-code.txt");
+    fireEvent.click(within(await openRecoveryCode()).getByRole("button", { name: /save as \.txt/i }));
+    await waitFor(() =>
+      expect(api.saveRecoveryCode).toHaveBeenCalledWith("D:/usb/recovery-code.txt", "K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"),
+    );
+    expect((await screen.findByRole("status")).textContent).toMatch(/move it to a USB stick/i);
   });
 
   it("refuses a password change when the confirmation does not match", async () => {
