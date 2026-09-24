@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { onItemsChanged } from "../lib/events";
 import type { Item, TotpCode } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, PencilIcon, XIcon, TrashIcon, ExternalIcon, CardBrandIcon, NoteIcon } from "../components/Icon";
 import { methodLabel, MethodChip } from "../lib/methods";
@@ -276,6 +277,11 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
     setItem(null);
     setError(null);
     reload();
+    // The browser extension can update this login while it is on screen.
+    const unlisten = onItemsChanged(() => reload());
+    return () => {
+      unlisten.then((fn) => fn());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 

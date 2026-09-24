@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { onItemsChanged } from "../lib/events";
 import type { PersonalInfo } from "../lib/types";
 import type { Item, ItemKind, ItemMeta, LoginFields, LoginMethod, NoteFields, CardFields } from "../lib/types";
 import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon, XIcon, ShieldIcon, KeyIcon, CardIcon, NoteIcon } from "../components/Icon";
@@ -133,6 +134,10 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [login, setLogin] = useState<LoginFields>(emptyLogin());
+  // The password as loaded. The browser extension can change it while this
+  // is open; the new value is taken only if the field was not edited here,
+  // so saving cannot quietly undo the browser's update.
+  const loadedPassword = useRef("");
   const [note, setNote] = useState<NoteFields>(emptyNote());
   const [card, setCard] = useState<CardFields>(emptyCard());
   const [busy, setBusy] = useState(false);
@@ -199,6 +204,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
             phone: item.phone || "",
             totp: item.totp || "",
           });
+          loadedPassword.current = item.password;
         } else if (item.type === "note") {
           setNote({ body: item.body });
         } else {
@@ -343,6 +349,27 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!id) return;
+    const unlisten = onItemsChanged(() => {
+      api
+        .getItem(id)
+        .then((item) => {
+          if (item.type !== "login" || item.password === loadedPassword.current) return;
+          const was = loadedPassword.current;
+          setLogin((cur) => {
+            if (cur.password !== was) return cur;
+            loadedPassword.current = item.password;
+            return { ...cur, password: item.password };
+          });
+        })
+        .catch(() => {});
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [id]);
 
   useHotkey("ctrl+s", save);
   // Esc cancels only when nothing has been edited — prevents losing typed

@@ -2,6 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import ItemViewer from "../screens/ItemViewer";
 
+let itemsChanged: () => void = () => {};
+vi.mock("../lib/events", () => ({
+  onItemsChanged: (fn: () => void) => {
+    itemsChanged = fn;
+    return Promise.resolve(() => {});
+  },
+}));
+
 vi.mock("../lib/api", () => ({
   api: {
     getItem: vi.fn().mockResolvedValue({
@@ -136,5 +144,16 @@ describe("ItemViewer password history", () => {
     expect(list.textContent).not.toContain("0lder");
     fireEvent.click(within(list).getByRole("button", { name: /restore/i }));
     await waitFor(() => expect(api.restorePreviousPassword).toHaveBeenCalledWith("1", 0));
+  });
+});
+
+describe("ItemViewer and the browser", () => {
+  it("reloads when the browser extension changes a login", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemViewer id="1" onEdit={() => {}} onClose={() => {}} onDelete={() => {}} />);
+    await screen.findByDisplayValue("GitHub");
+    const before = vi.mocked(api.getItem).mock.calls.length;
+    itemsChanged();
+    await waitFor(() => expect(vi.mocked(api.getItem).mock.calls.length).toBe(before + 1));
   });
 });

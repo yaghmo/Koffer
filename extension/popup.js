@@ -125,8 +125,12 @@ function paired() {
   const note = document.createElement("div");
   note.className = "dim";
   note.textContent = "Open this again on a login page to fill from your vault.";
-  vaultEl.replaceChildren(stack(done, note));
-  setTimeout(() => window.close(), 1200);
+  // Both would ask after every login, and the browser's copy is not in the vault.
+  const tip = document.createElement("div");
+  tip.className = "dim";
+  tip.textContent = "Turn off your browser's own “offer to save passwords” so only one of them asks.";
+  vaultEl.replaceChildren(stack(done, note, tip));
+  setTimeout(() => window.close(), 5000);
 }
 
 /** Something the user will recognise in the app's paired-extensions list. */

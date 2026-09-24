@@ -2,6 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import ItemEditor from "../screens/ItemEditor";
 
+let itemsChanged: () => void = () => {};
+vi.mock("../lib/events", () => ({
+  onItemsChanged: (fn: () => void) => {
+    itemsChanged = fn;
+    return Promise.resolve(() => {});
+  },
+}));
+
 vi.mock("../lib/api", () => ({
   api: {
     getItem: vi.fn().mockResolvedValue({
@@ -68,6 +76,31 @@ describe("ItemEditor", () => {
     render(<ItemEditor id={null} onClose={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: /paste qr code/i }));
     expect(await screen.findByText(/no qr code found/i)).toBeTruthy();
+  });
+
+  it("takes a password the browser changed while it was open, unless it was edited here", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemEditor id="1" onClose={() => {}} />);
+    const pw = (await screen.findByLabelText(/^password$/i)) as HTMLInputElement;
+    await waitFor(() => expect(pw.value).toBe("s3cret"));
+    vi.mocked(api.getItem).mockResolvedValueOnce({
+      type: "login", id: "1", title: "GitHub", notes: "", created_at: 0, updated_at: 0, favicon: "",
+      method: "credentials", url: "https://github.com", username: "octocat", password: "fr0m-browser",
+      phone: "", totp: "",
+    });
+    itemsChanged();
+    await waitFor(() => expect(pw.value).toBe("fr0m-browser"));
+
+    // Typed here: the user's edit wins, and the browser's stays in history.
+    fireEvent.change(pw, { target: { value: "typed" } });
+    vi.mocked(api.getItem).mockResolvedValueOnce({
+      type: "login", id: "1", title: "GitHub", notes: "", created_at: 0, updated_at: 0, favicon: "",
+      method: "credentials", url: "https://github.com", username: "octocat", password: "again",
+      phone: "", totp: "",
+    });
+    itemsChanged();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(pw.value).toBe("typed");
   });
 
   it("keeps the kind selector locked when editing an existing item", async () => {
