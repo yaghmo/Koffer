@@ -31,33 +31,29 @@
 //! *page* forge it, so pages really are shut out. Any other local process
 //! can set it to whatever it likes — `curl -H 'Origin: chrome-extension://x'`
 //! reaches these routes. The header narrows the surface; the pairing code
-//! and the token are what actually hold it.
+//! and the signing key are what actually hold it.
 //!
-//! **A paired browser may ask about any site; it may only be answered for
-//! the sites you approved.** The extension names the origin it is acting
-//! for, so whoever holds a token can still walk a list of domains and
-//! harvest titles and usernames. A *password* is different: the first time
-//! this browser asks for one on a host the user has not approved, the app
-//! raises a dialog and the call is refused. Approvals are remembered per
-//! paired client, so the cost is one click per site, once, and a token
-//! holder trying to empty the vault is a dialog per site instead of a
-//! silent download.
+//! **A paired browser may ask about any site; it is only answered for the
+//! sites you approved.** For any other site `/matches` gives the same reply
+//! whether the vault has logins for it or not — no accounts, no count — so a
+//! key holder walking a list of domains learns nothing. A password is refused
+//! and the app raises a dialog, which is where the user sees how many logins
+//! match. Approvals are remembered per paired client, so the cost is one
+//! click per site, once, and a key holder trying to empty the vault is a
+//! dialog per site instead of a silent download.
 //!
-//! **The token is only as private as the browser's profile.** It is kept in
-//! `chrome.storage.local`, a file under the browser's user-data directory,
-//! readable by anything running as the same user. Malware with that file can
-//! use these routes directly instead of dumping this process's memory. The
-//! vault must be unlocked for it to work, and revoking the pairing in
-//! Settings kills it immediately.
+//! **The key is only as private as the browser's profile.** WebCrypto will
+//! not export it, but the browser still writes it under its user-data
+//! directory, and a program running as the same user that parses that format
+//! can recover it. The vault must be unlocked for it to work, and revoking
+//! the pairing in Settings kills it immediately.
 //!
-//! Two things bound it. Tokens **rotate**: any call made more than
-//! `TOKEN_ROTATE_SECS` after the current token was minted swaps it for a new
-//! one on the way out, so a copy lifted from that file stops working as soon
-//! as the real extension makes its next call — and whichever of the two is
-//! left holding the dead string gets a 401 the user can see. Tokens also
-//! **expire** after `TOKEN_TTL_SECS` without use. And per-host approval
-//! means a stolen token still cannot reach a password for a site the user
-//! never approved without putting a dialog on their screen.
+//! Two things bound it. Keys **rotate**: once the current key is
+//! `KEY_ROTATE_SECS` old the app asks the browser to replace it through
+//! `/rekey`, so a copy lifted from the profile stops working after the real
+//! extension's next call — and whichever of the two is left holding the dead
+//! key gets a 401 the user can see. Keys also **expire** `KEY_TTL_SECS` after
+//! they were issued, which with hourly rotation means a week without use.
 
 use crate::commands::{host_of, AppState};
 use crate::crypto::random_bytes;
@@ -668,13 +664,17 @@ fn approved(client: &PairedClient, host: &str) -> bool {
 /// Only ever a *request*. Nothing here writes the approval — that happens in
 /// `bridge_approve`, from a click in the app, which is the only place it can
 /// happen without the dialog being theatre.
-fn ask_approval(app: &AppHandle, label: &str, origin: &str, host: &str) {
+///
+/// `count` is how many saved logins match the site. It goes to the app's own
+/// window and nowhere else: the browser is never told, so a copied key cannot
+/// learn which sites the vault holds.
+fn ask_approval(app: &AppHandle, label: &str, origin: &str, host: &str, count: usize) {
     if !app.state::<Bridge>().may_ask() {
         return;
     }
     let _ = app.emit(
         "vault://approve-request",
-        serde_json::json!({ "label": label, "origin": origin, "host": host }),
+        serde_json::json!({ "label": label, "origin": origin, "host": host, "count": count }),
     );
     crate::tray::reveal(app);
     crate::log_info!("bridge", "approval asked for host={host}");
@@ -1030,27 +1030,22 @@ fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
     };
     let due = rekey_due(&session);
     let page = field(&inc.body, "origin");
-    let items = matches_for(session.vault(), &page);
     let Some(host) = host_of(&page) else {
         return reply(serde_json::json!({ "items": [] }), due);
     };
     if !approved(session.client(), &host) {
-        // A count, and nothing else. Gating the list outright would leave the
-        // badge and the context menu blank on every new site, so the only way
-        // to find out the vault had anything for it would be to go and ask —
-        // which teaches people to approve sites they have not looked at. A
-        // number says "there is something here" without naming an account.
-        crate::log_info!("bridge", "matches withheld host={host} n={}", items.len());
+        // The same answer for every unapproved site, whether the vault has
+        // anything for it or not. Even a count, or a yes/no, would let a
+        // copied key map which sites the vault holds. How many logins there
+        // are is shown in the app's approval dialog instead, where only the
+        // user can read it.
+        crate::log_info!("bridge", "matches withheld host={host}");
         return reply(
-            serde_json::json!({
-                "items": [],
-                "count": items.len(),
-                "needsApproval": true,
-                "host": host,
-            }),
+            serde_json::json!({ "items": [], "needsApproval": true, "host": host }),
             due,
         );
     }
+    let items = matches_for(session.vault(), &page);
     crate::log_info!("bridge", "matches n={}", items.len());
     reply(serde_json::json!({ "items": items }), due)
 }
@@ -1079,9 +1074,10 @@ fn ask(app: &AppHandle, inc: &Incoming) -> Reply {
         return reply(serde_json::json!({ "asked": false, "approved": true }), due);
     }
     let (label, origin) = (session.client().label.clone(), session.client().origin.clone());
+    let count = matches_for(session.vault(), &field(&inc.body, "origin")).len();
     // The vault lock goes before the window comes forward. See `Gate::Ask`.
     drop(session);
-    ask_approval(app, &label, &origin, &host);
+    ask_approval(app, &label, &origin, &host, count);
     reply(serde_json::json!({ "asked": true, "approved": false }), due)
 }
 
@@ -1095,7 +1091,7 @@ enum Gate {
     /// letting the vault lock go — `ask_approval` pulls the app window
     /// forward, and doing that from inside the lock would have the bridge
     /// holding the vault while it waits on the UI thread.
-    Ask { reply: Reply, label: String, origin: String, host: String },
+    Ask { reply: Reply, label: String, origin: String, host: String, count: usize },
 }
 
 /// The checks every route that hands out a secret runs, in one place.
@@ -1125,6 +1121,7 @@ fn gate(session: &Session, inc: &Incoming) -> Gate {
             ),
             label: session.client().label.clone(),
             origin: session.client().origin.clone(),
+            count: matches_for(session.vault(), &page).len(),
             host,
         };
     }
@@ -1141,9 +1138,9 @@ fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
     let (id, page) = match gate(&session, inc) {
         Gate::Go(id, page) => (id, page),
         Gate::Stop(r) => return r,
-        Gate::Ask { reply, label, origin, host } => {
+        Gate::Ask { reply, label, origin, host, count } => {
             drop(session);
-            ask_approval(app, &label, &origin, &host);
+            ask_approval(app, &label, &origin, &host, count);
             return reply;
         }
     };
@@ -1200,9 +1197,9 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
     let (id, page) = match gate(&session, inc) {
         Gate::Go(id, page) => (id, page),
         Gate::Stop(r) => return r,
-        Gate::Ask { reply, label, origin, host } => {
+        Gate::Ask { reply, label, origin, host, count } => {
             drop(session);
-            ask_approval(app, &label, &origin, &host);
+            ask_approval(app, &label, &origin, &host, count);
             return reply;
         }
     };

@@ -79,8 +79,10 @@ key pair and sends the app the public half. Four rules hold it up, and
   process on the machine.
 - **Pairing lets a browser ask, not read.** The first time it wants a
   password for a site, the app comes forward and asks you; the call that
-  triggered it is refused either way. Until then the account list for that
-  site comes back as a count and nothing else. Approved sites are listed
+  triggered it is refused either way. Until then the app tells the browser
+  nothing about that site — not the accounts, not even whether there are
+  any; the number of saved logins is shown in the app's dialog instead, where
+  only you can read it. Approved sites are listed
   under **Settings → Browser extension** and can be taken back one at a time.
 - **Rust decides what an origin may see.** This extension says which origin
   it is acting for; the app filters every lookup by it. Naming an item id is
@@ -114,12 +116,6 @@ asks whether to stay unlocked — only an answer there extends it.
   but a determined local attacker gets there. It also needs the vault
   unlocked, and unpairing kills it. This is a deliberate trade for one-click
   autofill.
-- **Counting what the vault holds.** An unapproved site gets a number and no
-  accounts, so names and usernames stay in the vault — but walking a list of
-  domains still tells the walker which ones you have logins for. Dropping the
-  count as well would leave the badge and the menu blank on every new site,
-  so the only way to find out would be to go and approve it, which trains
-  people to approve sites they have not looked at.
 - **A forged `Origin` header.** Browsers will not let a page forge it, so
   pages really are shut out — but any local process can set it to anything.
   The pairing code and the token are what actually hold the door.

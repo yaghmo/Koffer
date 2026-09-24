@@ -334,7 +334,11 @@ export default function App() {
         {approveAsk !== null && status === "unlocked" && (
           <ConfirmDialog
             title={`Fill logins for ${approveAsk.host}?`}
-            message={`${approveAsk.label} asked for a saved password for ${approveAsk.host}. Allow it, and this browser can fill that site from now on without asking again. It still cannot touch any other site until you say so.`}
+            message={`${approveAsk.label} asked to fill logins on ${approveAsk.host}. ${
+              approveAsk.count === 0
+                ? "You have no saved login for this site yet."
+                : `You have ${approveAsk.count} saved login${approveAsk.count === 1 ? "" : "s"} for it.`
+            } Allow it, and this browser can fill that site from now on without asking again. It still cannot touch any other site until you say so.`}
             confirmLabel="Allow"
             tone="primary"
             onConfirm={() => {

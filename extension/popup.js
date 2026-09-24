@@ -224,25 +224,20 @@ function renderProviderHint(item) {
 /**
  * A site this browser has not been approved for.
  *
- * The app sent a count and no accounts, which is the point: "there is
- * something here" is worth knowing, "which account" is not worth handing over
- * before the user has said yes. The button only asks the app to put its
+ * The app says nothing about what it holds for the site — not the accounts,
+ * not even whether there are any — because anything it tells this browser it
+ * also tells whoever copied the key out of the profile. The app's own dialog
+ * shows how many logins match. The button only asks the app to put that
  * dialog up — the answer happens there.
  */
 function renderApproval(result, origin) {
   const head = document.createElement("div");
   head.className = "muted";
-  head.textContent =
-    result.count === 0
-      ? `No saved login for ${origin}.`
-      : `${result.count} saved login${result.count === 1 ? "" : "s"} for ${result.host}.`;
+  head.textContent = `This browser has not been approved for ${result.host} yet.`;
 
   const note = document.createElement("div");
   note.className = "dim";
-  note.textContent =
-    result.count === 0
-      ? `This browser has not been approved for ${result.host} either.`
-      : "This browser has not been approved for this site yet.";
+  note.textContent = "The app will show whether you have a login saved for it.";
 
   const go = document.createElement("button");
   go.className = "primary";

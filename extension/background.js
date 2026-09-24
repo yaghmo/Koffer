@@ -100,7 +100,6 @@ async function renderMenu(state) {
   // the menu offers the question rather than a list of accounts it is not
   // allowed to show.
   if (state.needsApproval) {
-    if (!state.count) return;
     ext.contextMenus.create({
       id: ASK_ID,
       title: `Approve ${state.host} in Password Manager…`,
@@ -135,7 +134,7 @@ function stale(state) {
 
 /** Ask the app what it has for this origin, store it, and redraw the menu. */
 async function refresh(tabId, origin) {
-  let found = { items: [], count: 0, needsApproval: false, host: "" };
+  let found = { items: [], needsApproval: false, host: "" };
   try {
     found = await matches(origin);
   } catch {

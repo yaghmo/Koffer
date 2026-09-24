@@ -21,6 +21,8 @@ export interface ApproveRequest {
   origin: string;
   /** The site it wants a password for, e.g. "github.com". */
   host: string;
+  /** Saved logins that match the site. Shown here only; the browser is never told. */
+  count: number;
 }
 
 /**
