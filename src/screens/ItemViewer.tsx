@@ -167,19 +167,116 @@ function TotpField({ id, onCopy, copied }: { id: string; onCopy: (code: string) 
   );
 }
 
+const dateOf = (secs: number) => new Date(secs * 1000).toLocaleDateString();
+
+/**
+ * A browser login last worked with a password that is not the saved one,
+ * and the user did not update. The saved one may be stale.
+ */
+function LastSeenBanner({
+  id,
+  seen,
+  onChanged,
+}: {
+  id: string;
+  seen: { password: string; seen_at: number };
+  onChanged: () => void;
+}) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div
+      role="status"
+      aria-label="Password may be out of date"
+      className="flex flex-col gap-2 rounded-control border border-warning/30 bg-warning/10 px-3 py-2"
+    >
+      <p className="text-body-sm text-warning">
+        Your last successful login ({dateOf(seen.seen_at)}) used a different password.
+      </p>
+      {shown && <p className="font-mono text-body-sm text-on-surface">{seen.password}</p>}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary" onClick={() => setShown((s) => !s)}>
+          {shown ? "Hide" : "Reveal"}
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => api.useLastSeen(id).then(onChanged)}>
+          Use this one
+        </button>
+        <button type="button" className="btn-secondary" onClick={() => api.dismissLastSeen(id).then(onChanged)}>
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Replaced passwords, collapsed by default: rarely needed, never lost. */
+function PreviousPasswords({
+  id,
+  previous,
+  onChanged,
+  onCopy,
+}: {
+  id: string;
+  previous: { password: string; replaced_at: number }[];
+  onChanged: () => void;
+  onCopy: (label: string, text: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [revealed, setRevealed] = useState<number | null>(null);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        className="self-start text-body-sm font-medium text-primary hover:underline"
+        onClick={() => setOpen((o) => !o)}
+      >
+        Previous passwords ({previous.length})
+      </button>
+      {open && (
+        <ul aria-label="Previous passwords" className="flex flex-col gap-1.5">
+          {previous.map((p, i) => (
+            <li key={i} className="flex items-center gap-2">
+              <span className="w-24 text-body-sm text-on-surface-variant">{dateOf(p.replaced_at)}</span>
+              <span className="flex-1 truncate font-mono text-body-sm">
+                {revealed === i ? p.password : mask(p.password)}
+              </span>
+              <button type="button" className="btn-secondary" onClick={() => setRevealed(revealed === i ? null : i)}>
+                {revealed === i ? "Hide" : "Reveal"}
+              </button>
+              <button type="button" className="btn-secondary" onClick={() => onCopy(`prev-${i}`, p.password)}>
+                Copy
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => api.restorePreviousPassword(id, i).then(onChanged)}
+              >
+                Restore
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
   const [item, setItem] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  useEffect(() => {
-    setItem(null);
-    setError(null);
+  const reload = () =>
     api
       .getItem(id)
       .then((it) => setItem(it))
       .catch((err) => setError(String(err)));
+
+  useEffect(() => {
+    setItem(null);
+    setError(null);
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useHotkey("escape", onClose);
@@ -280,6 +377,9 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
               </div>
             </div>
             <Field label="URL" value={item.url} mono onCopy={() => copy("url", item.url)} copied={copied === "url"} />
+            {item.last_seen && item.last_seen.password !== item.password && (
+              <LastSeenBanner id={item.id} seen={item.last_seen} onChanged={reload} />
+            )}
             {item.method === "credentials" ? (
               <>
                 <Field
@@ -326,6 +426,14 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
             ) : null}
             {item.totp && (
               <TotpField id={item.id} onCopy={(code) => copy("totp", code)} copied={copied === "totp"} />
+            )}
+            {item.previous_passwords && item.previous_passwords.length > 0 && (
+              <PreviousPasswords
+                id={item.id}
+                previous={item.previous_passwords}
+                onChanged={reload}
+                onCopy={copy}
+              />
             )}
           </>
         )}

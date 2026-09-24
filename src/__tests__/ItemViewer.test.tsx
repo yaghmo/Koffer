@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import ItemViewer from "../screens/ItemViewer";
 
 vi.mock("../lib/api", () => ({
@@ -18,6 +18,9 @@ vi.mock("../lib/api", () => ({
     }),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
     totpCode: vi.fn().mockResolvedValue({ code: "287082", seconds_left: 12 }),
+    useLastSeen: vi.fn().mockResolvedValue(undefined),
+    dismissLastSeen: vi.fn().mockResolvedValue(undefined),
+    restorePreviousPassword: vi.fn().mockResolvedValue(undefined),
     deleteItem: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -82,5 +85,56 @@ describe("ItemViewer", () => {
     await screen.findByDisplayValue("GitHub");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("ItemViewer password history", () => {
+  const withHistory = {
+    type: "login", id: "1", title: "GitHub", notes: "", created_at: 0, updated_at: 0, favicon: "",
+    method: "credentials", url: "https://github.com", username: "octocat", password: "s3cret",
+    phone: "", totp: "",
+    last_seen: { password: "n3wer", seen_at: 1790000000 },
+    previous_passwords: [{ password: "0lder", replaced_at: 1780000000 }],
+  };
+  let original: unknown;
+
+  beforeEach(async () => {
+    const { api } = await import("../lib/api");
+    original = await api.getItem("1");
+    vi.mocked(api.getItem).mockResolvedValue(withHistory as never);
+  });
+
+  afterEach(async () => {
+    const { api } = await import("../lib/api");
+    vi.mocked(api.getItem).mockResolvedValue(original as never);
+  });
+
+  it("warns when a browser login last worked with a different password", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemViewer id="1" onEdit={() => {}} onClose={() => {}} onDelete={() => {}} />);
+    const banner = await screen.findByRole("status", { name: /password may be out of date/i });
+    expect(banner.textContent).not.toContain("n3wer");
+    fireEvent.click(within(banner).getByRole("button", { name: /reveal/i }));
+    expect(banner.textContent).toContain("n3wer");
+    fireEvent.click(within(banner).getByRole("button", { name: /use this one/i }));
+    await waitFor(() => expect(api.useLastSeen).toHaveBeenCalledWith("1"));
+  });
+
+  it("dismisses the warning", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemViewer id="1" onEdit={() => {}} onClose={() => {}} onDelete={() => {}} />);
+    const banner = await screen.findByRole("status", { name: /password may be out of date/i });
+    fireEvent.click(within(banner).getByRole("button", { name: /dismiss/i }));
+    await waitFor(() => expect(api.dismissLastSeen).toHaveBeenCalledWith("1"));
+  });
+
+  it("lists previous passwords masked and restores one", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemViewer id="1" onEdit={() => {}} onClose={() => {}} onDelete={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: /previous passwords \(1\)/i }));
+    const list = screen.getByRole("list", { name: /previous passwords/i });
+    expect(list.textContent).not.toContain("0lder");
+    fireEvent.click(within(list).getByRole("button", { name: /restore/i }));
+    await waitFor(() => expect(api.restorePreviousPassword).toHaveBeenCalledWith("1", 0));
   });
 });
