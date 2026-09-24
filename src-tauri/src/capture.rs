@@ -86,6 +86,7 @@ pub fn offer_for(
 /// A new login from the browser. The favicon is left for the app's usual
 /// icon refresh to fill.
 pub fn save_new(vault: &mut Vault, origin: &str, username: &str, password: &str, now: i64) -> Uuid {
+    reset_not_now(vault, origin);
     let id = Uuid::new_v4();
     vault::add_item(
         vault,
@@ -146,10 +147,11 @@ pub fn update_password(
         {
             vault::set_password_from(fields, password.to_string(), now, true);
             base.updated_at = now;
-            Ok(())
         }
-        _ => Err("no such login for this site"),
+        _ => return Err("no such login for this site"),
     }
+    reset_not_now(vault, origin);
+    Ok(())
 }
 
 /// "Not now" on an update: remember what worked. Returns whether anything
@@ -192,7 +194,37 @@ pub fn clear_last_seen(vault: &mut Vault, id: Uuid) -> bool {
 /// make for an unapproved host, so it must not grow without bound.
 pub const MAX_NEVER: usize = 500;
 
+/// "Not now"s on one site before the bar also offers "Never for this site".
+/// Never on the first offer: next to Save it is too easy to click by
+/// mistake, and it silences the site with nothing on the page to undo it.
+pub const NEVER_AFTER: u8 = 3;
+
+/// Count a "Not now". Capped like the never list: it is written for
+/// unapproved hosts too.
+pub fn record_not_now(vault: &mut Vault, host: &str) -> bool {
+    if host.is_empty() {
+        return false;
+    }
+    if !vault.not_now.contains_key(host) && vault.not_now.len() >= MAX_NEVER {
+        return false;
+    }
+    let n = vault.not_now.entry(host.to_string()).or_insert(0);
+    *n = n.saturating_add(1);
+    true
+}
+
+pub fn shows_never(vault: &Vault, host: &str) -> bool {
+    vault.not_now.get(host).is_some_and(|n| *n >= NEVER_AFTER)
+}
+
+/// The user decided about this site; start the count again.
+fn reset_not_now(vault: &mut Vault, origin_or_host: &str) {
+    let host = host_of(origin_or_host).unwrap_or_else(|| origin_or_host.to_string());
+    vault.not_now.remove(&host);
+}
+
 pub fn add_never(vault: &mut Vault, host: &str) -> bool {
+    reset_not_now(vault, host);
     if host.is_empty() || vault.never_save.len() >= MAX_NEVER || vault.never_save.iter().any(|h| h == host) {
         return false;
     }
@@ -201,6 +233,7 @@ pub fn add_never(vault: &mut Vault, host: &str) -> bool {
 }
 
 pub fn remove_never(vault: &mut Vault, host: &str) -> bool {
+    reset_not_now(vault, host);
     let before = vault.never_save.len();
     vault.never_save.retain(|h| h != host);
     vault.never_save.len() != before
@@ -331,6 +364,47 @@ mod tests {
         assert!(v.items.is_empty());
         let id = save_new_or_undo(&mut v, SITE, "me", "pw", 1, |_| Ok(())).unwrap();
         assert!(vault::get_item(&v, id).is_some());
+    }
+
+    #[test]
+    fn never_is_offered_only_after_three_not_nows() {
+        let (mut v, _) = vault_with("me", "pw");
+        for _ in 0..NEVER_AFTER - 1 {
+            record_not_now(&mut v, "site.test");
+        }
+        assert!(!shows_never(&v, "site.test"));
+        record_not_now(&mut v, "site.test");
+        assert!(shows_never(&v, "site.test"));
+        assert!(!shows_never(&v, "other.test"));
+    }
+
+    #[test]
+    fn saving_updating_or_deciding_resets_the_count() {
+        let (mut v, id) = vault_with("me", "pw");
+        let bump = |v: &mut Vault| {
+            for _ in 0..NEVER_AFTER {
+                record_not_now(v, "site.test");
+            }
+        };
+        bump(&mut v);
+        save_new(&mut v, SITE, "other", "x", 2);
+        assert!(!shows_never(&v, "site.test"));
+        bump(&mut v);
+        update_password(&mut v, id, SITE, "new", 3).unwrap();
+        assert!(!shows_never(&v, "site.test"));
+        bump(&mut v);
+        add_never(&mut v, "site.test");
+        remove_never(&mut v, "site.test");
+        assert!(!shows_never(&v, "site.test"));
+    }
+
+    #[test]
+    fn the_not_now_count_keeps_no_more_than_its_cap_of_sites() {
+        let (mut v, _) = vault_with("me", "pw");
+        for i in 0..MAX_NEVER + 10 {
+            record_not_now(&mut v, &format!("site{i}.test"));
+        }
+        assert_eq!(v.not_now.len(), MAX_NEVER);
     }
 
     #[test]

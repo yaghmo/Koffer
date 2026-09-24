@@ -242,11 +242,11 @@ async function offerFor(tabId, capture) {
   // `at` from the capture: an unanswered offer holds the password no longer
   // than the capture would have.
   await sessionSet(OFFER_KEY + tabId, { capture, kind, id: res.id || "", at: capture.at });
-  return showBar(tabId, kind, capture);
+  return showBar(tabId, kind, capture, !!res.showNever);
 }
 
-function showBar(tabId, kind, capture) {
-  const view = { kind, host: hostOf(capture.origin), username: capture.username };
+function showBar(tabId, kind, capture, showNever = false) {
+  const view = { kind, host: hostOf(capture.origin), username: capture.username, showNever };
   return ext.tabs.sendMessage(tabId, { type: "offer", view }).catch(() => {});
 }
 
@@ -273,7 +273,9 @@ async function onChoice(tabId, choice) {
     if (choice === "never") {
       await never(capture.origin);
     } else if (choice === "later") {
-      if (kind === "update") await seen(capture.origin, capture.username, capture.password);
+      // Counted in the vault toward offering "Never"; on an update the app
+      // also remembers the password that worked.
+      await seen(capture.origin, capture.username, capture.password);
     } else if (kind === "new") {
       await saveLogin(capture.origin, capture.username, capture.password);
       await say(tabId, "Saved to Password Manager.", true);

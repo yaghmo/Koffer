@@ -182,8 +182,11 @@ in a closed shadow root the page can neither read nor click.
   app's approval dialog; click Save again once you have said yes.
 - **Not now** on an update still remembers the password that worked; the
   app shows a warning on that login with the option to use it.
-- **Never for this site** silences it. Settings → *Never offer to save*
-  lists those sites and lets one ask again.
+- **Never for this site** silences it. It only appears once you have said
+  **Not now** to that site three times (counted in the vault, so a site you
+  visit rarely still gets there), because next to Save it is easy to click
+  by mistake. Settings → *Never offer to save* lists those sites and lets
+  one ask again.
 - Nothing is lost: every replaced password goes to the login's *Previous
   passwords* in the app (the last five).
 - Turn off the browser's own "offer to save passwords", or both will ask.

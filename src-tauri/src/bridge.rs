@@ -1136,7 +1136,9 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
         &password,
         &field(&inc.body, "current"),
     );
-    let body = match offer {
+    // Whether the bar may offer "Never for this site" yet.
+    let show_never = crate::capture::shows_never(session.vault(), &host);
+    let mut body = match offer {
         crate::capture::Offer::Never => serde_json::json!({ "offer": "never" }),
         crate::capture::Offer::NeedsApproval => {
             serde_json::json!({ "offer": "needsApproval", "host": host })
@@ -1153,6 +1155,9 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
             serde_json::json!({ "offer": "same" })
         }
     };
+    if body["offer"] != "never" && body["offer"] != "same" {
+        body["showNever"] = serde_json::Value::Bool(show_never);
+    }
     crate::log_info!("bridge", "offer answered {}", body["offer"]);
     reply(body, due)
 }
@@ -1245,8 +1250,9 @@ fn update(app: &AppHandle, inc: &Incoming) -> Reply {
     reply(serde_json::json!({ "updated": true }), due)
 }
 
-/// "Not now" on an update offer. The same answer whatever happened, so a
-/// key holder learns nothing from it.
+/// "Not now" on any offer: counted toward showing "Never for this site", and
+/// on an update the password that worked is remembered. The same answer
+/// whatever happened, so a key holder learns nothing from it.
 fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
     let mut session = match authed(&state, inc) {
@@ -1258,7 +1264,7 @@ fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
     if let Some(host) = host_of(&origin) {
         let is_approved = approved(session.client(), &host);
         let now = chrono::Utc::now().timestamp();
-        let changed = crate::capture::record_seen(
+        let seen = crate::capture::record_seen(
             session.vault_mut(),
             is_approved,
             &origin,
@@ -1266,7 +1272,8 @@ fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
             &field(&inc.body, "password"),
             now,
         );
-        if changed {
+        let counted = crate::capture::record_not_now(session.vault_mut(), &host);
+        if seen || counted {
             let _ = persist(app, session);
         }
     }

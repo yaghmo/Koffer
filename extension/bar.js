@@ -75,7 +75,9 @@
     var row = el("div", "row");
     row.appendChild(button(PRIMARY[view.kind] || "Save", true, "save"));
     row.appendChild(button("Not now", false, "later"));
-    row.appendChild(button("Never for this site", false, "never"));
+    // Only once the site has been turned down a few times: next to Save it
+    // is too easy to hit by mistake, and nothing on the page undoes it.
+    if (view.showNever) row.appendChild(button("Never for this site", false, "never"));
     bar.appendChild(row);
     root.appendChild(style);
     root.appendChild(bar);

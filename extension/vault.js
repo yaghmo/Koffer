@@ -343,7 +343,10 @@ export async function updateLogin(id, origin, password) {
   return signedPost("/update", { id, origin, password });
 }
 
-/** "Not now" on an update: the app remembers what worked. */
+/**
+ * "Not now" on any offer. The app counts it toward offering "Never for this
+ * site", and on an update remembers the password that worked.
+ */
 export async function seen(origin, username, password) {
   return signedPost("/seen", { origin, username, password });
 }
