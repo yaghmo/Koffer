@@ -42,6 +42,14 @@
 //! click per site, once, and a key holder trying to empty the vault is a
 //! dialog per site instead of a silent download.
 //!
+//! **The browser can also write, never destroy.** `/save`, `/update`,
+//! `/seen` and `/never` let the extension offer to keep a login the user
+//! just typed. Save and update need the host approved; every password they
+//! replace goes into the item's history, so a wrong capture or a stolen key
+//! cannot lose one. `/seen` and `/never` answer identically whatever they
+//! did. `/offer` says `never` for a silenced site even unapproved — that
+//! tells a key holder the user visited it, not what the vault holds.
+//!
 //! **The key is only as private as the browser's profile.** WebCrypto will
 //! not export it, but the browser still writes it under its user-data
 //! directory, and a program running as the same user that parses that format
@@ -833,6 +841,11 @@ fn route(app: &AppHandle, inc: &Incoming) -> Reply {
         "/credentials" => credentials(app, inc),
         "/copy" => copy(app, inc),
         "/ask" => ask(app, inc),
+        "/offer" => offer(app, inc),
+        "/save" => save(app, inc),
+        "/update" => update(app, inc),
+        "/seen" => seen(app, inc),
+        "/never" => never(app, inc),
         _ => fail(404, "no such endpoint"),
     }
 }
@@ -984,6 +997,10 @@ impl Session<'_> {
     fn client(&self) -> &PairedClient {
         &self.vault().paired[self.client]
     }
+
+    fn vault_mut(&mut self) -> &mut Vault {
+        self.guard.as_mut().expect("checked in authed")
+    }
 }
 
 /// Every route past `/pair` needs a live key *and* an open vault.
@@ -1079,6 +1096,188 @@ fn ask(app: &AppHandle, inc: &Incoming) -> Reply {
     drop(session);
     ask_approval(app, &label, &origin, &host, count);
     reply(serde_json::json!({ "asked": true, "approved": false }), due)
+}
+
+/// Persist a browser write and tell the app's list to reload. The lock goes
+/// first: the list's reload takes it.
+fn persist(app: &AppHandle, session: Session) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let result = crate::commands::save_unlocked(&state, session.vault());
+    drop(session);
+    let _ = app.emit("vault://items-changed", ());
+    result
+}
+
+/// What the bar should offer after a login that looks like it worked.
+fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let mut session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    let origin = field(&inc.body, "origin");
+    let Some(host) = host_of(&origin) else {
+        return fail(400, "not a web origin");
+    };
+    let password = field(&inc.body, "password");
+    if password.is_empty() {
+        return fail(400, "no password");
+    }
+    let is_approved = approved(session.client(), &host);
+    let offer = crate::capture::offer_for(
+        session.vault(),
+        is_approved,
+        &origin,
+        &field(&inc.body, "username"),
+        &password,
+        &field(&inc.body, "current"),
+    );
+    let body = match offer {
+        crate::capture::Offer::Never => serde_json::json!({ "offer": "never" }),
+        crate::capture::Offer::NeedsApproval => {
+            serde_json::json!({ "offer": "needsApproval", "host": host })
+        }
+        crate::capture::Offer::New => serde_json::json!({ "offer": "new", "host": host }),
+        crate::capture::Offer::Update { id } => {
+            serde_json::json!({ "offer": "update", "id": id.to_string(), "host": host })
+        }
+        crate::capture::Offer::Same { id } => {
+            // The stored password just worked: drop any stale warning.
+            if crate::capture::clear_last_seen(session.vault_mut(), id) {
+                let _ = persist(app, session);
+            }
+            serde_json::json!({ "offer": "same" })
+        }
+    };
+    crate::log_info!("bridge", "offer answered {}", body["offer"]);
+    reply(body, due)
+}
+
+fn needs_approval(host: &str) -> Reply {
+    json(
+        403,
+        serde_json::json!({
+            "error": format!("{host} is not approved for this browser yet"),
+            "needsApproval": true,
+            "host": host,
+        }),
+    )
+}
+
+/// "Save" on the bar: a new login item.
+fn save(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let mut session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    let origin = field(&inc.body, "origin");
+    let Some(host) = host_of(&origin) else {
+        return fail(400, "not a web origin");
+    };
+    let password = field(&inc.body, "password");
+    if password.is_empty() {
+        return fail(400, "no password");
+    }
+    if !approved(session.client(), &host) {
+        return needs_approval(&host);
+    }
+    let now = chrono::Utc::now().timestamp();
+    let id = crate::capture::save_new(
+        session.vault_mut(),
+        &origin,
+        &field(&inc.body, "username"),
+        &password,
+        now,
+    );
+    if let Err(e) = persist(app, session) {
+        crate::log_warn!("bridge", "save could not be written: {e}");
+        return fail(500, "the login could not be saved");
+    }
+    crate::log_info!("bridge", "saved id={id}");
+    reply(serde_json::json!({ "saved": true, "id": id.to_string() }), due)
+}
+
+/// "Update" on the bar. The replaced password goes to the item's history.
+fn update(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let mut session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    let Ok(id) = Uuid::parse_str(&field(&inc.body, "id")) else {
+        return fail(400, "not an item id");
+    };
+    let origin = field(&inc.body, "origin");
+    let Some(host) = host_of(&origin) else {
+        return fail(400, "not a web origin");
+    };
+    let password = field(&inc.body, "password");
+    if password.is_empty() {
+        return fail(400, "no password");
+    }
+    if !approved(session.client(), &host) {
+        return needs_approval(&host);
+    }
+    let now = chrono::Utc::now().timestamp();
+    if let Err(e) =
+        crate::capture::update_password(session.vault_mut(), id, &origin, &password, now)
+    {
+        return fail(404, e);
+    }
+    if let Err(e) = persist(app, session) {
+        crate::log_warn!("bridge", "update could not be written: {e}");
+        return fail(500, "the login could not be updated");
+    }
+    crate::log_info!("bridge", "updated id={id}");
+    reply(serde_json::json!({ "updated": true }), due)
+}
+
+/// "Not now" on an update offer. The same answer whatever happened, so a
+/// key holder learns nothing from it.
+fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let mut session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    let origin = field(&inc.body, "origin");
+    if let Some(host) = host_of(&origin) {
+        let is_approved = approved(session.client(), &host);
+        let now = chrono::Utc::now().timestamp();
+        let changed = crate::capture::record_seen(
+            session.vault_mut(),
+            is_approved,
+            &origin,
+            &field(&inc.body, "username"),
+            &field(&inc.body, "password"),
+            now,
+        );
+        if changed {
+            let _ = persist(app, session);
+        }
+    }
+    reply(serde_json::json!({}), due)
+}
+
+/// "Never for this site". The same answer whatever happened.
+fn never(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let mut session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    if let Some(host) = host_of(&field(&inc.body, "origin")) {
+        if crate::capture::add_never(session.vault_mut(), &host) {
+            let _ = persist(app, session);
+        }
+    }
+    reply(serde_json::json!({}), due)
 }
 
 /// What the gate below decided.
