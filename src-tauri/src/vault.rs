@@ -37,11 +37,36 @@ pub struct LoginFields {
     /// Empty when the account has no authenticator codes. See `totp`.
     #[serde(default)]
     pub totp: String,
+    /// Passwords this login used before, newest first, at most
+    /// `MAX_PREVIOUS`. Every change pushes one here — the editor, the
+    /// browser's "Update", "Use this one" — so a wrong capture or a stolen
+    /// extension key can never destroy a password that worked.
+    #[serde(default)]
+    pub previous_passwords: Vec<PreviousPassword>,
+    /// The password a login in the browser last succeeded with, when it was
+    /// not this one and the user chose not to update. Shown as a warning.
+    #[serde(default)]
+    pub last_seen: Option<LastSeen>,
 }
 
 fn default_login_method() -> String {
     "credentials".to_string()
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PreviousPassword {
+    pub password: String,
+    pub replaced_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LastSeen {
+    pub password: String,
+    pub seen_at: i64,
+}
+
+/// How many replaced passwords a login keeps.
+pub const MAX_PREVIOUS: usize = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NoteFields {
@@ -178,6 +203,11 @@ pub struct Vault {
     /// run of the vault for as long as it is unlocked.
     #[serde(default)]
     pub paired: Vec<PairedClient>,
+    /// Hosts the user said never to offer saving on. In the vault rather than
+    /// `config.json`: a list of sites is browsing history, and that file is
+    /// plaintext.
+    #[serde(default)]
+    pub never_save: Vec<String>,
 }
 
 /// A browser extension that has been paired with this vault.
@@ -353,6 +383,7 @@ pub fn new_vault(salt: Vec<u8>) -> Vault {
         icon_checked: std::collections::HashMap::new(),
         backup: None,
         paired: Vec::new(),
+        never_save: Vec::new(),
     }
 }
 
@@ -381,6 +412,64 @@ pub fn icon_checked_at(vault: &Vault, id: Uuid) -> i64 {
 
 pub fn get_item(vault: &Vault, id: Uuid) -> Option<&Item> {
     vault.items.iter().find(|i| i.id() == id)
+}
+
+/// Change a login's password, keeping the old one in its history.
+pub fn set_password(fields: &mut LoginFields, new: String, now: i64) {
+    if fields.password == new {
+        return;
+    }
+    let old = std::mem::replace(&mut fields.password, new);
+    if !old.is_empty() {
+        fields
+            .previous_passwords
+            .insert(0, PreviousPassword { password: old, replaced_at: now });
+        fields.previous_passwords.truncate(MAX_PREVIOUS);
+    }
+    if fields.last_seen.as_ref().is_some_and(|s| s.password == fields.password) {
+        fields.last_seen = None;
+    }
+}
+
+/// An editor save, which only ever sends the fields the editor shows.
+/// Take history from the stored item and record a changed password in it.
+pub fn carry_history(new: &mut LoginFields, old: &LoginFields, now: i64) {
+    new.previous_passwords = old.previous_passwords.clone();
+    new.last_seen = old.last_seen.clone();
+    let typed = std::mem::replace(&mut new.password, old.password.clone());
+    set_password(new, typed, now);
+}
+
+fn login_mut(vault: &mut Vault, id: Uuid) -> Result<&mut LoginFields, String> {
+    match vault.items.iter_mut().find(|i| i.id() == id) {
+        Some(Item::Login { fields, .. }) => Ok(fields),
+        _ => Err("not found".into()),
+    }
+}
+
+/// "Use this one" on the last-seen warning.
+pub fn use_last_seen(vault: &mut Vault, id: Uuid, now: i64) -> Result<(), String> {
+    let fields = login_mut(vault, id)?;
+    let seen = fields.last_seen.take().ok_or("nothing to use")?;
+    set_password(fields, seen.password, now);
+    Ok(())
+}
+
+/// "Restore" on one row of Previous passwords. The current password goes to
+/// the top of the list, so restoring is itself undoable.
+pub fn restore_previous(vault: &mut Vault, id: Uuid, index: usize, now: i64) -> Result<(), String> {
+    let fields = login_mut(vault, id)?;
+    if index >= fields.previous_passwords.len() {
+        return Err("no such previous password".into());
+    }
+    let wanted = fields.previous_passwords.remove(index);
+    set_password(fields, wanted.password, now);
+    Ok(())
+}
+
+pub fn dismiss_last_seen(vault: &mut Vault, id: Uuid) -> Result<(), String> {
+    login_mut(vault, id)?.last_seen = None;
+    Ok(())
 }
 
 pub fn list_items(vault: &Vault) -> Vec<&Item> {
@@ -624,6 +713,8 @@ mod tests {
                 password: "s3cret".to_string(),
                 phone: String::new(),
                 totp: String::new(),
+                previous_passwords: vec![],
+                last_seen: None,
             },
         }
     }
@@ -928,5 +1019,113 @@ mod tests {
         });
         zeroize_secrets(&mut v);
         assert_eq!(v.backup.as_ref().unwrap().url, "https://w.example.dev");
+    }
+
+    fn fields(password: &str) -> LoginFields {
+        LoginFields {
+            method: "credentials".into(),
+            url: "https://site.test".into(),
+            username: "me".into(),
+            password: password.into(),
+            phone: String::new(),
+            totp: String::new(),
+            previous_passwords: vec![],
+            last_seen: None,
+        }
+    }
+
+    #[test]
+    fn a_changed_password_keeps_the_old_one_newest_first_capped_at_five() {
+        let mut f = fields("p0");
+        for i in 1..=7 {
+            set_password(&mut f, format!("p{i}"), i);
+        }
+        assert_eq!(f.password, "p7");
+        let kept: Vec<_> = f.previous_passwords.iter().map(|p| p.password.as_str()).collect();
+        assert_eq!(kept, ["p6", "p5", "p4", "p3", "p2"]);
+        assert_eq!(f.previous_passwords[0].replaced_at, 7);
+    }
+
+    #[test]
+    fn setting_the_same_password_changes_nothing() {
+        let mut f = fields("same");
+        set_password(&mut f, "same".into(), 1);
+        assert!(f.previous_passwords.is_empty());
+    }
+
+    #[test]
+    fn an_empty_old_password_is_not_history() {
+        let mut f = fields("");
+        set_password(&mut f, "first".into(), 1);
+        assert!(f.previous_passwords.is_empty());
+    }
+
+    #[test]
+    fn adopting_the_last_seen_password_clears_the_warning() {
+        let mut f = fields("old");
+        f.last_seen = Some(LastSeen { password: "new".into(), seen_at: 5 });
+        set_password(&mut f, "new".into(), 6);
+        assert_eq!(f.last_seen, None);
+        assert_eq!(f.previous_passwords[0].password, "old");
+    }
+
+    #[test]
+    fn an_editor_save_keeps_history_it_never_saw() {
+        // The editor sends only the fields it shows, so history arrives empty.
+        let mut old = fields("old");
+        old.previous_passwords = vec![PreviousPassword { password: "older".into(), replaced_at: 1 }];
+        old.last_seen = Some(LastSeen { password: "seen".into(), seen_at: 2 });
+        let mut typed = fields("typed");
+        carry_history(&mut typed, &old, 3);
+        let kept: Vec<_> = typed.previous_passwords.iter().map(|p| p.password.as_str()).collect();
+        assert_eq!(kept, ["old", "older"]);
+        assert_eq!(typed.last_seen.as_ref().unwrap().password, "seen");
+        assert_eq!(typed.password, "typed");
+    }
+
+    #[test]
+    fn restore_and_use_last_seen_swap_through_history() {
+        let mut v = new_vault(vec![0; 16]);
+        let id = Uuid::new_v4();
+        let mut f = fields("current");
+        f.previous_passwords = vec![PreviousPassword { password: "before".into(), replaced_at: 1 }];
+        f.last_seen = Some(LastSeen { password: "seen".into(), seen_at: 2 });
+        add_item(
+            &mut v,
+            Item::Login {
+                base: ItemBase {
+                    id,
+                    title: "t".into(),
+                    notes: String::new(),
+                    created_at: 0,
+                    updated_at: 0,
+                    favicon: String::new(),
+                },
+                fields: f,
+            },
+        );
+
+        restore_previous(&mut v, id, 0, 10).unwrap();
+        let Some(Item::Login { fields: f, .. }) = get_item(&v, id) else { panic!() };
+        assert_eq!(f.password, "before");
+        assert_eq!(f.previous_passwords[0].password, "current");
+
+        use_last_seen(&mut v, id, 11).unwrap();
+        let Some(Item::Login { fields: f, .. }) = get_item(&v, id) else { panic!() };
+        assert_eq!(f.password, "seen");
+        assert_eq!(f.last_seen, None);
+
+        assert!(restore_previous(&mut v, id, 9, 12).is_err());
+        assert!(use_last_seen(&mut v, id, 12).is_err());
+    }
+
+    #[test]
+    fn a_vault_from_before_history_loads() {
+        let json = r#"{"version":1,"kdf_salt":[],"items":[{"type":"login","id":"6f1c1b1e-9a55-4f55-9d55-1f1c1b1e9a55","title":"t","notes":"","created_at":0,"updated_at":0,"method":"credentials","url":"https://a.test","username":"u","password":"p"}]}"#;
+        let v: Vault = serde_json::from_str(json).unwrap();
+        assert!(v.never_save.is_empty());
+        let Item::Login { fields, .. } = &v.items[0] else { panic!() };
+        assert!(fields.previous_passwords.is_empty());
+        assert_eq!(fields.last_seen, None);
     }
 }

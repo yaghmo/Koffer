@@ -1249,6 +1249,8 @@ mod tests {
                 password: pass.to_string(),
                 phone: String::new(),
                 totp: String::new(),
+                previous_passwords: vec![],
+                last_seen: None,
             },
         }
     }

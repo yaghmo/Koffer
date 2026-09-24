@@ -380,6 +380,7 @@ pub fn load_vault_unverified(account: &Account) -> Result<Vault, StorageError> {
         icon_checked: std::collections::HashMap::new(),
         backup: None,
         paired: Vec::new(),
+        never_save: Vec::new(),
     })
 }
 

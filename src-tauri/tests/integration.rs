@@ -25,6 +25,8 @@ fn full_vault_lifecycle() {
             password: "s3cret".to_string(),
             phone: String::new(),
             totp: String::new(),
+            previous_passwords: vec![],
+            last_seen: None,
         },
     };
     add_item(&mut v, item.clone());

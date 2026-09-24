@@ -413,6 +413,14 @@ pub fn save_item(item: Item, state: State<'_, AppState>) -> Result<(), String> {
         _ => now,
     };
     base.updated_at = now;
+    // The editor sends only the fields it shows. Keep the history it never
+    // saw, and put a changed password into it.
+    let item_id = item.id();
+    if let (Item::Login { fields, .. }, Some(Item::Login { fields: old, .. })) =
+        (&mut item, vault::get_item(vault, item_id))
+    {
+        vault::carry_history(fields, old, now);
+    }
     // Shape only. The log file sits unencrypted beside the vault, so it must
     // not become an inventory of which sites and institutions you hold
     // accounts with: no titles, no urls, no usernames — ids and flags only.
@@ -1619,6 +1627,8 @@ mod tests {
             password: password.to_string(),
             phone: String::new(),
             totp: String::new(),
+            previous_passwords: vec![],
+            last_seen: None,
         }
     }
 
