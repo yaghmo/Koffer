@@ -7,6 +7,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 const sent: Record<string, unknown>[] = [];
 type Listener = (msg: Record<string, unknown>, sender: unknown, respond: (r: unknown) => void) => boolean;
 let listener: Listener;
+/** The page-level click listener, so a test can hand it a trusted event. */
+let onClick: (e: unknown) => void;
 
 beforeAll(async () => {
   Element.prototype.getClientRects = function (this: Element) {
@@ -31,8 +33,14 @@ beforeAll(async () => {
   await import("../../extension/autofill.js");
   // @ts-expect-error untyped extension source
   await import("../../extension/bar.js");
+  const add = document.addEventListener.bind(document);
+  const spy = vi.spyOn(document, "addEventListener").mockImplementation((type, fn, opts) => {
+    if (type === "click") onClick = fn as (e: unknown) => void;
+    add(type, fn, opts);
+  });
   // @ts-expect-error untyped extension source
   await import("../../extension/content.js");
+  spy.mockRestore();
 });
 
 beforeEach(() => {
@@ -65,6 +73,19 @@ describe("content capture", () => {
     const form = login({ email: "me@site.test", password: "pw" });
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     expect(captures()).toEqual([]);
+  });
+
+  it("captures a formless login button, which never fires submit", () => {
+    // No `type` attribute and no form: `button.type` still says "submit".
+    document.body.innerHTML =
+      '<input name="email" type="email"><input name="password" type="password"><button>Log in</button>';
+    (document.querySelector('[name="email"]') as HTMLInputElement).value = "me@site.test";
+    (document.querySelector('[name="password"]') as HTMLInputElement).value = "pw";
+    // jsdom cannot make a trusted click, so call the listener directly.
+    onClick({ isTrusted: true, target: document.querySelector("button") });
+    expect(captures()).toEqual([
+      { type: "captured", origin: location.origin, username: "me@site.test", password: "pw", current: "" },
+    ]);
   });
 
   it("sends nothing for a form with no password typed", () => {

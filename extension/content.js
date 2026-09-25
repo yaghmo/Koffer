@@ -174,8 +174,10 @@
     function (e) {
       if (!e.isTrusted || !e.target || !e.target.closest) return;
       var b = e.target.closest('button, input[type="submit"], [role="button"]');
-      // A real submit button also fires `submit`, which already captured.
-      if (!b || b.type === "submit") return;
+      // A submit button in a form also fires `submit`, which already
+      // captured. One with no form does not, though `type` still says
+      // "submit" -- the usual single-page login button.
+      if (!b || (b.form && b.type === "submit")) return;
       var words = (b.textContent || "") + " " + (b.value || "") + " " + (b.getAttribute("aria-label") || "");
       if (SUBMITTISH.test(words)) capture(b);
     },
