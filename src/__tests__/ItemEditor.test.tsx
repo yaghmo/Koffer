@@ -86,6 +86,16 @@ describe("ItemEditor", () => {
     expect(screen.queryByAltText(/2fa key as a qr code/i)).toBeNull();
   });
 
+  it("keeps the phone box away until asked for", async () => {
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    await screen.findByLabelText(/title/i);
+    expect(screen.queryByLabelText(/phone number/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /use a phone number/i }));
+    expect(screen.getByLabelText(/phone number/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+    expect(screen.queryByLabelText(/phone number/i)).toBeNull();
+  });
+
   it("reads a QR code pasted straight into the key box", async () => {
     const { api } = await import("../lib/api");
     const link = "otpauth://totp/Site:me?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";

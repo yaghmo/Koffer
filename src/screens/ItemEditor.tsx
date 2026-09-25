@@ -153,6 +153,9 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
   // password set on the same account), so it stays one click away.
   const [wantsPassword, setWantsPassword] = useState(false);
   const passwordShown = login.method === "credentials" || wantsPassword || login.password !== "";
+  // Most logins have no phone; the box shows once asked for, or when one is saved.
+  const [wantsPhone, setWantsPhone] = useState(false);
+  const phoneShown = wantsPhone || login.phone !== "";
 
   const [favicon, setFavicon] = useState<string | null>(null);
   /** The confirmed 2FA key drawn back as a QR code; null until confirmed. */
@@ -600,32 +603,59 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                       username at all. Stored with its dial code so the
                       filler can split it back out for a form that has a
                       separate country picker. */}
-                  <p className="label-md mt-1.5">Phone number</p>
-                  <PhoneField
-                    value={login.phone}
-                    onChange={(phone) => {
-                      setLogin({ ...login, phone });
-                      markDirty();
-                    }}
-                    ariaLabel="Phone number"
-                    logScope="item-editor"
-                  />
-                  {fieldErrors.phone && (
-                    <p role="alert" className="text-body-sm text-error">
-                      {fieldErrors.phone}
-                    </p>
-                  )}
-                  {!login.phone && personalInfo.phone && (
+                  {!phoneShown && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setLogin({ ...login, phone: personalInfo.phone });
-                        markDirty();
-                      }}
-                      className="self-start text-body-sm font-medium text-primary hover:underline"
+                      onClick={() => setWantsPhone(true)}
+                      className="mt-1.5 self-start text-body-sm font-medium text-primary hover:underline"
                     >
-                      Use {personalInfo.phone}
+                      + Use a phone number
                     </button>
+                  )}
+                  {phoneShown && (
+                    <>
+                      <div className="mt-1.5 flex items-center justify-between">
+                        <p className="label-md">Phone number</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWantsPhone(false);
+                            setLogin({ ...login, phone: "" });
+                            setFieldErrors(({ phone: _, ...rest }) => rest);
+                            markDirty();
+                          }}
+                          className="text-body-sm font-medium text-on-surface-variant hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <PhoneField
+                        value={login.phone}
+                        onChange={(phone) => {
+                          setLogin({ ...login, phone });
+                          markDirty();
+                        }}
+                        ariaLabel="Phone number"
+                        logScope="item-editor"
+                      />
+                      {fieldErrors.phone && (
+                        <p role="alert" className="text-body-sm text-error">
+                          {fieldErrors.phone}
+                        </p>
+                      )}
+                      {!login.phone && personalInfo.phone && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLogin({ ...login, phone: personalInfo.phone });
+                            markDirty();
+                          }}
+                          className="self-start text-body-sm font-medium text-primary hover:underline"
+                        >
+                          Use {personalInfo.phone}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               )}
