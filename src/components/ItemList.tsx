@@ -34,12 +34,16 @@ function formatStamp(ms: number): string {
 /** The provider chip a login should wear, or null when it has none. */
 export function providerOf(it: ItemMeta) {
   if (it.kind !== "login") return null;
-  return it.method && it.method !== "credentials" ? it.method : providerForAccount(it.username ?? "");
+  if (it.method && it.method !== "credentials") return it.method;
+  // A site login with a Gmail address is that site's login, not Google's:
+  // the account's domain only says something when there is no site.
+  return it.host ? null : providerForAccount(it.username ?? "");
 }
 
 // Item icon: site favicon wins, else provider chip — from the chosen OAuth app
 // for site items, or inferred from the account domain for credential items
-// (e.g. "me@gmail.com" renders a Google chip) — else the item's initial.
+// with no URL (e.g. "me@gmail.com" renders a Google chip) — else the item's
+// initial.
 // Tailwind only ships classes it can see, so the two sizes are spelled out
 // rather than interpolated.
 export function itemIcon(it: ItemMeta, big = false) {

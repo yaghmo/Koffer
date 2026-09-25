@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import ItemList, { PinnedTiles } from "../components/ItemList";
+import ItemList, { PinnedTiles, providerOf } from "../components/ItemList";
 import type { ItemMeta } from "../lib/types";
 
 function login(id: string, title: string, pinned = false): ItemMeta {
@@ -70,5 +70,12 @@ describe("PinnedTiles", () => {
     expect(screen.getByRole("button", { name: /view gmail/i })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /unpin gmail/i }));
     expect(onTogglePin).toHaveBeenCalledWith(items[0]);
+  });
+});
+
+describe("providerOf", () => {
+  it("does not dress a site login in its email provider's logo", () => {
+    expect(providerOf(login("1", "Twitch"))).toBeNull();
+    expect(providerOf({ ...login("2", "Gmail"), host: null })).toBe("google");
   });
 });

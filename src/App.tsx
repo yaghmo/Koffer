@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-import { onApproveRequest, onExtendRequest, onVaultLocked, type ApproveRequest } from "./lib/events";
-import { refreshSiteLogos } from "./lib/logos";
+import { onApproveRequest, onExtendRequest, onItemsChanged, onVaultLocked, type ApproveRequest } from "./lib/events";
+import { fetchMissingLogos, refreshSiteLogos } from "./lib/logos";
 import { logUi } from "./lib/log";
 import Setup from "./screens/Setup";
 import AccountLock from "./screens/AccountLock";
@@ -118,6 +118,21 @@ export default function App() {
       .catch((e) => logUi("warn", "logos", `launch refresh failed: ${String(e)}`));
     return () => {
       cancelled = true;
+    };
+  }, [status]);
+
+  // A login the browser just saved has no logo yet; look it up once.
+  useEffect(() => {
+    if (status !== "unlocked") return;
+    const unlisten = onItemsChanged(() => {
+      fetchMissingLogos()
+        .then((updated) => {
+          if (updated > 0) setVaultRefresh((n) => n + 1);
+        })
+        .catch((e) => logUi("warn", "logos", `new login logo failed: ${String(e)}`));
+    });
+    return () => {
+      unlisten.then((fn) => fn());
     };
   }, [status]);
 

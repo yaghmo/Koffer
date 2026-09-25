@@ -14,12 +14,27 @@ import type { PairedInfo } from "../lib/types";
  * Grouped by browser rather than flattened, because revoking is per browser:
  * the same host approved in Chrome and in Firefox is two separate grants.
  */
+/**
+ * The logo of a saved login on this host, or on the site it belongs to --
+ * `accounts.google.com` is approved, the login is saved as `google.com`.
+ * Only logos already in the vault: fetching one per approved site would
+ * send the list of sites out to the network.
+ */
+export function logoFor(host: string, logos: Record<string, string>): string {
+  if (logos[host]) return logos[host];
+  const near = Object.keys(logos).find((h) => host.endsWith("." + h) || h.endsWith("." + host));
+  return near ? logos[near] : "";
+}
+
 export default function ApprovedSites({
   clients,
+  logos = {},
   onRevoke,
   onClose,
 }: {
   clients: PairedInfo[];
+  /** Saved logins' favicons by host. */
+  logos?: Record<string, string>;
   onRevoke: (origin: string, host: string) => void;
   onClose: () => void;
 }) {
@@ -107,7 +122,19 @@ export default function ApprovedSites({
                     key={host}
                     className="flex items-center justify-between gap-3 rounded-control border border-white/8 px-3 py-2"
                   >
-                    <span className="truncate font-mono text-label-md text-on-surface">{host}</span>
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      {logoFor(host, logos) ? (
+                        <img src={logoFor(host, logos)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
+                      ) : (
+                        <span
+                          aria-hidden
+                          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded bg-surface-container-high text-label-md font-semibold text-on-surface-variant"
+                        >
+                          {host.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="truncate font-mono text-label-md text-on-surface">{host}</span>
+                    </span>
                     <button
                       type="button"
                       className="btn-secondary"

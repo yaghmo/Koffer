@@ -41,6 +41,18 @@ export default function Settings({ accountId, onLock }: Props) {
   const [resetError, setResetError] = useState<string | null>(null);
   const [logosBusy, setLogosBusy] = useState(false);
   const [showApproved, setShowApproved] = useState(false);
+  const [logosProgress, setLogosProgress] = useState<[number, number] | null>(null);
+  const [siteLogos, setSiteLogos] = useState<Record<string, string>>({});
+
+  // Logos for the approved-sites list, read when it opens.
+  useEffect(() => {
+    if (!showApproved) return;
+    api.listItems(undefined, "login").then((metas) => {
+      const byHost: Record<string, string> = {};
+      for (const m of metas) if (m.host && m.favicon && !byHost[m.host]) byHost[m.host] = m.favicon;
+      setSiteLogos(byHost);
+    });
+  }, [showApproved]);
   const [logosResult, setLogosResult] = useState<string | null>(null);
   const [autoRefreshIcons, setAutoRefreshIcons] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
@@ -234,10 +246,11 @@ export default function Settings({ accountId, onLock }: Props) {
     setLogosBusy(true);
     setLogosResult(null);
     try {
-      const [updated, checked] = await refreshSiteLogos(true);
+      const [updated, checked] = await refreshSiteLogos(true, (done, total) => setLogosProgress([done, total]));
       setLogosResult(`Updated ${updated} of ${checked} login logos.`);
     } finally {
       setLogosBusy(false);
+      setLogosProgress(null);
     }
   }
 
@@ -394,8 +407,33 @@ export default function Settings({ accountId, onLock }: Props) {
           each check is a request to that site, so it stays rare. Refresh to re-check all of them now.
         </p>
         <button type="button" className="btn-secondary self-start" onClick={refreshLogos} disabled={logosBusy}>
-          {logosBusy ? "Refreshing…" : "Refresh site logos"}
+          {logosBusy && (
+            <span
+              aria-hidden
+              className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none"
+            />
+          )}
+          {logosBusy
+            ? logosProgress
+              ? `Refreshing ${logosProgress[0]}/${logosProgress[1]}`
+              : "Refreshing…"
+            : "Refresh site logos"}
         </button>
+        {logosBusy && logosProgress && logosProgress[1] > 0 && (
+          <div
+            role="progressbar"
+            aria-label="Refreshing site logos"
+            aria-valuemin={0}
+            aria-valuemax={logosProgress[1]}
+            aria-valuenow={logosProgress[0]}
+            className="h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-white/8"
+          >
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-300"
+              style={{ width: `${(logosProgress[0] / logosProgress[1]) * 100}%` }}
+            />
+          </div>
+        )}
         {logosResult && <p className="text-body-sm text-on-surface-variant">{logosResult}</p>}
 
         <label className="flex items-start gap-2 border-t border-white/6 pt-4 text-body-sm text-on-surface">
@@ -848,6 +886,7 @@ export default function Settings({ accountId, onLock }: Props) {
       {showApproved && (
         <ApprovedSites
           clients={bridge?.clients ?? []}
+          logos={siteLogos}
           onRevoke={revokeHost}
           onClose={() => setShowApproved(false)}
         />

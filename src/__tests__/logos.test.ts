@@ -87,3 +87,42 @@ describe("refreshSiteLogos", () => {
     expect(api.setItemFavicon).toHaveBeenCalledWith("noicon", null);
   });
 });
+
+describe("progress and new logins", () => {
+  it("reports each site as it is checked", async () => {
+    const { api } = await import("../lib/api");
+    const { refreshSiteLogos } = await import("../lib/logos");
+    (api.listItems as any).mockResolvedValue([meta("a", 0), meta("b", 0)]);
+    const seen: [number, number][] = [];
+    await refreshSiteLogos(true, (d, t) => seen.push([d, t]));
+    expect(seen).toEqual([
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+
+  it("fetches only logins never looked up, even with the automatic refresh off", async () => {
+    const { api } = await import("../lib/api");
+    const { fetchMissingLogos } = await import("../lib/logos");
+    (api.getConfig as any).mockResolvedValue({ autolock_mins: 15, auto_refresh_icons: false });
+    (api.listItems as any).mockResolvedValue([
+      { ...meta("new", 0), host: "new.com", favicon: "", icon_checked_at: 0 },
+      { ...meta("old", 40), host: "old.com", favicon: "" },
+      { ...meta("has", 0), host: "has.com", favicon: "data:x", icon_checked_at: 0 },
+    ]);
+    expect(await fetchMissingLogos()).toBe(1);
+    expect(api.getItem).toHaveBeenCalledTimes(1);
+    expect(api.getItem).toHaveBeenCalledWith("new");
+  });
+});
+
+describe("logoFor", () => {
+  it("finds a saved login's logo for the approved host or its parent site", async () => {
+    const { logoFor } = await import("../components/ApprovedSites");
+    const logos = { "google.com": "g", "twitch.tv": "t" };
+    expect(logoFor("twitch.tv", logos)).toBe("t");
+    expect(logoFor("accounts.google.com", logos)).toBe("g");
+    expect(logoFor("github.com", logos)).toBe("");
+  });
+});
