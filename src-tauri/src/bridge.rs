@@ -1059,9 +1059,14 @@ fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
         // copied key map which sites the vault holds. How many logins there
         // are is shown in the app's approval dialog instead, where only the
         // user can read it.
+        //
+        // `never` says the user silenced the site, so the extension does not
+        // put its approval prompt up there. That is already written into the
+        // vault from this browser, and answering an offer tells the same.
         crate::log_info!("bridge", "matches withheld host={host}");
+        let never = crate::capture::is_never(session.vault(), &host);
         return reply(
-            serde_json::json!({ "items": [], "needsApproval": true, "host": host }),
+            serde_json::json!({ "items": [], "needsApproval": true, "host": host, "never": never }),
             due,
         );
     }
@@ -1136,9 +1141,7 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
         &password,
         &field(&inc.body, "current"),
     );
-    // Whether the bar may offer "Never for this site" yet.
-    let show_never = crate::capture::shows_never(session.vault(), &host);
-    let mut body = match offer {
+    let body = match offer {
         crate::capture::Offer::Never => serde_json::json!({ "offer": "never" }),
         crate::capture::Offer::NeedsApproval => {
             serde_json::json!({ "offer": "needsApproval", "host": host })
@@ -1155,9 +1158,6 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
             serde_json::json!({ "offer": "same" })
         }
     };
-    if body["offer"] != "never" && body["offer"] != "same" {
-        body["showNever"] = serde_json::Value::Bool(show_never);
-    }
     crate::log_info!("bridge", "offer answered {}", body["offer"]);
     reply(body, due)
 }
@@ -1250,9 +1250,8 @@ fn update(app: &AppHandle, inc: &Incoming) -> Reply {
     reply(serde_json::json!({ "updated": true }), due)
 }
 
-/// "Not now" on any offer: counted toward showing "Never for this site", and
-/// on an update the password that worked is remembered. The same answer
-/// whatever happened, so a key holder learns nothing from it.
+/// "Not now" on an update: the password that worked is remembered. The same
+/// answer whatever happened, so a key holder learns nothing from it.
 fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
     let mut session = match authed(&state, inc) {
@@ -1272,8 +1271,7 @@ fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
             &field(&inc.body, "password"),
             now,
         );
-        let counted = crate::capture::record_not_now(session.vault_mut(), &host);
-        if seen || counted {
+        if seen {
             let _ = persist(app, session);
         }
     }

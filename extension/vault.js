@@ -294,8 +294,8 @@ export async function status() {
 
 /**
  * What the vault has for this origin: `{ items }` for an approved site, and
- * for any other `{ items: [], needsApproval, host }` -- the same reply
- * whether the vault holds anything there or not.
+ * for any other `{ items: [], needsApproval, host, never }` -- the
+ * same reply whether the vault holds anything there or not.
  */
 export async function matches(origin) {
   const data = await signedPost("/matches", { origin });
@@ -303,6 +303,8 @@ export async function matches(origin) {
     items: data.items || [],
     needsApproval: !!data.needsApproval,
     host: data.host || "",
+    // The user chose "Never" for this unapproved site: no prompt on the page.
+    never: !!data.never,
   };
 }
 

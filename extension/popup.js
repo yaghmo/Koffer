@@ -119,6 +119,7 @@ function renderPairing() {
  * word about whether anything had happened.
  */
 function paired() {
+  stopWatching();
   const done = document.createElement("div");
   done.className = "muted";
   done.textContent = `Paired with ${browserLabel()}.`;
@@ -164,7 +165,7 @@ function renderUnavailable() {
   note.textContent = "The vault is locked, or this browser is no longer paired.";
   const hint = document.createElement("div");
   hint.className = "dim";
-  hint.textContent = "Unlock the app and reopen this. If that does not help, pair again.";
+  hint.textContent = "Unlock the app — this updates on its own. If it stays here, pair again.";
   const again = document.createElement("button");
   again.className = "primary";
   again.type = "button";
@@ -251,7 +252,7 @@ function renderApproval(result, origin) {
     go.disabled = true;
     try {
       await ask(origin);
-      note.textContent = "The app is asking. Say yes there, then reopen this.";
+      note.textContent = "The app is asking. Say yes there — this updates on its own.";
     } catch (e) {
       note.textContent = describe(e);
       go.disabled = false;
@@ -318,6 +319,7 @@ function renderItems(result, tabId, origin) {
 }
 
 async function copyPassword(button, item, origin) {
+  stopWatching();
   button.disabled = true;
   const was = button.textContent;
   try {
@@ -334,6 +336,7 @@ async function copyPassword(button, item, origin) {
 }
 
 async function fill(button, item, tabId, origin) {
+  stopWatching();
   button.disabled = true;
   try {
     // Fetched at the moment of the click and handed straight to the page:
@@ -385,16 +388,41 @@ async function fill(button, item, tabId, origin) {
   }
 }
 
-async function main() {
-  const tab = await activeTab();
-  if (!tab || tab.id === undefined) {
-    text(pageEl, "No active tab.");
-    text(vaultEl, "");
-    return;
-  }
-  const state = await pageState(tab.id);
-  renderPage(state);
+/**
+ * How often the open popup asks again. Unlocking the app, approving a site
+ * or a login form appearing all happen elsewhere, and nothing tells the
+ * popup, so it looks: a popup still saying "locked" a second after you
+ * unlocked reads as broken.
+ */
+const WATCH_MS = 1000;
+let watching = true;
+let watchTimer = null;
 
+/** A click in the popup is the user acting on what is shown; keep it still. */
+function stopWatching() {
+  watching = false;
+  clearTimeout(watchTimer);
+}
+
+/** What each part currently shows, so a tick redraws only on a change. */
+let shownPage = null;
+let shownVault = null;
+
+/**
+ * Work out what the popup should say, and draw it only when that differs
+ * from what is already there -- redrawing every tick would wipe the pairing
+ * box mid-typing and the "the app is asking" note.
+ */
+async function tick(tab) {
+  const state = await pageState(tab.id);
+  const pageKey = JSON.stringify(state);
+  if (pageKey !== shownPage) {
+    shownPage = pageKey;
+    renderPage(state);
+  }
+
+  let key;
+  let draw;
   try {
     // A reply at all means the vault is open and this token still works;
     // anything else throws, and there is no third answer to read.
@@ -404,20 +432,54 @@ async function main() {
       // that. Suggesting a reload was wrong more often than right — most
       // pages without a content script are chrome:// or the extensions
       // page, where there is nothing to fill however often you reload.
-      text(vaultEl, "Vault connected.", "muted");
-      return;
+      key = "connected";
+      draw = () => text(vaultEl, "Vault connected.", "muted");
+    } else {
+      const result = await matches(state.origin);
+      if (result.needsApproval) {
+        key = "approve:" + state.origin;
+        draw = () => renderApproval(result, state.origin);
+      } else if (!state.login) {
+        // No form, or already logged in: a list of accounts has nowhere to go.
+        key = "noform:" + state.origin;
+        draw = () => text(vaultEl, "Vault connected. Accounts show here when the page has a login form.", "muted");
+      } else {
+        key = "items:" + state.origin + ":" + result.items.map((i) => i.id + (i.fillable ? "+" : "")).join(",");
+        draw = () => renderItems(result, tab.id, state.origin);
+      }
     }
-    renderItems(await matches(state.origin), tab.id, state.origin);
   } catch (e) {
     if (e.message !== NOT_PAIRED) {
-      text(vaultEl, describe(e));
-      return;
+      key = "error:" + e.message;
+      draw = () => text(vaultEl, describe(e));
+    } else if (await isPaired()) {
+      // Never paired is a different thing from paired-and-refused, and only
+      // this side knows which: the app answers both the same way.
+      key = "unavailable";
+      draw = renderUnavailable;
+    } else {
+      key = "pairing";
+      draw = renderPairing;
     }
-    // Never paired is a different thing from paired-and-refused, and only
-    // this side knows which: the app answers both the same way.
-    if (await isPaired()) renderUnavailable();
-    else renderPairing();
   }
+  if (watching && key !== shownVault) {
+    shownVault = key;
+    draw();
+  }
+}
+
+async function main() {
+  const tab = await activeTab();
+  if (!tab || tab.id === undefined) {
+    text(pageEl, "No active tab.");
+    text(vaultEl, "");
+    return;
+  }
+  const loop = async () => {
+    await tick(tab);
+    if (watching) watchTimer = setTimeout(loop, WATCH_MS);
+  };
+  loop();
 }
 
 main();

@@ -135,7 +135,7 @@ function stale(state) {
 
 /** Ask the app what it has for this origin, store it, and redraw the menu. */
 async function refresh(tabId, origin) {
-  let found = { items: [], needsApproval: false, host: "" };
+  let found = { items: [], needsApproval: false, host: "", never: false };
   try {
     found = await matches(origin);
   } catch {
@@ -158,7 +158,28 @@ async function onDetectedLogin(tabId, origin) {
     await renderMenu(known);
     return;
   }
-  await refresh(tabId, origin);
+  const state = await refresh(tabId, origin);
+  await promptApproval(tabId, state);
+}
+
+/**
+ * Put "Approve this site?" on the page itself, so the user does not have to
+ * notice the badge and open the popup before logging in -- by the time they
+ * do, the login has usually happened and nothing could be offered for it.
+ *
+ * It says nothing the page could not already learn: every unapproved site
+ * gets the same bar, whether the vault holds anything there or not. Shown
+ * once per page; "Not now" silences an origin until the browser restarts,
+ * "Never" for good -- the popup still offers to approve it.
+ */
+async function promptApproval(tabId, state) {
+  if (!state.needsApproval || !state.host || state.never) return;
+  if (await sessionGet(DISMISSED_KEY + state.origin)) return;
+  // Already up on this page, or a save offer is using the bar.
+  if (await sessionGet(OFFER_KEY + tabId)) return;
+  await sessionSet(OFFER_KEY + tabId, { kind: "site", origin: state.origin, at: Date.now() });
+  const view = { kind: "site", host: state.host, username: "" };
+  await ext.tabs.sendMessage(tabId, { type: "offer", view }).catch(() => {});
 }
 
 /**
@@ -191,6 +212,8 @@ async function waitForApproval(tabId, origin) {
  */
 const CAPTURE_KEY = "capture:";
 const OFFER_KEY = "offer:";
+/** Origins whose approval prompt got "Not now", until the browser restarts. */
+const DISMISSED_KEY = "dismissed:";
 
 async function sessionGet(key) {
   try {
@@ -242,11 +265,11 @@ async function offerFor(tabId, capture) {
   // `at` from the capture: an unanswered offer holds the password no longer
   // than the capture would have.
   await sessionSet(OFFER_KEY + tabId, { capture, kind, id: res.id || "", at: capture.at });
-  return showBar(tabId, kind, capture, !!res.showNever);
+  return showBar(tabId, kind, capture);
 }
 
-function showBar(tabId, kind, capture, showNever = false) {
-  const view = { kind, host: hostOf(capture.origin), username: capture.username, showNever };
+function showBar(tabId, kind, capture) {
+  const view = { kind, host: hostOf(capture.origin), username: capture.username };
   return ext.tabs.sendMessage(tabId, { type: "offer", view }).catch(() => {});
 }
 
@@ -257,13 +280,15 @@ function say(tabId, text, done) {
 /** An offer nobody answered goes when its capture would have. */
 async function dropStaleOffer(tabId) {
   const open = await sessionGet(OFFER_KEY + tabId);
-  if (open && !isFresh(open, Date.now())) await sessionSet(OFFER_KEY + tabId, null);
+  // The approval prompt holds no password; it goes with its page instead.
+  if (open && open.kind !== "site" && !isFresh(open, Date.now())) await sessionSet(OFFER_KEY + tabId, null);
 }
 
 /** A button on the bar. The capture is forgotten once it is answered. */
 async function onChoice(tabId, choice) {
   const open = await sessionGet(OFFER_KEY + tabId);
   if (!open) return;
+  if (open.kind === "site") return onSiteChoice(tabId, open.origin, choice);
   if (!isFresh(open, Date.now())) {
     await sessionSet(OFFER_KEY + tabId, null);
     return say(tabId, "That was a while ago. Log in again to be offered it.", true);
@@ -273,8 +298,7 @@ async function onChoice(tabId, choice) {
     if (choice === "never") {
       await never(capture.origin);
     } else if (choice === "later") {
-      // Counted in the vault toward offering "Never"; on an update the app
-      // also remembers the password that worked.
+      // On an update the app remembers the password that worked.
       await seen(capture.origin, capture.username, capture.password);
     } else if (kind === "new") {
       await saveLogin(capture.origin, capture.username, capture.password);
@@ -301,6 +325,30 @@ async function onChoice(tabId, choice) {
     );
   }
   await sessionSet(OFFER_KEY + tabId, null);
+}
+
+/** A button on the approval prompt. It holds no secret, so it never goes stale. */
+async function onSiteChoice(tabId, origin, choice) {
+  await sessionSet(OFFER_KEY + tabId, null);
+  if (choice === "never") {
+    // The vault's never list: no prompt here and no offer to save, until
+    // the site is approved from the popup or taken off the list in the app.
+    await never(origin).catch(() => {});
+    return refresh(tabId, origin);
+  }
+  if (choice !== "save") return sessionSet(DISMISSED_KEY + origin, true);
+  let answer;
+  try {
+    answer = await ask(origin);
+  } catch {
+    return say(tabId, "Unlock Password Manager, then try again from the toolbar icon.", true);
+  }
+  if (answer && answer.approved) {
+    await refresh(tabId, origin);
+    return say(tabId, "Already approved.", true);
+  }
+  await say(tabId, "Say yes in the Password Manager window.", true);
+  await waitForApproval(tabId, origin);
 }
 
 ext.runtime.onMessage.addListener((msg, sender) => {
@@ -354,8 +402,15 @@ ext.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status !== "loading") return;
   ext.action.setBadgeText({ tabId, text: "" });
   setTabState(tabId, null);
+  dropSitePrompt(tabId);
   ext.contextMenus.removeAll().catch(() => {});
 });
+
+/** The approval prompt belongs to one page; a save offer outlives it. */
+async function dropSitePrompt(tabId) {
+  const open = await sessionGet(OFFER_KEY + tabId);
+  if (open && open.kind === "site") await sessionSet(OFFER_KEY + tabId, null);
+}
 
 ext.tabs.onRemoved.addListener((tabId) => {
   setTabState(tabId, null);

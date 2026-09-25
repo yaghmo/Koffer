@@ -217,11 +217,6 @@ pub struct Vault {
     /// plaintext.
     #[serde(default)]
     pub never_save: Vec<String>,
-    /// "Not now" answers per host, so "Never for this site" is offered only
-    /// to a site the user keeps turning down. Here for the same reason as
-    /// `never_save`: it is browsing history.
-    #[serde(default)]
-    pub not_now: std::collections::HashMap<String, u8>,
 }
 
 /// A browser extension that has been paired with this vault.
@@ -398,7 +393,6 @@ pub fn new_vault(salt: Vec<u8>) -> Vault {
         backup: None,
         paired: Vec::new(),
         never_save: Vec::new(),
-        not_now: std::collections::HashMap::new(),
     }
 }
 

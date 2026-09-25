@@ -168,6 +168,20 @@ app, which has no way to tell the extension, so the extension watches for the
 answer and redraws itself; it also asks the app first whether the question is
 already settled, rather than putting the same dialog up twice.
 
+The same question also appears on the page by itself: a login form on an
+unapproved site gets a bar, top-right, with **Approve this website**, so
+the site is approved before you log in and the login can be offered for
+saving. Every unapproved site gets the identical bar, so it tells the page
+nothing about the vault. **Not now** silences it for that site until the
+browser restarts; **Never for this site**, under the arrow next to it, puts
+the site on the vault's never list, so neither this bar nor the offer to
+save appears there again. The popup still offers to approve it, and
+approving takes it off the list.
+
+The popup rechecks every second while it is open, so unlocking the app or
+approving a site shows up without reopening it. It lists accounts only
+when the page has a login form.
+
 ## Offering to save a login
 
 Log in or sign up and, once the page has moved on, a bar in the top-right
@@ -182,11 +196,10 @@ in a closed shadow root the page can neither read nor click.
   app's approval dialog; click Save again once you have said yes.
 - **Not now** on an update still remembers the password that worked; the
   app shows a warning on that login with the option to use it.
-- **Never for this site** silences it. It only appears once you have said
-  **Not now** to that site three times (counted in the vault, so a site you
-  visit rarely still gets there), because next to Save it is easy to click
-  by mistake. Settings → *Never offer to save* lists those sites and lets
-  one ask again.
+- **Never for this site** silences it. It sits behind the arrow next to
+  **Not now**, because next to Save it is easy to click by mistake.
+  Settings → *Never offer to save* lists those sites and lets one ask
+  again.
 - Nothing is lost: every replaced password goes to the login's *Previous
   passwords* in the app (the last five).
 - Turn off the browser's own "offer to save passwords", or both will ask.

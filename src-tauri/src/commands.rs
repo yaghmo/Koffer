@@ -1198,6 +1198,9 @@ pub fn bridge_approve(
     if !client.allowed_hosts.contains(&host) {
         client.allowed_hosts.push(host.clone());
     }
+    // Approving a silenced site, from the extension's popup, means the user
+    // wants it after all: offers to save come back too.
+    crate::capture::remove_never(vault, &host);
     save_unlocked(&state, vault)?;
     crate::log_info!("bridge_approve", "approved host={host}");
     Ok(())

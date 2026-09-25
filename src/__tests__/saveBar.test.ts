@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 interface Bar {
   show: (
-    view: { kind: string; host: string; username: string; showNever?: boolean },
+    view: { kind: string; host: string; username: string },
     onChoice: (c: string) => void,
   ) => ShadowRoot;
   say: (text: string, done?: boolean) => void;
@@ -36,22 +36,34 @@ describe("save bar", () => {
     expect(buttons(root).map((b) => b.textContent)).toContain("Update");
   });
 
-  it("offers never and not now", () => {
-    const onChoice = vi.fn();
-    press(Bar.show({ kind: "new", host: "site.test", username: "me", showNever: true }, onChoice), /never/i);
-    press(Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice), /not now/i);
-    expect(onChoice.mock.calls.map((c) => c[0])).toEqual(["never", "later"]);
+  it("asks to approve a site before any login, naming only the site", () => {
+    const root = Bar.show({ kind: "site", host: "site.test", username: "" }, vi.fn());
+    expect(root.textContent).toContain("site.test");
+    expect(buttons(root).map((b) => b.textContent)).toEqual([
+      "Approve this website",
+      "Not now",
+      "▾",
+      "Never for this site",
+    ]);
   });
 
-  it("keeps Never off the bar until the site has been turned down enough", () => {
-    const names = (root: ShadowRoot) => buttons(root).map((b) => b.textContent);
-    expect(names(Bar.show({ kind: "new", host: "site.test", username: "me" }, vi.fn()))).toEqual([
-      "Save",
-      "Not now",
-    ]);
-    expect(names(Bar.show({ kind: "new", host: "site.test", username: "me", showNever: true }, vi.fn()))).toContain(
-      "Never for this site",
-    );
+  it("offers never and not now", () => {
+    const onChoice = vi.fn();
+    const root = Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice);
+    press(root, /not now/i);
+    press(Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice), /never/i);
+    expect(onChoice.mock.calls.map((c) => c[0])).toEqual(["later", "never"]);
+  });
+
+  it("keeps Never behind the arrow until it is opened", () => {
+    const onChoice = vi.fn();
+    const root = Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice);
+    const menu = root.querySelector(".menu") as HTMLElement;
+    expect(menu.hidden).toBe(true);
+    press(root, /▾/);
+    expect(menu.hidden).toBe(false);
+    // The arrow itself chooses nothing.
+    expect(onChoice).not.toHaveBeenCalled();
   });
 
   it("ignores a choice the page forged", () => {

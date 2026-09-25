@@ -16,8 +16,9 @@
     update: "Update the saved password?",
     approve: "Save this login to Password Manager?",
     locked: "Unlock Password Manager to save this login.",
+    site: "Use Password Manager on this site?",
   };
-  var PRIMARY = { new: "Save", update: "Update", approve: "Save", locked: "Try again" };
+  var PRIMARY = { new: "Save", update: "Update", approve: "Save", locked: "Try again", site: "Approve this website" };
 
   var STYLE =
     ":host{all:initial}" +
@@ -28,7 +29,10 @@
     ".row{display:flex;gap:6px;flex-wrap:wrap}" +
     "button{font:inherit;border-radius:6px;padding:5px 10px;cursor:pointer;" +
     "border:1px solid #4a4650;background:transparent;color:inherit}" +
-    "button.primary{background:#b8a4ff;border-color:#b8a4ff;color:#1d1b20;font-weight:600}";
+    "button.primary{background:#b8a4ff;border-color:#b8a4ff;color:#1d1b20;font-weight:600}" +
+    ".split{display:inline-flex}.split .later{border-radius:6px 0 0 6px}" +
+    ".split .caret{border-left:0;border-radius:0 6px 6px 0;padding:5px 7px}" +
+    ".menu{margin-top:6px}.menu[hidden]{display:none}";
 
   var host = null;
   var root = null;
@@ -74,11 +78,27 @@
     bar.appendChild(el("p", "who", view.username ? view.username + " on " + view.host : view.host));
     var row = el("div", "row");
     row.appendChild(button(PRIMARY[view.kind] || "Save", true, "save"));
-    row.appendChild(button("Not now", false, "later"));
-    // Only once the site has been turned down a few times: next to Save it
-    // is too easy to hit by mistake, and nothing on the page undoes it.
-    if (view.showNever) row.appendChild(button("Never for this site", false, "never"));
+    // "Never" waits behind the arrow: next to Save it is too easy to hit by
+    // mistake, and nothing on the page undoes it.
+    var split = el("span", "split");
+    var later = button("Not now", false, "later");
+    later.className = "later";
+    var caret = el("button", "caret", "▾");
+    caret.type = "button";
+    caret.setAttribute("aria-label", "More choices");
+    caret.setAttribute("aria-expanded", "false");
+    split.appendChild(later);
+    split.appendChild(caret);
+    row.appendChild(split);
+    var menu = el("div", "menu");
+    menu.hidden = true;
+    menu.appendChild(button("Never for this site", false, "never"));
+    caret.addEventListener("click", function () {
+      menu.hidden = !menu.hidden;
+      caret.setAttribute("aria-expanded", String(!menu.hidden));
+    });
     bar.appendChild(row);
+    bar.appendChild(menu);
     root.appendChild(style);
     root.appendChild(bar);
     (document.body || document.documentElement).appendChild(host);
@@ -99,8 +119,9 @@
     if (who) who.textContent = text;
     setBusy(false);
     if (done) {
-      var row = root.querySelector(".row");
-      if (row) row.remove();
+      root.querySelectorAll(".row, .menu").forEach(function (n) {
+        n.remove();
+      });
       // Only this bar: a newer one may have been shown in the meantime.
       var mine = host;
       setTimeout(function () {
