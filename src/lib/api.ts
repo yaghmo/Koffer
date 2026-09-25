@@ -37,6 +37,8 @@ export const api = {
   totpCode: (id: string) => invoke<TotpCode>("totp_code", { id }),
   /** The 2FA link inside a QR code screenshotted to the clipboard. */
   totpFromClipboard: () => invoke<string>("totp_from_clipboard"),
+  /** Check a 2FA key or link; the answer is it drawn as a QR code (SVG). */
+  totpCheck: (key: string) => invoke<string>("totp_check", { key }),
 
   useLastSeen: (id: string) => invoke<void>("use_last_seen", { id }),
   dismissLastSeen: (id: string) => invoke<void>("dismiss_last_seen", { id }),

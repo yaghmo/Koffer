@@ -155,6 +155,8 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
   const passwordShown = login.method === "credentials" || wantsPassword || login.password !== "";
 
   const [favicon, setFavicon] = useState<string | null>(null);
+  /** The confirmed 2FA key drawn back as a QR code; null until confirmed. */
+  const [totpQr, setTotpQr] = useState<string | null>(null);
   const [fetchingMeta, setFetchingMeta] = useState(false);
 
   const [accountSuggestions, setAccountSuggestions] = useState<ItemMeta[]>([]);
@@ -204,6 +206,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
             phone: item.phone || "",
             totp: item.totp || "",
           });
+          if (item.totp) confirmTotp(item.totp);
           loadedPassword.current = item.password;
         } else if (item.type === "note") {
           setNote({ body: item.body });
@@ -372,6 +375,31 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
   }, [id]);
 
   useHotkey("ctrl+s", save);
+
+  /** Check the key and draw it back, so the user sees it was taken. */
+  async function confirmTotp(key: string) {
+    setFieldErrors(({ totp: _, ...rest }) => rest);
+    try {
+      setTotpQr(await api.totpCheck(key));
+    } catch (e) {
+      setTotpQr(null);
+      setFieldErrors((f) => ({ ...f, totp: String(e) }));
+    }
+  }
+
+  async function pasteTotpQr() {
+    setFieldErrors(({ totp: _, ...rest }) => rest);
+    try {
+      const link = await api.totpFromClipboard();
+      setLogin((l) => ({ ...l, totp: link }));
+      markDirty();
+      logUi("info", "item-editor", "2FA key read from a QR code");
+      await confirmTotp(link);
+    } catch (e) {
+      setTotpQr(null);
+      setFieldErrors((f) => ({ ...f, totp: String(e) }));
+    }
+  }
   // Esc cancels only when nothing has been edited — prevents losing typed
   // data on an accidental keypress. When dirty, Esc is a no-op; the user
   // must use Cancel/Save explicitly.
@@ -687,14 +715,30 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
             <Section title="Two-factor codes" icon={ShieldIcon}>
               <p className="text-body-sm text-on-surface-variant">
                 When a site turns on an authenticator app, it shows a QR code. Screenshot it
-                (Win+Shift+S) and paste it here, or type the key it offers under "can't scan it?".
+                (Win+Shift+S) and paste it here with Ctrl+V or the button, or type the key it
+                offers under "can't scan it?" and confirm it.
               </p>
               <div className="flex items-center gap-2">
                 <input
                   value={login.totp}
                   onChange={(e) => {
                     setLogin({ ...login, totp: e.target.value });
+                    setTotpQr(null);
                     markDirty();
+                  }}
+                  // An image pasted into a text box goes nowhere; read it as a QR code.
+                  onPaste={(e) => {
+                    if ([...e.clipboardData.items].some((i) => i.type.startsWith("image/"))) {
+                      e.preventDefault();
+                      pasteTotpQr();
+                    }
+                  }}
+                  // Enter confirms the key rather than saving the whole login.
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (login.totp.trim()) confirmTotp(login.totp);
+                    }
                   }}
                   aria-label="2FA key"
                   placeholder="2FA key"
@@ -702,24 +746,31 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   autoComplete="off"
                   className="field flex-1 font-mono"
                 />
+                <button type="button" className="btn-secondary" onClick={pasteTotpQr}>
+                  Paste QR code
+                </button>
                 <button
                   type="button"
                   className="btn-secondary"
-                  onClick={async () => {
-                    setFieldErrors(({ totp: _, ...rest }) => rest);
-                    try {
-                      const link = await api.totpFromClipboard();
-                      setLogin({ ...login, totp: link });
-                      markDirty();
-                      logUi("info", "item-editor", "2FA key read from a QR code");
-                    } catch (e) {
-                      setFieldErrors((f) => ({ ...f, totp: String(e) }));
-                    }
-                  }}
+                  disabled={!login.totp.trim() || totpQr !== null}
+                  onClick={() => confirmTotp(login.totp)}
                 >
-                  Paste QR code
+                  Confirm
                 </button>
               </div>
+              {totpQr && (
+                <div className="flex items-center gap-4 rounded-control border border-white/8 p-3">
+                  <img
+                    src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(totpQr)}`}
+                    alt="The 2FA key as a QR code"
+                    className="h-28 w-28 flex-shrink-0 rounded bg-white"
+                  />
+                  <p className="flex items-center gap-2 text-body-sm text-on-surface">
+                    <CheckIcon size={14} />
+                    2FA key read. Save the login to keep it.
+                  </p>
+                </div>
+              )}
               {fieldErrors.totp && (
                 <p role="alert" className="text-body-sm text-error">
                   {fieldErrors.totp}

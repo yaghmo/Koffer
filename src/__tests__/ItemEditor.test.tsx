@@ -27,6 +27,7 @@ vi.mock("../lib/api", () => ({
     listItems: vi.fn().mockResolvedValue([]),
     copyToClipboard: vi.fn().mockResolvedValue(undefined),
     totpFromClipboard: vi.fn(),
+    totpCheck: vi.fn().mockResolvedValue("<svg></svg>"),
     fetchUrlMetadata: vi.fn().mockResolvedValue({
       title: null,
       favicon_data_url: null,
@@ -66,8 +67,34 @@ describe("ItemEditor", () => {
     fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: "pw" } });
     fireEvent.click(screen.getByRole("button", { name: /paste qr code/i }));
     expect(await screen.findByDisplayValue(link)).toBeTruthy();
+    // Drawn back, so the user can see it was read.
+    expect(await screen.findByAltText(/2fa key as a qr code/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(() => expect(api.saveItem).toHaveBeenCalledWith(expect.objectContaining({ totp: link })));
+  });
+
+  it("confirms a typed key with a button, and shows it back", async () => {
+    const { api } = await import("../lib/api");
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    const key = await screen.findByLabelText(/2fa key/i);
+    fireEvent.change(key, { target: { value: "GEZD GNBV GY3T QOJQ" } });
+    fireEvent.click(screen.getByRole("button", { name: /^confirm$/i }));
+    expect(await screen.findByAltText(/2fa key as a qr code/i)).toBeTruthy();
+    expect(api.totpCheck).toHaveBeenCalledWith("GEZD GNBV GY3T QOJQ");
+    // Editing the key again takes the confirmation away.
+    fireEvent.change(key, { target: { value: "GEZD" } });
+    expect(screen.queryByAltText(/2fa key as a qr code/i)).toBeNull();
+  });
+
+  it("reads a QR code pasted straight into the key box", async () => {
+    const { api } = await import("../lib/api");
+    const link = "otpauth://totp/Site:me?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    vi.mocked(api.totpFromClipboard).mockResolvedValueOnce(link);
+    render(<ItemEditor id={null} onClose={() => {}} />);
+    fireEvent.paste(await screen.findByLabelText(/2fa key/i), {
+      clipboardData: { items: [{ type: "image/png" }] },
+    });
+    expect(await screen.findByDisplayValue(link)).toBeTruthy();
   });
 
   it("says why when the clipboard holds no QR code", async () => {

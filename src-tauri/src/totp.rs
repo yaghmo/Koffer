@@ -68,21 +68,49 @@ pub fn code_at(totp: &TOTP, unix: u64) -> Code {
 /// The desktop has no camera to point at the site's QR code, so the user
 /// screenshots it to the clipboard instead and this reads it back.
 pub fn qr_from_rgba(width: usize, height: usize, rgba: &[u8]) -> Result<String, String> {
-    let mut img = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
-        let i = (y * width + x) * 4;
-        // Luma, near enough; the QR only needs dark told from light.
-        ((rgba[i] as u16 * 3 + rgba[i + 1] as u16 * 6 + rgba[i + 2] as u16) / 10) as u8
-    });
-    let text = img
-        .detect_grids()
-        .iter()
-        .find_map(|g| g.decode().ok().map(|(_, text)| text))
+    if rgba.len() < width * height * 4 {
+        return Err("The copied image could not be read.".into());
+    }
+    // Light-on-dark first fails, then reads: a dark-themed page draws its QR
+    // code inverted, and the decoder only looks for dark modules.
+    let text = [false, true]
+        .into_iter()
+        .find_map(|invert| {
+            let mut img = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
+                let i = (y * width + x) * 4;
+                // Luma, near enough; the QR only needs dark told from light.
+                let luma = ((rgba[i] as u16 * 3 + rgba[i + 1] as u16 * 6 + rgba[i + 2] as u16) / 10) as u8;
+                if invert { 255 - luma } else { luma }
+            });
+            img.detect_grids().iter().find_map(|g| g.decode().ok().map(|(_, text)| text))
+        })
         .ok_or_else(|| "No QR code found in the copied image.".to_string())?;
     if !text.to_ascii_lowercase().starts_with("otpauth://totp/") {
         return Err("That QR code is not a 2FA setup code.".into());
     }
     parse(&text)?;
     Ok(text)
+}
+
+/// The key drawn back as a QR code, so the editor can show that it was read.
+/// A bare key gets a link of its own; either way an authenticator app can
+/// scan the result.
+pub fn qr_svg(input: &str) -> Result<String, String> {
+    parse(input)?;
+    let s = input.trim();
+    let link = if s.to_ascii_lowercase().starts_with("otpauth://") {
+        s.to_string()
+    } else {
+        let key: String = s.chars().filter(|c| !c.is_whitespace() && *c != '-').collect();
+        format!("otpauth://totp/Password%20Manager?secret={}", key.to_ascii_uppercase())
+    };
+    let code = qrcode::QrCode::new(link.as_bytes()).map_err(|_| "That key is too long to draw.".to_string())?;
+    Ok(code
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(160, 160)
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .build())
 }
 
 #[cfg(test)]
@@ -178,8 +206,27 @@ mod tests {
     }
 
     #[test]
+    fn reads_a_light_on_dark_qr_code() {
+        let link = format!("otpauth://totp/Site:me?secret={RFC_KEY}&issuer=Site");
+        let (w, h, mut rgba) = qr_screenshot(&link);
+        for px in rgba.chunks_mut(4) {
+            for c in &mut px[..3] {
+                *c = 255 - *c;
+            }
+        }
+        assert_eq!(qr_from_rgba(w, h, &rgba).unwrap(), link);
+    }
+
+    #[test]
+    fn draws_a_key_back_as_a_qr_code() {
+        assert!(qr_svg(RFC_KEY).unwrap().starts_with("<?xml"));
+        assert!(qr_svg("otpauth://totp/x?secret=nope!").is_err());
+    }
+
+    #[test]
     fn a_blank_image_has_no_qr() {
         let white = vec![255u8; 40 * 40 * 4];
         assert!(qr_from_rgba(40, 40, &white).is_err());
     }
 }
+

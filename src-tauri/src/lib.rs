@@ -75,6 +75,7 @@ pub fn run() {
             commands::copy_to_clipboard,
             commands::totp_code,
             commands::totp_from_clipboard,
+            commands::totp_check,
             commands::use_last_seen,
             commands::dismiss_last_seen,
             commands::restore_previous_password,

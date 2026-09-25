@@ -620,12 +620,23 @@ pub fn totp_code(id: String, state: State<'_, AppState>) -> Result<crate::totp::
 /// Read a 2FA setup QR code out of a screenshot on the clipboard.
 #[tauri::command]
 pub fn totp_from_clipboard() -> Result<String, String> {
-    let image = arboard::Clipboard::new()
-        .and_then(|mut c| c.get_image())
-        .map_err(|_| "No image on the clipboard. Screenshot the QR code first.".to_string())?;
-    let link = crate::totp::qr_from_rgba(image.width, image.height, &image.bytes)?;
+    let image = arboard::Clipboard::new().and_then(|mut c| c.get_image()).map_err(|e| {
+        crate::log_warn!("totp_from_clipboard", "no image: {e}");
+        "No image on the clipboard. Screenshot the QR code first.".to_string()
+    })?;
+    let link = crate::totp::qr_from_rgba(image.width, image.height, &image.bytes).map_err(|e| {
+        crate::log_warn!("totp_from_clipboard", "{}x{}: {e}", image.width, image.height);
+        e
+    })?;
     crate::log_info!("totp_from_clipboard", "read a 2FA setup code");
     Ok(link)
+}
+
+/// Check a 2FA key or link and draw it as a QR code, for the editor's
+/// Confirm. Nothing is stored; the key is saved with the item.
+#[tauri::command]
+pub fn totp_check(key: String) -> Result<String, String> {
+    crate::totp::qr_svg(&key)
 }
 
 /// Run one edit on the open vault, then write it.
