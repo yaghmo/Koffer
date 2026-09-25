@@ -270,7 +270,17 @@ async fn get_capped(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     let mut buf = Vec::new();
-    while let Some(chunk) = resp.chunk().await.map_err(req_err)? {
+    loop {
+        let chunk = match resp.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            // The 5 s timeout, or a reset, part-way through a slow page: what
+            // arrived is kept as a cut-off body. A page's <head> comes first,
+            // so the favicon link is usually in it; a cut-off icon is still
+            // refused by the caller.
+            Err(_) if !buf.is_empty() => return Ok((buf, true, content_type)),
+            Err(e) => return Err(req_err(e)),
+        };
         let room = max - buf.len();
         if chunk.len() > room {
             buf.extend_from_slice(&chunk[..room]);
