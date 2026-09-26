@@ -93,6 +93,10 @@ export interface Config {
    * account list into DNS and TLS SNI at each unlock.
    */
   auto_refresh_icons: boolean;
+  browser_totp: boolean;
+  browser_offer_save: boolean;
+  browser_offer_update: boolean;
+  browser_site_prompt: boolean;
 }
 
 export interface SecurityState {
@@ -182,4 +186,16 @@ export interface VaultStats {
   reused: FlaggedItem[];
   old: FlaggedItem[];
   health_score: number;
+}
+
+/** A browser-extension feature the user can switch off in Settings. */
+export type BrowserPref = "totp" | "offer_save" | "offer_update" | "site_prompt";
+
+/** A login whose password appears in a known data leak. */
+export interface LeakedLogin {
+  id: string;
+  title: string;
+  username: string;
+  /** Times the password was seen across all known leaks. */
+  count: number;
 }

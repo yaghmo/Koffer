@@ -608,6 +608,57 @@ pub fn copy_to_clipboard(
     Ok(())
 }
 
+/// A login whose password appears in a known data leak.
+#[derive(Serialize)]
+pub struct LeakedLogin {
+    pub id: String,
+    pub title: String,
+    pub username: String,
+    /// How many times the password was seen across all known leaks.
+    pub count: u64,
+}
+
+/// Check every saved login password against Have I Been Pwned. Only runs
+/// when the user presses the button; see `breach` for what leaves the
+/// machine (five characters of a hash per password, nothing else).
+#[tauri::command]
+pub async fn check_leaked_passwords(state: State<'_, AppState>) -> Result<Vec<LeakedLogin>, String> {
+    // Copied out so the vault lock is not held across the network.
+    let logins: Vec<(String, String, String, zeroize::Zeroizing<String>)> = {
+        let vault = state.vault.lock().unwrap();
+        let vault = vault.as_ref().ok_or_else(|| "locked".to_string())?;
+        vault
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Login { base, fields } if !fields.password.is_empty() => Some((
+                    base.id.to_string(),
+                    base.title.clone(),
+                    fields.username.clone(),
+                    zeroize::Zeroizing::new(fields.password.clone()),
+                )),
+                _ => None,
+            })
+            .collect()
+    };
+    let pairs = logins.iter().map(|(id, _, _, pw)| (id.clone(), pw.clone())).collect();
+    let leaked = crate::breach::check(pairs).await?;
+    crate::log_info!("check_leaked_passwords", "checked={} leaked={}", logins.len(), leaked.len());
+    let mut out: Vec<LeakedLogin> = leaked
+        .into_iter()
+        .filter_map(|(id, count)| {
+            logins.iter().find(|l| l.0 == id).map(|(id, title, username, _)| LeakedLogin {
+                id: id.clone(),
+                title: title.clone(),
+                username: username.clone(),
+                count,
+            })
+        })
+        .collect();
+    out.sort_by_key(|l| std::cmp::Reverse(l.count));
+    Ok(out)
+}
+
 /// The current 2FA code for a login item.
 #[tauri::command]
 pub fn totp_code(id: String, state: State<'_, AppState>) -> Result<crate::totp::Code, String> {
@@ -750,6 +801,23 @@ pub fn set_auto_refresh_icons(on: bool, state: State<'_, AppState>) -> Result<()
     crate::log_info!("set_auto_refresh_icons", "on={on}");
     let mut c = config::load(&account);
     c.auto_refresh_icons = on;
+    config::save(&account, &c).map_err(|e| e.to_string())
+}
+
+/// Turn one of the browser extension's features on or off.
+#[tauri::command]
+pub fn set_browser_pref(name: String, on: bool, state: State<'_, AppState>) -> Result<(), String> {
+    let account = current_account(&state)?;
+    let mut c = config::load(&account);
+    let field = match name.as_str() {
+        "totp" => &mut c.browser_totp,
+        "offer_save" => &mut c.browser_offer_save,
+        "offer_update" => &mut c.browser_offer_update,
+        "site_prompt" => &mut c.browser_site_prompt,
+        _ => return Err(format!("no browser setting called {name}")),
+    };
+    *field = on;
+    crate::log_info!("set_browser_pref", "{name}={on}");
     config::save(&account, &c).map_err(|e| e.to_string())
 }
 

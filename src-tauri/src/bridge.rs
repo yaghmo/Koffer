@@ -1087,6 +1087,7 @@ fn reply(mut body: serde_json::Value, rekey_due: bool) -> Reply {
 }
 
 fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
+    let cfg = prefs(app);
     let state = app.state::<AppState>();
     let session = match authed(&state, inc) {
         Ok(s) => s,
@@ -1110,11 +1111,23 @@ fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
         crate::log_info!("bridge", "matches withheld host={host}");
         let never = crate::capture::is_never(session.vault(), &host);
         return reply(
-            serde_json::json!({ "items": [], "needsApproval": true, "host": host, "never": never }),
+            serde_json::json!({
+                "items": [],
+                "needsApproval": true,
+                "host": host,
+                "never": never,
+                // The user turned the on-page approval prompt off.
+                "prompt": cfg.browser_site_prompt,
+            }),
             due,
         );
     }
-    let items = matches_for(session.vault(), &page);
+    let mut items = matches_for(session.vault(), &page);
+    if !cfg.browser_totp {
+        for m in &mut items {
+            m.totp = false;
+        }
+    }
     crate::log_info!("bridge", "matches n={}", items.len());
     reply(serde_json::json!({ "items": items }), due)
 }
@@ -1162,6 +1175,7 @@ fn persist(app: &AppHandle, session: Session) -> Result<(), String> {
 
 /// What the bar should offer after a login that looks like it worked.
 fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
+    let cfg = prefs(app);
     let state = app.state::<AppState>();
     let mut session = match authed(&state, inc) {
         Ok(s) => s,
@@ -1185,6 +1199,10 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
         &password,
         &field(&inc.body, "current"),
     );
+    if !offer_allowed(&offer, &cfg) {
+        crate::log_info!("bridge", "offer turned off in settings");
+        return reply(serde_json::json!({ "offer": "off" }), due);
+    }
     let body = match offer {
         crate::capture::Offer::Never => serde_json::json!({ "offer": "never" }),
         crate::capture::Offer::NeedsApproval => {
@@ -1206,6 +1224,27 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
     reply(body, due)
 }
 
+/// The open vault's settings. Read before `authed` takes the vault lock, so
+/// the bridge never holds the vault while waiting on the account.
+fn prefs(app: &AppHandle) -> crate::config::Config {
+    let account = app.state::<AppState>().current_account.lock().unwrap().clone();
+    account.map(|a| crate::config::load(&a)).unwrap_or_default()
+}
+
+/// Whether the user's settings let this offer be made at all.
+pub(crate) fn offer_allowed(offer: &crate::capture::Offer, cfg: &crate::config::Config) -> bool {
+    use crate::capture::Offer;
+    match offer {
+        Offer::New => cfg.browser_offer_save,
+        Offer::Update { .. } => cfg.browser_offer_update,
+        // Approving a site only to be offered something that is off is noise.
+        Offer::NeedsApproval => cfg.browser_offer_save || cfg.browser_offer_update,
+        Offer::Never | Offer::Same { .. } => true,
+    }
+}
+
+const TOTP_OFF: &str = "2FA codes in the browser are turned off in Settings";
+
 fn needs_approval(host: &str) -> Reply {
     json(
         403,
@@ -1219,11 +1258,15 @@ fn needs_approval(host: &str) -> Reply {
 
 /// "Save" on the bar: a new login item.
 fn save(app: &AppHandle, inc: &Incoming) -> Reply {
+    let save_on = prefs(app).browser_offer_save;
     let state = app.state::<AppState>();
     let mut session = match authed(&state, inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
+    if !save_on {
+        return fail(403, "saving logins from the browser is turned off in Settings");
+    }
     let due = rekey_due(&session);
     let origin = field(&inc.body, "origin");
     let Some(host) = host_of(&origin) else {
@@ -1260,11 +1303,15 @@ fn save(app: &AppHandle, inc: &Incoming) -> Reply {
 
 /// "Update" on the bar. The replaced password goes to the item's history.
 fn update(app: &AppHandle, inc: &Incoming) -> Reply {
+    let update_on = prefs(app).browser_offer_update;
     let state = app.state::<AppState>();
     let mut session = match authed(&state, inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
+    if !update_on {
+        return fail(403, "updating passwords from the browser is turned off in Settings");
+    }
     let due = rekey_due(&session);
     let Ok(id) = Uuid::parse_str(&field(&inc.body, "id")) else {
         return fail(400, "not an item id");
@@ -1442,6 +1489,7 @@ fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
 /// same approval, same item rules as a fill: this is the same secret leaving
 /// by a different door.
 fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
+    let totp_on = prefs(app).browser_totp;
     let state = app.state::<AppState>();
     let session = match authed(&state, inc) {
         Ok(s) => s,
@@ -1451,6 +1499,9 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
     let which = field(&inc.body, "field");
     if !matches!(which.as_str(), "password" | "username" | "phone" | "totp") {
         return fail(400, "copy password, username, phone or totp");
+    }
+    if which == "totp" && !totp_on {
+        return fail(403, TOTP_OFF);
     }
     let (id, page) = match gate(&session, inc) {
         Gate::Go(id, page) => (id, page),
@@ -1497,11 +1548,15 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
 /// without the password), but it is the second factor, so it gets no
 /// easier a path out.
 fn totp(app: &AppHandle, inc: &Incoming) -> Reply {
+    let totp_on = prefs(app).browser_totp;
     let state = app.state::<AppState>();
     let session = match authed(&state, inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
+    if !totp_on {
+        return fail(403, TOTP_OFF);
+    }
     let due = rekey_due(&session);
     let (id, page) = match gate(&session, inc) {
         Gate::Go(id, page) => (id, page),
@@ -2281,5 +2336,21 @@ mod tests {
             matches_for(&v, "https://bank.test").into_iter().map(|m| (m.username, m.totp)).collect();
         flags.sort();
         assert_eq!(flags, vec![("a".to_string(), true), ("b".to_string(), false)]);
+    }
+
+    #[test]
+    fn offers_the_user_turned_off_are_not_made() {
+        use crate::capture::Offer;
+        let id = Uuid::new_v4();
+        let mut cfg = crate::config::Config::default();
+        assert!(offer_allowed(&Offer::New, &cfg));
+        cfg.browser_offer_save = false;
+        assert!(!offer_allowed(&Offer::New, &cfg));
+        assert!(offer_allowed(&Offer::Update { id }, &cfg));
+        // Approving a site only to be offered something that is off is noise.
+        assert!(offer_allowed(&Offer::NeedsApproval, &cfg));
+        cfg.browser_offer_update = false;
+        assert!(!offer_allowed(&Offer::Update { id }, &cfg));
+        assert!(!offer_allowed(&Offer::NeedsApproval, &cfg));
     }
 }

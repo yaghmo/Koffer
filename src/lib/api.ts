@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, BackupState, BridgeState, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, TotpCode, UrlMetadata, VaultStats, VaultStorage } from "./types";
+import type { Account, BackupState, BrowserPref, LeakedLogin, BridgeState, Config, GenOpts, Item, ItemKind, ItemMeta, PersonalInfo, SecurityState, TotpCode, UrlMetadata, VaultStats, VaultStorage } from "./types";
 
 export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
@@ -50,6 +50,8 @@ export const api = {
   getConfig: () => invoke<Config>("get_config"),
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
   setAutoRefreshIcons: (on: boolean) => invoke<void>("set_auto_refresh_icons", { on }),
+  setBrowserPref: (name: BrowserPref, on: boolean) => invoke<void>("set_browser_pref", { name, on }),
+  checkLeakedPasswords: () => invoke<LeakedLogin[]>("check_leaked_passwords"),
 
   vaultStorage: () => invoke<VaultStorage>("vault_storage"),
 

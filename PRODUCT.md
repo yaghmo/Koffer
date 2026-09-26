@@ -52,7 +52,7 @@ Capabilities:
 - Reset vault from the Lock screen with password re-verification.
 
 Constraints (durable):
-- Local-only. Vault contents never leave the machine. The only network call fetches a site's title and favicon when the user enters a login URL: public http(s) hosts only, size-capped, and nothing from the vault is sent.
+- Local-only. Vault contents never leave the machine. Two network calls exist, both started by the user: fetching a site's title and favicon when a login URL is entered (public http(s) hosts only, size-capped, nothing from the vault sent), and the leaked-password check on the Stats page, which sends only the first 5 hex characters of each password's SHA-1 hash to Have I Been Pwned.
 - Master key lives in Rust memory only; never serialized, never crosses the JS boundary.
 - Argon2id (m=64 MiB, t=3, p=1) for key derivation.
 - AES-256-GCM with a fresh 12-byte nonce per save.

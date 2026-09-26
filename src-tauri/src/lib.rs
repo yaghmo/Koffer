@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod autolock;
+pub mod breach;
 pub mod bridge;
 pub mod capture;
 pub mod clipboard;
@@ -84,6 +85,8 @@ pub fn run() {
             commands::get_config,
             commands::set_autolock_mins,
             commands::set_auto_refresh_icons,
+            commands::set_browser_pref,
+            commands::check_leaked_passwords,
             commands::reset_activity,
             commands::log_event,
             commands::vault_storage,

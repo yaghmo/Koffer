@@ -40,6 +40,21 @@ pub struct Config {
     /// logos" button stays available either way.
     #[serde(default)]
     pub auto_refresh_icons: bool,
+    /// What the browser extension may do, each on by default. Every switch
+    /// only takes something away, so a hand-edited file can at most restore
+    /// the defaults; the bridge enforces them, not just the extension.
+    #[serde(default = "on")]
+    pub browser_totp: bool,
+    #[serde(default = "on")]
+    pub browser_offer_save: bool,
+    #[serde(default = "on")]
+    pub browser_offer_update: bool,
+    #[serde(default = "on")]
+    pub browser_site_prompt: bool,
+}
+
+fn on() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -51,6 +66,10 @@ impl Default for Config {
             last_cloud_backup_mtime_ms: 0,
             last_cloud_backup_error: String::new(),
             auto_refresh_icons: false,
+            browser_totp: true,
+            browser_offer_save: true,
+            browser_offer_update: true,
+            browser_site_prompt: true,
         }
     }
 }
@@ -104,6 +123,12 @@ mod tests {
 
     fn fixture() -> Account {
         create_account("cfg-test").unwrap()
+    }
+
+    #[test]
+    fn a_config_from_before_the_browser_switches_leaves_them_on() {
+        let c: Config = serde_json::from_str(r#"{"autolock_mins":20}"#).unwrap();
+        assert!(c.browser_totp && c.browser_offer_save && c.browser_offer_update && c.browser_site_prompt);
     }
 
     #[test]

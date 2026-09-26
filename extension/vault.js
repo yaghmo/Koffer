@@ -305,6 +305,8 @@ export async function matches(origin) {
     host: data.host || "",
     // The user chose "Never" for this unapproved site: no prompt on the page.
     never: !!data.never,
+    // The user turned the on-page approval prompt off in the app.
+    prompt: data.prompt !== false,
   };
 }
 

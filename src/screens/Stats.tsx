@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import LeakCheck from "../components/LeakCheck";
 import { api } from "../lib/api";
 import type { VaultStats } from "../lib/types";
 
@@ -217,6 +218,8 @@ export default function Stats({ onViewItem }: { onViewItem: (id: string) => void
       <CountRow stats={stats} />
 
       <IssueList issues={issues} onViewItem={onViewItem} />
+
+      <LeakCheck onViewItem={onViewItem} />
     </div>
   );
 }

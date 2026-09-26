@@ -145,7 +145,7 @@ function stale(state) {
 
 /** Ask the app what it has for this origin, store it, and redraw the menu. */
 async function refresh(tabId, origin) {
-  let found = { items: [], needsApproval: false, host: "", never: false };
+  let found = { items: [], needsApproval: false, host: "", never: false, prompt: true };
   try {
     found = await matches(origin);
   } catch {
@@ -183,7 +183,7 @@ async function onDetectedLogin(tabId, origin) {
  * "Never" for good -- the popup still offers to approve it.
  */
 async function promptApproval(tabId, state) {
-  if (!state.needsApproval || !state.host || state.never) return;
+  if (!state.needsApproval || !state.host || state.never || state.prompt === false) return;
   if (await sessionGet(DISMISSED_KEY + state.origin)) return;
   // Already up on this page, or a save offer is using the bar.
   if (await sessionGet(OFFER_KEY + tabId)) return;
@@ -270,7 +270,8 @@ async function offerFor(tabId, capture) {
     await sessionSet(OFFER_KEY + tabId, { capture, kind: "locked", at: capture.at });
     return showBar(tabId, "locked", capture);
   }
-  if (res.offer === "never" || res.offer === "same") return;
+  // "off": the user turned this kind of offer off in the app's Settings.
+  if (res.offer === "never" || res.offer === "same" || res.offer === "off") return;
   // A change of password matched no saved login and names no account:
   // saving it would make a login with no username.
   if (res.offer === "new" && capture.current && !capture.username) return;
