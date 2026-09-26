@@ -41,14 +41,22 @@ fn set_text_excluding_history(text: &str) -> Result<(), ClipboardError> {
 
 pub fn copy_with_ttl(text: &str, ttl: Duration) -> Result<(), ClipboardError> {
     set_text_excluding_history(text)?;
+    let copied = text.to_string();
     thread::spawn(move || {
         thread::sleep(ttl);
         if let Ok(mut cb) = arboard::Clipboard::new() {
-            // Best-effort clear; ignore failure (something else may have overwritten)
-            let _ = cb.set_text(String::new());
+            // Only our own copy is cleared. Anything the user copied since
+            // (a QR screenshot to paste, a link) is theirs and stays.
+            if still_ours(cb.get_text().ok().as_deref(), &copied) {
+                let _ = cb.set_text(String::new());
+            }
         }
     });
     Ok(())
+}
+
+fn still_ours(current: Option<&str>, copied: &str) -> bool {
+    current == Some(copied)
 }
 
 #[cfg(test)]
@@ -56,6 +64,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn clears_only_what_it_copied() {
+        assert!(still_ours(Some("pw"), "pw"));
+        assert!(!still_ours(Some("something else"), "pw"));
+        // An image on the clipboard has no text.
+        assert!(!still_ours(None, "pw"));
+    }
+
+    // Writes the real clipboard, wiping whatever the person running the
+    // tests had on it. Run on purpose: cargo test -- --ignored
+    #[test]
+    #[ignore]
     fn copy_short_text_succeeds() {
         // The OS clipboard is an exclusive shared resource: any other process
         // holding it open (a clipboard manager, a browser mid-copy) makes this
