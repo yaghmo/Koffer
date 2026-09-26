@@ -73,7 +73,8 @@ function renderPairing() {
   const input = document.createElement("input");
   input.className = "code";
   input.placeholder = "PAIRING CODE";
-  input.maxLength = 8;
+  // Eight characters, plus "-N" when the app is on another port.
+  input.maxLength = 11;
   input.autocomplete = "off";
   input.spellcheck = false;
   input.autofocus = true;

@@ -87,22 +87,33 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// The one port the bridge listens on.
+/// The port the bridge listens on when it can, and the first of a small range.
 ///
-/// A range was tried — bind the first free port, let the extension probe for
-/// it — and taken back out, because it quietly broke the rule the whole
-/// design rests on: *nothing else on this machine can read the pairing code
-/// off the user's screen*. With a range, a local process that squats 38471
-/// pushes the app to 38472, and the extension, probing upwards, offers the
-/// code to the squatter first. The squatter then redeems that code against
-/// the real app and is a paired browser.
+/// If something else holds 38471, the app takes the next free port up to
+/// `PORT + PORT_SPAN - 1`. What made a range unsafe before was the extension
+/// *probing* for the app: it offered the pairing code to whatever answered
+/// first, a squatter included. So nothing probes. When the app is not on the
+/// usual port, the pairing code says which port it is on (`K7F2Q9MR-3` is
+/// 38474), and the extension sends the code only there, where the app itself
+/// is listening.
 ///
-/// One fixed port fails loudly instead: the bridge does not come up, Settings
-/// says why, and no code goes anywhere. If collisions ever turn up in
-/// practice, the fix is to stop sending a secret at pairing time at all —
-/// have the extension show a fingerprint of its public key and the app ask
-/// the user to confirm it — and only then is probing safe.
+/// Each browser is also tied to the port it paired on. If the app later
+/// comes up on another port, that browser is refused until it pairs again.
+/// Otherwise a process squatting the old port could pass the browser's signed
+/// requests on to the app's new one and read the answers.
 pub const PORT: u16 = 38471;
+/// How many ports, from `PORT` up, the bridge may use.
+pub const PORT_SPAN: u16 = 32;
+
+/// The pairing code as the user types it: the code, plus the port when the
+/// app is not on the usual one.
+pub fn display_code(code: &str, port: u16) -> String {
+    if port == PORT {
+        code.to_string()
+    } else {
+        format!("{code}-{}", port - PORT)
+    }
+}
 
 /// How long a pairing code stays good once it is on screen.
 const CODE_TTL: Duration = Duration::from_secs(180);
@@ -185,9 +196,17 @@ pub struct Bridge {
     /// of prompts that keep pulling the window forward is how a person ends
     /// up clicking Allow on one they did not read.
     last_ask: Mutex<Option<Instant>>,
+
+    /// The port actually listened on, once `serve` has one.
+    port: Mutex<Option<u16>>,
 }
 
 impl Bridge {
+    /// The port the bridge is listening on, if it came up.
+    pub fn port(&self) -> Option<u16> {
+        *self.port.lock().unwrap()
+    }
+
     /// Put a fresh pairing code on screen, replacing any code still pending.
     pub fn new_code(&self) -> String {
         let bytes = random_bytes(CODE_LEN);
@@ -225,7 +244,11 @@ impl Bridge {
             *slot = None;
             return Err("that pairing code has expired");
         }
-        if !ct_eq(&pending.code, submitted.trim()) {
+        // The port suffix told the extension where to send this; the code
+        // is the part before it.
+        let submitted = submitted.trim();
+        let submitted = submitted.split_once('-').map_or(submitted, |(code, _)| code);
+        if !ct_eq(&pending.code, submitted) {
             pending.tries += 1;
             if pending.tries >= CODE_TRIES {
                 *slot = None;
@@ -630,6 +653,8 @@ struct Incoming {
     body: serde_json::Value,
     timestamp: i64,
     signature: Vec<u8>,
+    /// The port this request arrived on, which a browser's pairing is tied to.
+    port: u16,
 }
 
 // ---------------------------------------------------------------------------
@@ -692,7 +717,8 @@ fn key_age(client: &PairedClient, now: i64) -> i64 {
 /// the key, which needs the vault mutably.
 fn client_index(vault: &Vault, inc: &Incoming, now: i64) -> Option<usize> {
     vault.paired.iter().position(|c| {
-        if c.origin != inc.origin {
+        // Tied to the port it paired on: see `PORT`.
+        if c.origin != inc.origin || c.port != inc.port {
             return false;
         }
         // The key a rekey replaced, for a few seconds: a call the browser had
@@ -775,16 +801,24 @@ pub fn start(app: &AppHandle) {
 }
 
 async fn serve(app: AppHandle) {
-    let listener = match TcpListener::bind(("127.0.0.1", PORT)).await {
-        Ok(l) => l,
-        Err(e) => {
-            let msg = format!("port {PORT} is not available: {e}");
-            crate::log_warn!("bridge", "{msg}");
-            *app.state::<Bridge>().listen_error.lock().unwrap() = Some(msg);
-            return;
+    let mut bound = None;
+    for port in PORT..PORT + PORT_SPAN {
+        if let Ok(l) = TcpListener::bind(("127.0.0.1", port)).await {
+            bound = Some((l, port));
+            break;
         }
+    }
+    let Some((listener, port)) = bound else {
+        let msg = format!("ports {PORT} to {} are all taken", PORT + PORT_SPAN - 1);
+        crate::log_warn!("bridge", "{msg}");
+        *app.state::<Bridge>().listen_error.lock().unwrap() = Some(msg);
+        return;
     };
-    crate::log_info!("bridge", "listening on 127.0.0.1:{PORT}");
+    *app.state::<Bridge>().port.lock().unwrap() = Some(port);
+    if port != PORT {
+        crate::log_warn!("bridge", "port {PORT} was taken; listening on {port} instead");
+    }
+    crate::log_info!("bridge", "listening on 127.0.0.1:{port}");
 
     // Two things a connection cannot do: live forever, or arrive in numbers.
     // A process that opens a socket and then says nothing used to cost one OS
@@ -868,6 +902,7 @@ async fn read_request(app: &AppHandle, req: Request<hyper::body::Incoming>) -> R
         body,
         timestamp: head("x-pm-timestamp").parse().unwrap_or(0),
         signature: from_hex(&head("x-pm-signature")).unwrap_or_default(),
+        port: app.state::<Bridge>().port().unwrap_or(PORT),
     };
     // Everything past here locks the vault and may write the disk, so it runs
     // off the runtime rather than on it.
@@ -941,6 +976,7 @@ fn pair(app: &AppHandle, inc: &Incoming) -> Reply {
             // Pairing grants the ability to ask, not the vault. Every host is
             // approved on screen, one at a time, from here on.
             allowed_hosts: Vec::new(),
+            port: inc.port,
         },
     ) {
         Ok(()) => {
@@ -2083,6 +2119,7 @@ mod tests {
             prev_public_key: String::new(),
             prev_until: 0,
             allowed_hosts: Vec::new(),
+            port: PORT,
         }
     }
 
@@ -2096,6 +2133,7 @@ mod tests {
             body: serde_json::from_str(body).expect("test body is json"),
             timestamp: ts,
             signature: sig.to_bytes().to_vec(),
+            port: PORT,
         }
     }
 
@@ -2352,5 +2390,27 @@ mod tests {
         cfg.browser_offer_update = false;
         assert!(!offer_allowed(&Offer::Update { id }, &cfg));
         assert!(!offer_allowed(&Offer::NeedsApproval, &cfg));
+    }
+
+    #[test]
+    fn a_browser_is_refused_on_a_port_it_did_not_pair_on() {
+        // The app came up on another port: a squatter on the old one must
+        // not be able to relay this browser's requests to it.
+        let (sk, pk) = keypair(7);
+        let now = 1_700_000_000;
+        let v = vault_with(client(EXT, &pk, now));
+        let mut moved = signed(&sk, "/status", "{}", now);
+        moved.port = PORT + 3;
+        assert_eq!(client_index(&v, &moved, now), None);
+        assert_eq!(client_index(&v, &signed(&sk, "/status", "{}", now), now), Some(0));
+    }
+
+    #[test]
+    fn the_pairing_code_names_the_port_only_when_it_moved() {
+        assert_eq!(display_code("K7F2Q9MR", PORT), "K7F2Q9MR");
+        assert_eq!(display_code("K7F2Q9MR", PORT + 3), "K7F2Q9MR-3");
+        let b = Bridge::default();
+        let code = b.new_code();
+        assert!(b.redeem(&display_code(&code, PORT + 3)).is_ok());
     }
 }

@@ -263,6 +263,11 @@ pub struct PairedClient {
     /// each new host is a dialog the user has to answer on screen.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
+    /// The bridge port this browser paired on. It is refused on any other,
+    /// so a process squatting the old port cannot relay its requests.
+    /// Pairings from before there was a range were all on 38471.
+    #[serde(default = "first_port")]
+    pub port: u16,
 }
 
 /// How many items of each kind may be pinned at once.
@@ -1183,4 +1188,8 @@ mod tests {
         assert!(fields.previous_passwords.is_empty());
         assert_eq!(fields.last_seen, None);
     }
+}
+
+fn first_port() -> u16 {
+    crate::bridge::PORT
 }

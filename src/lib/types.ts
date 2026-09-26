@@ -120,6 +120,9 @@ export interface PairedInfo {
   /** Sites this browser may be handed a password for, as approved one at a
    *  time. Empty on a fresh pairing: pairing grants the ability to ask. */
   allowed_hosts: string[];
+  /** The bridge port it paired on. Differs from the bridge's current port
+   *  when the app had to move, and then it must pair again. */
+  port: number;
 }
 
 export interface BridgeState {

@@ -1211,6 +1211,9 @@ pub struct PairedInfo {
     /// Hosts this browser has been approved to be handed a password for, so
     /// Settings can list them and take one back.
     pub allowed_hosts: Vec<String>,
+    /// The port it paired on. Not the bridge's current port means it has to
+    /// pair again.
+    pub port: u16,
 }
 
 #[derive(Serialize)]
@@ -1322,7 +1325,9 @@ pub fn bridge_pair_code(app: AppHandle, state: State<'_, AppState>) -> Result<St
     // The code itself is never logged: it is the one thing standing between
     // any local process and a paired extension.
     crate::log_info!("bridge_pair_code", "pairing code issued");
-    Ok(app.state::<crate::bridge::Bridge>().new_code())
+    let bridge = app.state::<crate::bridge::Bridge>();
+    let port = bridge.port().ok_or_else(|| "the bridge is not running".to_string())?;
+    Ok(crate::bridge::display_code(&bridge.new_code(), port))
 }
 
 #[tauri::command]
@@ -1344,6 +1349,7 @@ pub fn bridge_state(app: AppHandle, state: State<'_, AppState>) -> Result<Bridge
                     label: c.label.clone(),
                     paired_at: c.paired_at,
                     allowed_hosts: c.allowed_hosts.clone(),
+                    port: c.port,
                 })
                 .collect()
         })
@@ -1353,7 +1359,7 @@ pub fn bridge_state(app: AppHandle, state: State<'_, AppState>) -> Result<Bridge
             .state::<crate::bridge::Bridge>()
             .listen_error()
             .unwrap_or_default(),
-        port: crate::bridge::PORT,
+        port: app.state::<crate::bridge::Bridge>().port().unwrap_or(crate::bridge::PORT),
         clients,
     })
 }

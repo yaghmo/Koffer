@@ -373,6 +373,7 @@ describe("Settings browser extension card", () => {
           label: "Chrome",
           paired_at: 1_700_000_000,
           allowed_hosts: ["github.com"],
+          port: 38471,
         },
       ],
     });
@@ -399,6 +400,7 @@ describe("Settings browser extension card", () => {
           label: "Chrome",
           paired_at: 1_700_000_000,
           allowed_hosts: ["github.com", "twitch.tv"],
+          port: 38471,
         },
       ],
     });
@@ -449,7 +451,7 @@ describe("Settings pairing panel closes itself", () => {
       listen_error: "",
       port: 38471,
       clients: [
-        { origin: "chrome-extension://abcdef", label: "Chrome", paired_at: 1, allowed_hosts: [] },
+        { origin: "chrome-extension://abcdef", label: "Chrome", paired_at: 1, allowed_hosts: [], port: 38471 },
       ],
     });
     await waitFor(() => expect(screen.queryByText("K7F2Q9MR")).toBeNull(), { timeout: 4000 });

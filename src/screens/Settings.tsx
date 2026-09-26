@@ -878,6 +878,12 @@ export default function Settings({ accountId, onLock }: Props) {
                         Unpair
                       </button>
                     </div>
+                    {c.port !== bridge.port && (
+                      <span role="alert" className="text-body-sm text-warning">
+                        Paired while the app was on port {c.port}; it is on {bridge.port} now. Pair
+                        this browser again to reconnect it.
+                      </span>
+                    )}
                     <span className="text-label-md text-on-surface-variant opacity-70">
                       {c.allowed_hosts.length === 0
                         ? "No sites approved yet — it will ask on the first fill."

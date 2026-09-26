@@ -64,7 +64,15 @@ is Windows-only, so it is not on the list.
 
 The app listens on `127.0.0.1:38471` and answers nothing useful until a
 human pairs this extension: the app shows an eight-character code, you type it in here once, and this browser generates a
-key pair and sends the app the public half. Four rules hold it up, and
+key pair and sends the app the public half.
+
+If another program already holds 38471, the app takes the next free port
+up to 38502 and the code carries it: `K7F2Q9MR-3` means port 38474. The
+extension never searches for the app, so the code only ever goes to the
+port the app is listening on. Each browser stays tied to the port it paired
+on; if the app later comes up somewhere else, Settings says to pair that
+browser again, and until then nothing on the old port can relay its
+requests. Four rules hold it up, and
 `src-tauri/src/bridge.rs` is where they are enforced:
 
 - **Loopback only.** It binds `127.0.0.1`, never `0.0.0.0`.

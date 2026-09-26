@@ -37,17 +37,23 @@
 const ext = globalThis.browser ?? globalThis.chrome;
 
 /**
- * The one port the app listens on, matching `PORT` in `bridge.rs`.
+ * The app's usual port, matching `PORT` in `bridge.rs`.
  *
- * Probing a range was tried and taken back out. If a local process squats
- * 38471 the app moves up, and an extension probing upwards would offer the
- * pairing code to the squatter — which is enough for it to redeem that code
- * against the real app and become a paired browser. One port fails loudly
- * instead, and no secret goes to the wrong listener.
+ * Nothing here probes for the app. If 38471 was taken, the app moved to
+ * another port and says so in the pairing code (`K7F2Q9MR-3` is 38474); the
+ * code goes only to that port, and the port is kept with the key. Probing
+ * would offer the code to whatever answered first, a squatter included.
  */
 const PORT = 38471;
-const BASE = `http://127.0.0.1:${PORT}`;
 const HOST_PERMISSION = "http://127.0.0.1/*";
+
+/** `{ code, port }` from what the user typed, or null when it is malformed. */
+export function parseCode(typed) {
+  const m = /^([A-Z0-9]{8})(?:-(\d{1,2}))?$/.exec(String(typed || "").trim().toUpperCase());
+  if (!m) return null;
+  const offset = m[2] ? Number(m[2]) : 0;
+  return offset < 32 ? { code: m[1], port: PORT + offset } : null;
+}
 
 const DB_NAME = "pm-bridge";
 const STORE = "keys";
@@ -185,10 +191,10 @@ export async function ensureHostPermission() {
   }
 }
 
-async function send(path, headers, bodyText) {
+async function send(port, path, headers, bodyText) {
   let res;
   try {
-    res = await fetch(BASE + path, { method: "POST", headers, body: bodyText });
+    res = await fetch(`http://127.0.0.1:${port}${path}`, { method: "POST", headers, body: bodyText });
   } catch {
     // Nothing listening: the app is closed, or it could not take the port.
     throw new Error(NO_APP);
@@ -211,7 +217,7 @@ async function send(path, headers, bodyText) {
 }
 
 /** One call to the app, signed when we have a key. */
-async function post(path, body, key) {
+async function post(path, body, key, port = (key && key.port) || PORT) {
   const bodyText = JSON.stringify(body || {});
   const headers = { "Content-Type": "application/json" };
   if (key) {
@@ -219,7 +225,7 @@ async function post(path, body, key) {
     headers["X-PM-Timestamp"] = String(timestamp);
     headers["X-PM-Signature"] = await signature(key.privateKey, path, bodyText, timestamp);
   }
-  const data = await send(path, headers, bodyText);
+  const data = await send(port, path, headers, bodyText);
   // The app keeps the clock on key age, so a browser whose storage was
   // cleared cannot quietly stop rotating. Never from inside a rekey: that
   // call already holds the lock the next one would wait on.
@@ -239,10 +245,13 @@ async function signedPost(path, body) {
 // ---------------------------------------------------------------------------
 
 /** Exchange the code shown in the app for a pairing, keyed to this browser. */
-export async function pair(code, label) {
+export async function pair(typed, label) {
+  const parsed = parseCode(typed);
+  if (!parsed) throw new Error("That is not a pairing code.");
   const key = await newKey();
-  await post("/pair", { code, label, publicKey: key.publicKeyHex }, null);
-  await storeKey(key);
+  await post("/pair", { code: parsed.code, label, publicKey: key.publicKeyHex }, null, parsed.port);
+  // The app ties this browser to the port it paired on; so does the key.
+  await storeKey({ ...key, port: parsed.port });
 }
 
 export async function unpair() {
@@ -268,7 +277,7 @@ async function rekey() {
     if (!current) return;
     const fresh = await newKey();
     await post("/rekey", { publicKey: fresh.publicKeyHex }, current);
-    await storeKey(fresh);
+    await storeKey({ ...fresh, port: current.port });
   };
   try {
     if (globalThis.navigator && navigator.locks) {
