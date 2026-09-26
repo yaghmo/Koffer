@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 // @ts-expect-error untyped extension source
 import { createTracker, sameSite, isFresh, HOLD_MS, CONFIRM_MS } from "../../extension/capture.js";
 
-function harness(state: { login: boolean; origin: string; passwords?: number } | null) {
+function harness(state: { login: boolean; origin: string; passwords?: number; filled?: number } | null) {
   const saved = new Map<number, unknown>();
   let clock = 1_000;
   const timers: (() => Promise<void> | void)[] = [];
@@ -145,6 +145,57 @@ describe("tracker", () => {
     const h = harness({ login: false, origin: cap.origin, passwords: 0 });
     await h.tracker.captured(1, { ...cap, password: "" });
     await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 0 });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("change password", () => {
+  const change = { origin: cap.origin, username: "", password: "after", current: "before" };
+
+  it("offers once the site empties the boxes, with nothing else changing on the page", async () => {
+    // A script clearing a box moves no node, so no detect report arrives.
+    const h = harness({ login: false, origin: cap.origin, passwords: 2, filled: 0 });
+    await h.tracker.captured(1, change);
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).toHaveBeenCalledWith(1, expect.objectContaining({ password: "after", current: "before" }));
+  });
+
+  it("offers when the form goes away", async () => {
+    const h = harness({ login: false, origin: cap.origin, passwords: 0, filled: 0 });
+    await h.tracker.captured(1, change);
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 0, filled: 0 });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer while the boxes still hold what was typed", async () => {
+    // How most sites show "wrong current password" or "too weak".
+    const h = harness({ login: false, origin: cap.origin, passwords: 2, filled: 2 });
+    await h.tracker.captured(1, change);
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+    expect(h.saved.has(1)).toBe(true);
+  });
+
+  it("drops the attempt when a fresh page serves the form again", async () => {
+    const h = harness({ login: false, origin: cap.origin, passwords: 2, filled: 0 });
+    await h.tracker.captured(1, change);
+    await h.tracker.detected(1, { login: false, origin: cap.origin, passwords: 2, filled: 0, fresh: true });
+    h.tick(CONFIRM_MS);
+    await h.fire();
+    expect(h.onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("does not count an emptied sign-in form as success", async () => {
+    // Sites clear the password box after a wrong password too.
+    const h = harness({ login: true, origin: cap.origin, passwords: 1, filled: 0 });
+    await h.tracker.captured(1, cap);
+    await h.tracker.detected(1, { login: true, origin: cap.origin, passwords: 1, filled: 0 });
     h.tick(CONFIRM_MS);
     await h.fire();
     expect(h.onSuccess).not.toHaveBeenCalled();

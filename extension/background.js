@@ -261,6 +261,9 @@ async function offerFor(tabId, capture) {
     return showBar(tabId, "locked", capture);
   }
   if (res.offer === "never" || res.offer === "same") return;
+  // A change of password matched no saved login and names no account:
+  // saving it would make a login with no username.
+  if (res.offer === "new" && capture.current && !capture.username) return;
   const kind = res.offer === "needsApproval" ? "approve" : res.offer;
   // `at` from the capture: an unanswered offer holds the password no longer
   // than the capture would have.

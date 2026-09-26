@@ -6,8 +6,14 @@ interface Captured {
   password: string;
   current: string;
 }
-const Autofill = (window as unknown as { Autofill: { captured: (s: Element | Document) => Captured | null } })
-  .Autofill;
+const Autofill = (
+  window as unknown as {
+    Autofill: {
+      captured: (s: Element | Document) => Captured | null;
+      detect: (s: Element | Document) => { passwords: number; filled: number };
+    };
+  }
+).Autofill;
 
 beforeAll(() => {
   // jsdom lays nothing out; give every shown element one box.
@@ -50,6 +56,28 @@ describe("captured", () => {
       { old: "before", new: "after" },
     );
     expect(Autofill.captured(d)).toEqual({ username: "", password: "after", current: "before" });
+  });
+
+  it("reads a change form with a confirm box", () => {
+    const d = page(
+      '<form><input name="old" type="password"><input name="new" type="password"><input name="again" type="password"></form>',
+      { old: "before", new: "after", again: "after" },
+    );
+    expect(Autofill.captured(d)).toEqual({ username: "", password: "after", current: "before" });
+  });
+
+  it("has nothing to say when the new password and its confirmation disagree", () => {
+    // The site refuses this, so there is no new password to offer.
+    const d = page(
+      '<form><input name="old" type="password"><input name="new" type="password"><input name="again" type="password"></form>',
+      { old: "before", new: "after", again: "aftr" },
+    );
+    expect(Autofill.captured(d)).toBeNull();
+  });
+
+  it("counts the password boxes that still hold something", () => {
+    const d = page('<form><input name="a" type="password"><input name="b" type="password"></form>', { a: "x" });
+    expect(Autofill.detect(d)).toMatchObject({ passwords: 2, filled: 1 });
   });
 
   it("has nothing to say about an empty password", () => {

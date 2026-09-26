@@ -100,19 +100,21 @@
    */
   var reported = false;
 
-  function passwordBoxes() {
-    return window.Autofill.detect(document).passwords;
+  function boxes() {
+    return window.Autofill.detect(document);
   }
 
   function report() {
     try {
       var fresh = !reported;
       reported = true;
+      var found = boxes();
       var sent = ext.runtime.sendMessage({
         type: "detect",
         login: isLoginPage(),
         origin: location.origin,
-        passwords: passwordBoxes(),
+        passwords: found.passwords,
+        filled: found.filled,
         fresh: fresh,
       });
       // MV3 hands back a promise in both browsers, and it rejects whenever
@@ -134,7 +136,7 @@
    * Buttons that look like they send a login. Many sites use a plain
    * `type="button"` with a click handler rather than a form submit.
    */
-  var SUBMITTISH = /log\s?in|sign\s?(in|up)|register|continue|next|submit|create|join|save/i;
+  var SUBMITTISH = /log\s?in|sign\s?(in|up)|register|continue|next|submit|create|join|save|change|update|confirm/i;
 
   /**
    * Hand a submitted login to the background script and keep nothing.
@@ -193,7 +195,8 @@
 
   ext.runtime.onMessage.addListener(function (msg, _sender, respond) {
     if (msg && msg.type === "state") {
-      respond({ login: isLoginPage(), origin: location.origin, passwords: passwordBoxes() });
+      var found = boxes();
+      respond({ login: isLoginPage(), origin: location.origin, passwords: found.passwords, filled: found.filled });
       return false;
     }
     if (msg && msg.type === "offer") {

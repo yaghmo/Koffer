@@ -192,6 +192,11 @@ in a closed shadow root the page can neither read nor click.
 - It only offers after the login looks like it worked: the login form has
   been gone for a second and a half. A wrong password keeps the form up,
   so nothing is offered.
+- Changing a password on the site's own settings page offers **Update**
+  too: there the form may stay up, so every password box being emptied
+  also counts as working. Boxes still holding what you typed mean the
+  site refused it, and a new password that does not match its
+  confirmation is never offered.
 - On a site this browser is not approved for yet, **Save** first raises the
   app's approval dialog; click Save again once you have said yes.
 - **Not now** on an update still remembers the password that worked; the

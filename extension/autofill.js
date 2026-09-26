@@ -10,7 +10,7 @@
  *     missing:  [field],
  *   }
  *
- *   Autofill.detect(scope)        => { passwords: number, identifier: boolean }
+ *   Autofill.detect(scope)        => { passwords: number, filled: number, identifier: boolean }
  *   Autofill.isLogin(result, href) => boolean
  *
  * `data` uses the vault's personal-info keys plus `password`:
@@ -437,6 +437,7 @@
    * What kind of credential form, if any, is on this page right now.
    *
    *   { passwords: <visible password boxes, revealed ones included>,
+   *     filled: <how many of those hold text>,
    *     identifier: <bool> }
    *
    * Counts only. `isLogin` turns them into a verdict, because that needs
@@ -449,7 +450,12 @@
       if (isPasswordBox(el)) return false;
       return !!(roleMatches(ROLES.username, el) || roleMatches(ROLES.email, el));
     });
-    return { passwords: passwords.length, identifier: identifier };
+    // Boxes still holding text: a change-password form that emptied them
+    // after a submit is how that form says it worked.
+    var filled = passwords.filter(function (el) {
+      return !!el.value;
+    }).length;
+    return { passwords: passwords.length, filled: filled, identifier: identifier };
   }
 
   /**
@@ -494,7 +500,16 @@
         return hasAuto(el, "current-password");
       });
       password = (fresh.length ? fresh[fresh.length - 1] : boxes[boxes.length - 1]).value;
-      var was = (old.length ? old[0] : boxes[0]).value;
+      var oldBox = old.length ? old[0] : boxes[0];
+      // Every box but the current one holds the new password. When those
+      // disagree the site refuses the change, so there is nothing to offer.
+      var mismatch = (fresh.length ? fresh : boxes.filter(function (el) {
+        return el !== oldBox;
+      })).some(function (el) {
+        return el.value !== password;
+      });
+      if (mismatch) return null;
+      var was = oldBox.value;
       if (was !== password) current = was;
     }
     return { username: user ? user.value.trim() : "", password: password, current: current };

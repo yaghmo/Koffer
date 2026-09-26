@@ -12,6 +12,9 @@
  * Step one of a two-step sign-in (username, then password on the next
  * page) is held as a username alone, and lent to the password step.
  *
+ * A change of password may also succeed by emptying its boxes and staying
+ * put, as settings pages do; see `gone`.
+ *
  * Kept free of `chrome.*` so it can be tested: the caller supplies storage,
  * a way to ask a tab for its state, and timers.
  */
@@ -62,6 +65,17 @@ export function sameSite(a, b) {
   return s !== "" && s === siteOf(b);
 }
 
+/**
+ * Did the form go away, as far as this capture is concerned? A sign-in has
+ * to vanish: sites empty the box after a wrong password too. A change of
+ * password (it has a `current`) may instead stay up with every box emptied,
+ * which is how a settings page usually says it worked; one still holding
+ * what was typed is showing an error.
+ */
+function gone(capture, state) {
+  return state.passwords === 0 || (!!capture.current && state.filled === 0);
+}
+
 export function createTracker({ store, askState, onSuccess, now = Date.now, setTimer = (fn, ms) => setTimeout(fn, ms) }) {
   // Checks already running, by tab and attempt. Taken synchronously, before
   // any await, which the async store cannot do on its own.
@@ -77,6 +91,28 @@ export function createTracker({ store, askState, onSuccess, now = Date.now, setT
     return c;
   }
 
+  /** Offer attempt `at` if the form is still gone now. */
+  async function check(tabId, at) {
+    // One check per attempt at a time, or two could both offer it.
+    const key = tabId + ":" + at;
+    if (checking.has(key)) return;
+    checking.add(key);
+    try {
+      const again = await live(tabId);
+      // Replaced by a newer attempt, or already handled.
+      if (!again || again.at !== at || !again.password) return;
+      const state = await askState(tabId);
+      if (!state || !gone(again, state) || !sameSite(again.origin, state.origin)) return;
+      // Still ours? A newer attempt may have arrived while we asked.
+      const still = await live(tabId);
+      if (!still || still.at !== at) return;
+      await store.set(tabId, null);
+      onSuccess(tabId, again);
+    } finally {
+      checking.delete(key);
+    }
+  }
+
   return {
     /** A form was submitted. The newest attempt replaces any earlier one. */
     async captured(tabId, capture) {
@@ -87,40 +123,23 @@ export function createTracker({ store, askState, onSuccess, now = Date.now, setT
       if (next.password && !next.username && prev && !prev.password && sameSite(prev.origin, next.origin)) {
         next.username = prev.username;
       }
-      await store.set(tabId, { ...next, at: now() });
+      const at = now();
+      await store.set(tabId, { ...next, at });
+      // A script emptying the boxes moves no node, so no detect report may
+      // ever come for a change of password. Look once anyway.
+      if (next.current) setTimer(() => check(tabId, at), CONFIRM_MS);
     },
 
     /** The tab reported whether it shows a login form, and its password boxes. */
     async detected(tabId, msg) {
       const c = await live(tabId);
       if (!c || !c.password || !sameSite(c.origin, msg.origin)) return;
-      if (msg.passwords !== 0) {
-        // A new page came back with a password box: the site served the
-        // form again, which is what a rejected password looks like.
-        if (msg.fresh) await store.set(tabId, null);
-        return;
-      }
+      // A new page came back with a password box: the site served the form
+      // again, which is what a rejected password looks like.
+      if (msg.passwords !== 0 && msg.fresh) return store.set(tabId, null);
+      if (!gone(c, msg)) return;
       const at = c.at;
-      setTimer(async () => {
-        // One check per attempt at a time, or two could both offer it.
-        const key = tabId + ":" + at;
-        if (checking.has(key)) return;
-        checking.add(key);
-        try {
-          const again = await live(tabId);
-          // Replaced by a newer attempt, or already handled.
-          if (!again || again.at !== at) return;
-          const state = await askState(tabId);
-          if (!state || state.passwords !== 0 || !sameSite(again.origin, state.origin)) return;
-          // Still ours? A newer attempt may have arrived while we asked.
-          const still = await live(tabId);
-          if (!still || still.at !== at) return;
-          await store.set(tabId, null);
-          onSuccess(tabId, again);
-        } finally {
-          checking.delete(key);
-        }
-      }, CONFIRM_MS);
+      setTimer(() => check(tabId, at), CONFIRM_MS);
     },
 
   };

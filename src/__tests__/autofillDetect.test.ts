@@ -48,7 +48,7 @@ describe("detect", () => {
         <input name="username">
         <input name="password" type="password">
       </form>`;
-    expect(Autofill.detect(document)).toEqual({ passwords: 1, identifier: true });
+    expect(Autofill.detect(document)).toMatchObject({ passwords: 1, identifier: true });
   });
 
   it("counts a password box the site's own eye has revealed", () => {
@@ -60,7 +60,7 @@ describe("detect", () => {
         <input name="username">
         <input name="password" type="text">
       </form>`;
-    expect(Autofill.detect(document)).toEqual({ passwords: 1, identifier: true });
+    expect(Autofill.detect(document)).toMatchObject({ passwords: 1, identifier: true });
   });
 
   it("still sees a sign-up form as two boxes once they are revealed", () => {
@@ -85,7 +85,7 @@ describe("detect", () => {
         <input name="email" type="email">
         <input name="password" type="password" data-collapsed>
       </form>`;
-    expect(Autofill.detect(document)).toEqual({ passwords: 0, identifier: true });
+    expect(Autofill.detect(document)).toMatchObject({ passwords: 0, identifier: true });
   });
 
   it("ignores a password box that is there but transparent", () => {
@@ -120,12 +120,12 @@ describe("detect", () => {
 
   it("finds nothing on a page that only has a search box", () => {
     document.body.innerHTML = `<input name="q" type="search">`;
-    expect(Autofill.detect(document)).toEqual({ passwords: 0, identifier: false });
+    expect(Autofill.detect(document)).toMatchObject({ passwords: 0, identifier: false });
   });
 
   it("sees the identifier on step one of a two-step login", () => {
     document.body.innerHTML = `<input name="email" type="email">`;
-    expect(Autofill.detect(document)).toEqual({ passwords: 0, identifier: true });
+    expect(Autofill.detect(document)).toMatchObject({ passwords: 0, identifier: true });
   });
 });
 
