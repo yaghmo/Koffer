@@ -332,6 +332,11 @@ export async function copy(id, origin, which) {
   return signedPost("/copy", { id, origin, field: which });
 }
 
+/** The login's current 2FA code, for this origin. Same approval as a password. */
+export async function totpCode(id, origin) {
+  return signedPost("/totp", { id, origin });
+}
+
 /** What to offer after a login that looks like it worked. */
 export async function offer(origin, username, password, current) {
   return signedPost("/offer", { origin, username, password, current });

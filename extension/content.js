@@ -231,6 +231,15 @@
       window.PMBar.say(msg.text, !!msg.done);
       return false;
     }
+    if (msg && msg.type === "fill-code") {
+      // The same moved-tab check as a password fill, for the same reason.
+      if (msg.origin !== location.origin) {
+        respond({ filled: false, wrongOrigin: location.origin });
+        return false;
+      }
+      respond({ filled: window.Autofill.fillCode(document, String(msg.code || "")) });
+      return false;
+    }
     if (msg && msg.type === "fill") {
       // The popup read this tab's origin when it opened and the app checked
       // the item against *that* origin. If the tab has navigated since --

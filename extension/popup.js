@@ -17,6 +17,7 @@ import {
   ask,
   credentials,
   copy,
+  totpCode,
 } from "./vault.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
@@ -278,7 +279,17 @@ function renderItems(result, tabId, origin) {
     // The app decides what is fillable, not this file: a button the next
     // call would refuse is worse than no button.
     if (!item.fillable) {
-      li.append(renderProviderHint(item));
+      const hint = renderProviderHint(item);
+      // A provider login has no password here, but the site may still ask
+      // for its own 2FA code after the provider hands it back.
+      if (item.totp) {
+        const row = document.createElement("div");
+        row.className = "pair";
+        row.append(hint, codeButton(item, tabId, origin));
+        li.append(row);
+      } else {
+        li.append(hint);
+      }
       list.append(li);
       continue;
     }
@@ -308,13 +319,15 @@ function renderItems(result, tabId, origin) {
     const row = document.createElement("div");
     row.className = "pair";
     row.append(button, copyBtn);
+    if (item.totp) row.append(codeButton(item, tabId, origin));
     li.append(row);
     list.append(li);
   }
   const caption = document.createElement("div");
   caption.className = "caption";
   caption.textContent =
-    "Click an account to fill it. Copy password puts it on the clipboard for a minute instead — for boxes the filler cannot reach.";
+    "Click an account to fill it. Copy password puts it on the clipboard for a minute instead — for boxes the filler cannot reach." +
+    (items.some((i) => i.totp) ? " 2FA code types the current code into the page's code box." : "");
   vaultEl.replaceChildren(list, caption);
 }
 
@@ -333,6 +346,44 @@ async function copyPassword(button, item, origin) {
   setTimeout(() => {
     button.textContent = was;
   }, 1500);
+}
+
+function codeButton(item, tabId, origin) {
+  const b = document.createElement("button");
+  b.className = "copy";
+  b.type = "button";
+  b.textContent = "2FA code";
+  b.title = "Type the current 2FA code into the page, or copy it if the page has no code box";
+  b.addEventListener("click", () => fillCode(b, item, tabId, origin));
+  return b;
+}
+
+/**
+ * The 2FA code goes into the page's code box when there is one. Otherwise
+ * the app copies it, cleared after a minute like any other copy: most code
+ * pages are a paste away.
+ */
+async function fillCode(button, item, tabId, origin) {
+  stopWatching();
+  button.disabled = true;
+  try {
+    const { code } = await totpCode(item.id, origin);
+    const out = await ext.tabs.sendMessage(tabId, { type: "fill-code", code, origin }).catch(() => null);
+    if (out && out.wrongOrigin) {
+      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
+      return;
+    }
+    if (out && out.filled) {
+      window.close();
+      return;
+    }
+    await copy(item.id, origin, "totp");
+    button.textContent = "Code copied";
+  } catch (e) {
+    text(vaultEl, `Could not get the code: ${describe(e)}`);
+    return;
+  }
+  button.disabled = false;
 }
 
 async function fill(button, item, tabId, origin) {

@@ -350,6 +350,8 @@ pub(crate) struct Match {
     /// Whether a fill would actually be granted here. Decided in Rust so the
     /// popup cannot offer a button that the next call refuses.
     pub fillable: bool,
+    /// Whether a 2FA code would be granted here, on the same terms.
+    pub totp: bool,
 }
 
 /// Does this login sign in through a provider rather than with a password
@@ -431,6 +433,46 @@ fn refuse_fill(fields: &LoginFields, origin: &str) -> Option<&'static str> {
     None
 }
 
+/// Why this item's 2FA code must not go to this origin, if it must not.
+///
+/// Looser than `refuse_fill` in one way only: a provider login keeps its
+/// own site's code. Twitch signed into through Google has no Twitch
+/// password, but twitch.tv still asks for Twitch's code, and the key saved
+/// on that item is Twitch's.
+fn refuse_code(fields: &LoginFields, origin: &str) -> Option<&'static str> {
+    if !url_covers(&fields.url, origin) && !provider_account_covers(&fields.method, &fields.url, origin) {
+        return Some("that item does not belong to this site");
+    }
+    if fields.totp.trim().is_empty() {
+        return Some("that item has no 2FA key");
+    }
+    None
+}
+
+/// The current 2FA code for one item, for one origin, at `unix`.
+pub(crate) fn totp_for(
+    vault: &Vault,
+    id: Uuid,
+    origin: &str,
+    unix: u64,
+) -> Result<crate::totp::Code, &'static str> {
+    if host_of(origin).is_none() {
+        return Err("not a web origin");
+    }
+    let Some(Item::Login { fields, .. }) = vault.items.iter().find(|i| i.id() == id) else {
+        return Err("no such item");
+    };
+    if let Some(why) = refuse_code(fields, origin) {
+        return Err(why);
+    }
+    let totp = crate::totp::parse(&fields.totp).map_err(|_| "that item's 2FA key cannot be read")?;
+    Ok(crate::totp::code_at(&totp, unix))
+}
+
+fn unix_now() -> u64 {
+    chrono::Utc::now().timestamp().max(0) as u64
+}
+
 /// Every login in the vault that this origin is allowed to see.
 ///
 /// The filter is here rather than in the extension on purpose: it is the one
@@ -452,6 +494,7 @@ pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
                     username: fields.username.clone(),
                     method: fields.method.clone(),
                     fillable: refuse_fill(fields, origin).is_none(),
+                    totp: refuse_code(fields, origin).is_none(),
                 })
             }
             _ => None,
@@ -843,6 +886,7 @@ fn route(app: &AppHandle, inc: &Incoming) -> Reply {
         "/matches" => matches(app, inc),
         "/credentials" => credentials(app, inc),
         "/copy" => copy(app, inc),
+        "/totp" => totp(app, inc),
         "/ask" => ask(app, inc),
         "/offer" => offer(app, inc),
         "/save" => save(app, inc),
@@ -1405,8 +1449,8 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
     };
     let due = rekey_due(&session);
     let which = field(&inc.body, "field");
-    if which != "password" && which != "username" && which != "phone" {
-        return fail(400, "copy password, username or phone");
+    if !matches!(which.as_str(), "password" | "username" | "phone" | "totp") {
+        return fail(400, "copy password, username, phone or totp");
     }
     let (id, page) = match gate(&session, inc) {
         Gate::Go(id, page) => (id, page),
@@ -1417,12 +1461,17 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
             return reply;
         }
     };
-    let value = match credentials_for(session.vault(), id, &page) {
-        Ok(out) => Zeroizing::new(match which.as_str() {
+    let got = if which == "totp" {
+        totp_for(session.vault(), id, &page, unix_now()).map(|c| c.code)
+    } else {
+        credentials_for(session.vault(), id, &page).map(|out| match which.as_str() {
             "username" => out.username,
             "phone" => out.phone,
             _ => out.password,
-        }),
+        })
+    };
+    let value = match got {
+        Ok(v) => Zeroizing::new(v),
         Err(e) => {
             crate::log_warn!("bridge", "copy refused: {e}");
             return fail(403, e);
@@ -1439,6 +1488,42 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
         serde_json::json!({ "copied": which, "seconds": COPY_TTL.as_secs() }),
         due,
     )
+}
+
+/// The current 2FA code, for the page's own code box.
+///
+/// Same gate as a password: approved host, the item's own site. A code is
+/// worth less than a password (it expires in seconds and is useless
+/// without the password), but it is the second factor, so it gets no
+/// easier a path out.
+fn totp(app: &AppHandle, inc: &Incoming) -> Reply {
+    let state = app.state::<AppState>();
+    let session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    let (id, page) = match gate(&session, inc) {
+        Gate::Go(id, page) => (id, page),
+        Gate::Stop(r) => return r,
+        Gate::Ask { reply, label, origin, host, count } => {
+            drop(session);
+            ask_approval(app, &label, &origin, &host, count);
+            return reply;
+        }
+    };
+    match totp_for(session.vault(), id, &page, unix_now()) {
+        Ok(code) => {
+            drop(session);
+            after_handout(app, &state);
+            crate::log_info!("bridge", "handed out one 2FA code");
+            reply(serde_json::json!({ "code": code.code, "seconds": code.seconds_left }), due)
+        }
+        Err(e) => {
+            crate::log_warn!("bridge", "2FA code refused: {e}");
+            fail(403, e)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2135,5 +2220,66 @@ mod tests {
         assert!(!ct_eq("abc", "abd"));
         assert!(!ct_eq("abc", "abcd"));
         assert!(ct_eq("", ""));
+    }
+
+    fn with_key(mut item: Item, key: &str) -> Item {
+        if let Item::Login { fields, .. } = &mut item {
+            fields.totp = key.to_string();
+        }
+        item
+    }
+
+    // RFC 6238's SHA-1 key, base32.
+    const KEY: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+
+    #[test]
+    fn a_2fa_code_goes_only_to_the_items_own_site() {
+        let mut v = new_vault(vec![0; 16]);
+        let item = with_key(login("Bank", "https://bank.test/", "me", "pw"), KEY);
+        let id = item.id();
+        crate::vault::add_item(&mut v, item);
+
+        let code = totp_for(&v, id, "https://bank.test", 59).unwrap();
+        // RFC 6238 appendix B at t=59: 94287082, as 6 digits.
+        assert_eq!(code.code, "287082");
+        assert_eq!(code.seconds_left, 1);
+        assert_eq!(
+            totp_for(&v, id, "https://evil.test", 59).unwrap_err(),
+            "that item does not belong to this site"
+        );
+    }
+
+    #[test]
+    fn no_2fa_code_for_an_item_without_a_key() {
+        let mut v = new_vault(vec![0; 16]);
+        let item = login("Bank", "https://bank.test/", "me", "pw");
+        let id = item.id();
+        crate::vault::add_item(&mut v, item);
+        assert_eq!(totp_for(&v, id, "https://bank.test", 59).unwrap_err(), "that item has no 2FA key");
+    }
+
+    #[test]
+    fn a_provider_login_still_gets_its_own_sites_code() {
+        // Twitch through "Sign in with Google" has no Twitch password to
+        // fill, but Twitch still asks for its own 2FA code on twitch.tv.
+        let mut v = new_vault(vec![0; 16]);
+        let item = with_key(provider_login("Twitch", "https://twitch.tv/", "google", "me", ""), KEY);
+        let id = item.id();
+        crate::vault::add_item(&mut v, item);
+        assert!(totp_for(&v, id, "https://twitch.tv", 59).is_ok());
+        let m = &matches_for(&v, "https://twitch.tv")[0];
+        assert!(!m.fillable);
+        assert!(m.totp);
+    }
+
+    #[test]
+    fn matches_say_which_logins_have_a_code() {
+        let mut v = new_vault(vec![0; 16]);
+        crate::vault::add_item(&mut v, with_key(login("A", "https://bank.test/", "a", "pw"), KEY));
+        crate::vault::add_item(&mut v, login("B", "https://bank.test/", "b", "pw"));
+        let mut flags: Vec<(String, bool)> =
+            matches_for(&v, "https://bank.test").into_iter().map(|m| (m.username, m.totp)).collect();
+        flags.sort();
+        assert_eq!(flags, vec![("a".to_string(), true), ("b".to_string(), false)]);
     }
 }

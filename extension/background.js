@@ -33,7 +33,7 @@
  * not fire for a window switch, so without that the menu could also be left
  * showing the other window's accounts.
  */
-import { matches, credentials, ask, offer, saveLogin, updateLogin, seen, never, NOT_PAIRED } from "./vault.js";
+import { matches, credentials, totpCode, ask, offer, saveLogin, updateLogin, seen, never, NOT_PAIRED } from "./vault.js";
 import { createTracker, isFresh } from "./capture.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
@@ -123,6 +123,16 @@ async function renderMenu(state) {
         : `${item.title} — signs in with ${PROVIDER_LABELS[item.method] || item.method}` +
           (item.username ? ` (${item.username})` : ""),
       enabled: !!item.fillable,
+      contexts: ["editable"],
+    });
+  }
+  // The code step comes after the password, often on the same site, so the
+  // codes sit below the accounts rather than mixed in with them.
+  for (const item of state.items.filter((i) => i.totp)) {
+    ext.contextMenus.create({
+      id: `pmcode:${item.id}`,
+      parentId: ROOT_ID,
+      title: `2FA code for ${item.title}` + (item.username ? ` (${item.username})` : ""),
       contexts: ["editable"],
     });
   }
@@ -477,6 +487,17 @@ ext.contextMenus.onClicked.addListener(async (info, tab) => {
       return;
     }
     await waitForApproval(tab.id, state.origin);
+    return;
+  }
+  if (id.startsWith("pmcode:")) {
+    const state = (await allTabState())[tab.id];
+    if (!state || !state.origin) return;
+    try {
+      const { code } = await totpCode(id.slice(7), state.origin);
+      await ext.tabs.sendMessage(tab.id, { type: "fill-code", code, origin: state.origin });
+    } catch {
+      // Same as a password from the menu: nowhere to say why.
+    }
     return;
   }
   if (!id.startsWith("pm:")) return;

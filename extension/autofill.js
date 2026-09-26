@@ -11,6 +11,7 @@
  *   }
  *
  *   Autofill.detect(scope)        => { passwords: number, filled: number, identifier: boolean }
+ *   Autofill.fillCode(scope, code) => true when a 2FA code box took the code
  *   Autofill.isLogin(result, href) => boolean
  *
  * `data` uses the vault's personal-info keys plus `password`:
@@ -757,5 +758,52 @@
     return out;
   }
 
-  global.Autofill = { fill: fill, detect: detect, isLogin: isLogin, captured: captured };
+  /**
+   * Words a 2FA code box goes by. Matched against what a person reads next
+   * to the box (`humanMeta`), in the languages the rest of this file knows.
+   */
+  var CODE_WORDS =
+    /one[-_\s]?time|\botp\b|totp|2fa|mfa|two[-_\s]?(factor|step)|verification|verify|authenticat|security[-_\s]?code|\bcode\b|vérification|código|codice|bestätigung|رمز/;
+
+  /** Other things called a code, which a 2FA code must not land in. */
+  var NOT_CODE = /zip|postal|post[-_\s]?code|promo|coupon|voucher|discount|gift|country|area|dial|referral|invite/;
+
+  /** A box a code could go in: typed text, never a password box. */
+  function isCodeCandidate(el) {
+    if (el.tagName !== "INPUT" || isPasswordBox(el)) return false;
+    var type = String(el.type || "").toLowerCase();
+    return type === "text" || type === "tel" || type === "number" || type === "";
+  }
+
+  /**
+   * Type a 2FA code into the page's code box. True when it went somewhere.
+   *
+   * Only a box that says what it is gets the code: `one-time-code`, or a
+   * label or name that reads like a code field. A page of single-character
+   * boxes, one per digit, gets a digit each. Anything else is left alone --
+   * the popup copies the code instead, which is a paste away.
+   */
+  function fillCode(scope, code) {
+    var boxes = collectInputs(scope).filter(isCodeCandidate);
+    var digits = boxes.filter(function (el) {
+      return el.maxLength === 1;
+    });
+    if (digits.length >= code.length) {
+      for (var i = 0; i < code.length; i++) setValue(digits[i], code.charAt(i));
+      return true;
+    }
+    var box =
+      boxes.filter(function (el) {
+        return hasAuto(el, "one-time-code");
+      })[0] ||
+      boxes.filter(function (el) {
+        var words = humanMeta(el);
+        return CODE_WORDS.test(words) && !NOT_CODE.test(words);
+      })[0];
+    if (!box) return false;
+    setValue(box, code);
+    return true;
+  }
+
+  global.Autofill = { fill: fill, detect: detect, isLogin: isLogin, captured: captured, fillCode: fillCode };
 })(typeof window !== "undefined" ? window : this);

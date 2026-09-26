@@ -212,6 +212,20 @@ in a closed shadow root the page can neither read nor click.
 What was typed is held by the extension in session storage (memory, never
 disk) for at most two minutes, and dropped when the offer is answered.
 
+## 2FA codes
+
+A login with a 2FA key saved in the app gets a **2FA code** button in the
+popup, and a *2FA code for …* entry in the right-click menu. It types the
+current code into the page's code box: one marked `one-time-code`, one
+whose label or name reads like a code field (in the same languages as the
+login words), or a row of one-digit boxes. A zip, promo or other code box
+is left alone. With no code box on the page, the popup has the app copy
+the code instead, cleared after a minute.
+
+The code comes from `/totp`, behind the same approval as a password, and
+only for the login's own site. A login that signs in through Google still
+gets its own site's code there: that is the site asking, not Google.
+
 ## Phone numbers
 
 A login can carry a phone number as well as a username, for the sites that
