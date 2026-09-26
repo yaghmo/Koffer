@@ -88,6 +88,26 @@ describe("content capture", () => {
     ]);
   });
 
+  it.each(["Se connecter", "Anmelden", "Iniciar sesión", "Accedi", "Entrar", "تسجيل الدخول", "Modifier le mot de passe"])(
+    "captures a formless button labelled %s",
+    (label) => {
+      document.body.innerHTML =
+        '<input name="email" type="email"><input name="password" type="password"><button></button>';
+      document.querySelector("button")!.textContent = label;
+      (document.querySelector('[name="email"]') as HTMLInputElement).value = "me@site.test";
+      (document.querySelector('[name="password"]') as HTMLInputElement).value = "pw";
+      onClick({ isTrusted: true, target: document.querySelector("button") });
+      expect(captures()).toHaveLength(1);
+    },
+  );
+
+  it("does not capture on a formless button that sends nothing", () => {
+    document.body.innerHTML = '<input name="password" type="password"><button>Annuler</button>';
+    (document.querySelector('[name="password"]') as HTMLInputElement).value = "pw";
+    onClick({ isTrusted: true, target: document.querySelector("button") });
+    expect(captures()).toEqual([]);
+  });
+
   it("sends nothing for a form with no password typed", () => {
     login({ email: "me@site.test" }).requestSubmit();
     expect(captures()).toEqual([]);

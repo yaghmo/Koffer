@@ -136,7 +136,21 @@
    * Buttons that look like they send a login. Many sites use a plain
    * `type="button"` with a click handler rather than a form submit.
    */
-  var SUBMITTISH = /log\s?in|sign\s?(in|up)|register|continue|next|submit|create|join|save|change|update|confirm/i;
+  // English first, then French, German, Spanish, Italian, Portuguese and
+  // Arabic. A form's own submit and Enter need no words; only a formless
+  // button does, and a word missing here costs a missed offer, nothing more.
+  var SUBMITTISH = new RegExp(
+    [
+      "log\\s?in|sign\\s?(in|up)|register|continue|next|submit|create|join|save|change|update|confirm",
+      "connexion|connecter|inscri|valider|continuer|suivant|enregistrer|modifier|mettre à jour|confirmer",
+      "anmelden|einloggen|registrieren|weiter|speichern|ändern|bestätigen",
+      "iniciar|acceder|entrar|registr|siguiente|guardar|cambiar|actualizar|confirmar",
+      "accedi|registrati|avanti|salva|cambia|aggiorna|conferma",
+      "salvar|alterar|atualizar|próximo",
+      "دخول|تسجيل|متابعة|التالي|حفظ|تغيير|تحديث|تأكيد",
+    ].join("|"),
+    "i"
+  );
 
   /**
    * Hand a submitted login to the background script and keep nothing.

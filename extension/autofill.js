@@ -37,7 +37,9 @@
       // autocomplete joined into one string -- so an anchored /^password$/
       // never fires, however obvious the field looks. Word boundaries are
       // what actually work here.
-      nameRe: /(^|[^a-z])(current[-_]?)?(password|passwd|pwd)([^a-z]|$)|user[-_]?pass/i,
+      // The local words matter for a box the site's eye has revealed, which
+      // its placeholder is then the only thing naming.
+      nameRe: /(^|[^a-z])(current[-_]?)?(password|passwd|pwd)([^a-z]|$)|user[-_]?pass|mot de passe|passwort|kennwort|contraseña|senha|wachtwoord|كلمة المرور/i,
       report: "password",
     },
     email: {
