@@ -2,9 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import Settings from "../screens/Settings";
 
+/** Settings shows one group at a time; open the one a test is about. */
+const openGroup = (label: string) => fireEvent.click(screen.getByRole("button", { name: label }));
+
 vi.mock("../lib/api", () => ({
   api: {
-    getConfig: vi.fn().mockResolvedValue({ autolock_mins: 15, auto_refresh_icons: false }),
+    getConfig: vi.fn().mockResolvedValue({ autolock_mins: 15, auto_refresh_icons: false , browser_totp: true, browser_offer_save: true, browser_offer_update: true, browser_site_prompt: true }),
     setAutoRefreshIcons: vi.fn().mockResolvedValue(undefined),
     listItems: vi.fn().mockResolvedValue([
       { id: "1", kind: "login", title: "GitHub", icon_checked_at: 0 },
@@ -41,6 +44,7 @@ vi.mock("../lib/api", () => ({
     securityState: vi.fn().mockResolvedValue({ has_recovery: true, last_export_secs: 0 }),
     createRecoveryCode: vi.fn().mockResolvedValue("K7F2Q 9MRXB 4TWHE 3NYD8 P6VJS 2GZK5"),
     saveRecoveryCode: vi.fn().mockResolvedValue(undefined),
+    setBrowserPref: vi.fn().mockResolvedValue(undefined),
     listNeverSave: vi.fn().mockResolvedValue(["ads.example", "forum.example"]),
     removeNeverSave: vi.fn().mockResolvedValue(undefined),
     changeMasterPassword: vi.fn().mockResolvedValue(undefined),
@@ -116,6 +120,7 @@ describe("Settings — security", () => {
   it("shows a one-time recovery code after confirming the master password", async () => {
     const { api } = await import("../lib/api");
     render(<Settings accountId="acct-1" onLock={() => {}} />);
+    openGroup("Security");
     fireEvent.click(await screen.findByRole("button", { name: /issue a new code/i }));
     fireEvent.change(screen.getByLabelText(/^master password$/i), { target: { value: "hunter2hunter" } });
     fireEvent.click(screen.getByRole("button", { name: /generate code/i }));
@@ -127,6 +132,7 @@ describe("Settings — security", () => {
   it("lists sites that never offer saving and lets one ask again", async () => {
     const { api } = await import("../lib/api");
     render(<Settings accountId="acct-1" onLock={() => {}} />);
+    openGroup("Browser extension");
     const list = await screen.findByRole("list", { name: /never offer to save/i });
     await waitFor(() => expect(list.textContent).toContain("forum.example"));
     fireEvent.click(within(list).getByRole("button", { name: /remove forum\.example/i }));
@@ -136,6 +142,7 @@ describe("Settings — security", () => {
 
   async function openRecoveryCode() {
     render(<Settings accountId="acct-1" onLock={() => {}} />);
+    openGroup("Security");
     fireEvent.click(await screen.findByRole("button", { name: /issue a new code/i }));
     fireEvent.change(screen.getByLabelText(/^master password$/i), { target: { value: "hunter2hunter" } });
     fireEvent.click(screen.getByRole("button", { name: /generate code/i }));
@@ -181,6 +188,7 @@ describe("Settings — security", () => {
   it("refuses a password change when the confirmation does not match", async () => {
     const { api } = await import("../lib/api");
     render(<Settings accountId="acct-1" onLock={() => {}} />);
+    openGroup("Security");
     fireEvent.change(await screen.findByLabelText(/current master password/i), { target: { value: "old-one" } });
     fireEvent.change(screen.getByLabelText(/^new master password$/i), { target: { value: "new-password" } });
     fireEvent.change(screen.getByLabelText(/confirm new master password/i), { target: { value: "different" } });
@@ -191,6 +199,7 @@ describe("Settings — security", () => {
 
   it("warns when the vault has never been exported", async () => {
     render(<Settings accountId="acct-1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     expect(await screen.findByText(/never been exported/i)).toBeTruthy();
   });
 });
@@ -201,6 +210,7 @@ describe("Settings — export backup", () => {
     const { save } = await import("@tauri-apps/plugin-dialog");
     (save as any).mockResolvedValue("C:\\backups\\vault-backup.enc");
     render(<Settings accountId="acct-1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     fireEvent.click(await screen.findByRole("button", { name: /export vault backup/i }));
     await waitFor(() =>
       expect(api.exportVault).toHaveBeenCalledWith("C:\\backups\\vault-backup.enc")
@@ -213,6 +223,7 @@ describe("Settings — export backup", () => {
     const { save } = await import("@tauri-apps/plugin-dialog");
     (save as any).mockResolvedValue(null);
     render(<Settings accountId="acct-1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     fireEvent.click(await screen.findByRole("button", { name: /export vault backup/i }));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(api.exportVault).not.toHaveBeenCalled();
@@ -222,18 +233,21 @@ describe("Settings — export backup", () => {
 describe("Settings cloud backup card", () => {
   it("explains that the master password is still required", async () => {
     render(<Settings accountId="a1" onLock={() => {}} />);
-    expect(await screen.findByText(/cloud backup/i)).toBeTruthy();
+    openGroup("Backup & storage");
+    expect(await screen.findByRole("heading", { name: /cloud backup/i })).toBeTruthy();
     expect(screen.getByText(/master password is still required/i)).toBeTruthy();
   });
 
   it("warns that the download token is not stored by the app", async () => {
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     expect(await screen.findByText(/never stores your download token/i)).toBeTruthy();
   });
 
   it("saves the url and token", async () => {
     const { api } = await import("../lib/api");
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     fireEvent.change(await screen.findByLabelText(/worker url/i), {
       target: { value: "https://w.example.dev" },
     });
@@ -248,6 +262,7 @@ describe("Settings cloud backup card", () => {
 
   it("masks the token field", async () => {
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     const field = (await screen.findByLabelText(/upload token/i)) as HTMLInputElement;
     expect(field.type).toBe("password");
   });
@@ -262,6 +277,7 @@ describe("Settings cloud backup card", () => {
     });
     vi.mocked(api.backupNow).mockRejectedValue("could not reach the worker");
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     fireEvent.click(await screen.findByRole("button", { name: /back up now/i }));
     expect(await screen.findByText(/could not reach the worker/i)).toBeTruthy();
   });
@@ -275,6 +291,7 @@ describe("Settings cloud backup card", () => {
       last_backup_error: "token rejected by the worker",
     });
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     expect(await screen.findByText(/token rejected by the worker/i)).toBeTruthy();
   });
 
@@ -287,6 +304,7 @@ describe("Settings cloud backup card", () => {
       last_backup_error: "",
     });
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Backup & storage");
     const urlField = (await screen.findByLabelText(/worker url/i)) as HTMLInputElement;
     await waitFor(() => expect(urlField.value).toBe("https://old.example.dev"));
     fireEvent.change(urlField, { target: { value: "https://new.example.dev" } });
@@ -305,6 +323,7 @@ describe("Settings cloud backup card", () => {
 describe("Settings browser extension card", () => {
   it("starts unpaired and says the bridge is local-only", async () => {
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
     expect(await screen.findByText(/not paired/i)).toBeTruthy();
     expect(screen.getByText(/127\.0\.0\.1:38471/)).toBeTruthy();
     expect(screen.getByText(/never the network/i)).toBeTruthy();
@@ -313,6 +332,7 @@ describe("Settings browser extension card", () => {
   it("shows a pairing code on request, and says it expires", async () => {
     const { api } = await import("../lib/api");
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
     fireEvent.click(await screen.findByRole("button", { name: /pair a browser/i }));
     expect(await screen.findByText("K7F2Q9MR")).toBeTruthy();
     expect(screen.getByText(/three minutes, once/i)).toBeTruthy();
@@ -322,6 +342,7 @@ describe("Settings browser extension card", () => {
   it("cancels the pending code when pairing is explicitly cancelled", async () => {
     const { api } = await import("../lib/api");
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
     fireEvent.click(await screen.findByRole("button", { name: /pair a browser/i }));
     fireEvent.click(await screen.findByRole("button", { name: /cancel pairing/i }));
     await waitFor(() => expect(api.bridgeCancelPairing).toHaveBeenCalled());
@@ -332,6 +353,7 @@ describe("Settings browser extension card", () => {
     const { api } = await import("../lib/api");
     bridgeChanged.length = 0;
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
     await waitFor(() => expect(bridgeChanged.length).toBeGreaterThan(0));
     const bridgeCalls = vi.mocked(api.bridgeState).mock.calls.length;
     const neverCalls = vi.mocked(api.listNeverSave).mock.calls.length;
@@ -355,6 +377,7 @@ describe("Settings browser extension card", () => {
       ],
     });
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
     expect(await screen.findByText("Chrome")).toBeTruthy();
     expect(screen.getByText("chrome-extension://abcdef")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /unpair/i }));
@@ -380,6 +403,7 @@ describe("Settings browser extension card", () => {
       ],
     });
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
 
     // The summary counts them; the sites themselves are behind the button.
     expect(await screen.findByText(/Approved for 2 sites/i)).toBeTruthy();
@@ -404,6 +428,7 @@ describe("Settings browser extension card", () => {
       clients: [],
     });
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
     expect(await screen.findByText(/could not start.*10048/i)).toBeTruthy();
   });
 });
@@ -416,6 +441,7 @@ describe("Settings pairing panel closes itself", () => {
     const { api } = await import("../lib/api");
     vi.mocked(api.bridgeState).mockResolvedValue({ listen_error: "", port: 38471, clients: [] });
     render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
     fireEvent.click(await screen.findByRole("button", { name: /pair a browser/i }));
     expect(await screen.findByText("K7F2Q9MR")).toBeTruthy();
 
@@ -429,5 +455,28 @@ describe("Settings pairing panel closes itself", () => {
     await waitFor(() => expect(screen.queryByText("K7F2Q9MR")).toBeNull(), { timeout: 4000 });
     expect(screen.getByText("Chrome")).toBeTruthy();
     expect(api.bridgeCancelPairing).not.toHaveBeenCalled();
+  });
+});
+
+describe("Settings layout", () => {
+  it("shows one group at a time and finds a section by a fuzzy search", async () => {
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    expect(await screen.findByRole("heading", { name: "Auto-lock" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /cloud backup/i })).toBeNull();
+
+    // "clud bkp": letters in order, typed carelessly.
+    fireEvent.change(screen.getByRole("searchbox", { name: /search settings/i }), { target: { value: "clud bkp" } });
+    expect(await screen.findByRole("heading", { name: /cloud backup/i })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Auto-lock" })).toBeNull();
+  });
+
+  it("switches a browser feature off in the app", async () => {
+    const { api } = await import("../lib/api");
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    openGroup("Browser extension");
+    const box = (await screen.findByRole("checkbox", { name: /2fa codes in the browser/i })) as HTMLInputElement;
+    await waitFor(() => expect(box.checked).toBe(true));
+    fireEvent.click(box);
+    await waitFor(() => expect(api.setBrowserPref).toHaveBeenCalledWith("totp", false));
   });
 });
