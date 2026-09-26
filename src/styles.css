@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* The app is dark everywhere, so the parts the engine draws itself (date
+   pickers, dropdowns, scrollbars) should be too, on every platform. */
+:root {
+  color-scheme: dark;
+}
+
 @theme {
   --color-surface: #10131a;
   --color-surface-dim: #10131a;
@@ -125,9 +131,25 @@
     text-transform: uppercase;
   }
   input[type="date"]::-webkit-calendar-picker-indicator {
-    filter: invert(1);
     opacity: 0.7;
     cursor: pointer;
+  }
+  /* WebKit (macOS WKWebView, Linux WebKitGTK) draws the date as editable
+     segments: keep them left-aligned like every other field, and give the
+     focused segment the app's accent instead of the system blue. */
+  input[type="date"]::-webkit-date-and-time-value {
+    text-align: left;
+  }
+  input[type="date"]::-webkit-datetime-edit {
+    padding: 0;
+  }
+  input[type="date"]::-webkit-datetime-edit-month-field:focus,
+  input[type="date"]::-webkit-datetime-edit-day-field:focus,
+  input[type="date"]::-webkit-datetime-edit-year-field:focus {
+    background-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
+    color: var(--color-on-surface);
+    border-radius: 4px;
+    outline: none;
   }
   input[type="date"]::-webkit-calendar-picker-indicator:hover {
     opacity: 1;
