@@ -72,6 +72,25 @@ export const NOT_PAIRED = "not-paired";
 export const NO_APP = "no-app";
 /** This site has not been approved for this browser yet. */
 export const NEEDS_APPROVAL = "needs-approval";
+/** "Confirm every fill" is on and the app is asking the user right now. */
+export const NEEDS_CONFIRM = "needs-confirm";
+
+/**
+ * Run a handout, waiting through the app's "Allow?" when it asks. `onWait`
+ * runs once, so the caller can say to look at the app. Gives up after the
+ * app's own window for an answer.
+ */
+export async function whenAllowed(run, onWait) {
+  for (let i = 0; ; i++) {
+    try {
+      return await run();
+    } catch (e) {
+      if (e.message !== NEEDS_CONFIRM || i >= 30) throw e;
+      if (i === 0 && onWait) onWait();
+      await new Promise((done) => setTimeout(done, 1000));
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // The key
@@ -208,6 +227,7 @@ async function send(port, path, headers, bodyText) {
     // this browser again", every time. The popup offers re-pairing instead.
     throw new Error(NOT_PAIRED);
   }
+  if (res.status === 403 && data.needsConfirm) throw new Error(NEEDS_CONFIRM);
   if (res.status === 403 && data.needsApproval) {
     const e = new Error(NEEDS_APPROVAL);
     e.host = data.host || "";

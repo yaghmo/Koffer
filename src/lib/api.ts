@@ -51,6 +51,8 @@ export const api = {
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
   setAutoRefreshIcons: (on: boolean) => invoke<void>("set_auto_refresh_icons", { on }),
   setBrowserPref: (name: BrowserPref, on: boolean) => invoke<void>("set_browser_pref", { name, on }),
+  bridgeConfirmFill: (origin: string, id: string, host: string) =>
+    invoke<void>("bridge_confirm_fill", { origin, id, host }),
   checkLeakedPasswords: () => invoke<LeakedLogin[]>("check_leaked_passwords"),
 
   vaultStorage: () => invoke<VaultStorage>("vault_storage"),

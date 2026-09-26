@@ -814,6 +814,7 @@ pub fn set_browser_pref(name: String, on: bool, state: State<'_, AppState>) -> R
         "offer_save" => &mut c.browser_offer_save,
         "offer_update" => &mut c.browser_offer_update,
         "site_prompt" => &mut c.browser_site_prompt,
+        "confirm_fills" => &mut c.browser_confirm_fills,
         _ => return Err(format!("no browser setting called {name}")),
     };
     *field = on;
@@ -1293,6 +1294,17 @@ pub fn bridge_approve(
     // Settings may be open on the approved-sites list, which reads it once.
     let _ = app.emit("vault://bridge-changed", ());
     crate::log_info!("bridge_approve", "approved host={host}");
+    Ok(())
+}
+
+/// "Allow" on a fill the browser asked for, with "confirm every fill" on.
+/// Good for one handout of that item on that site, for a few seconds: the
+/// extension is retrying and picks it up on its next call.
+#[tauri::command]
+pub fn bridge_confirm_fill(origin: String, id: String, host: String, app: AppHandle) -> Result<(), String> {
+    let id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    app.state::<crate::bridge::Bridge>().grant(&origin, id, &host.trim().to_lowercase());
+    crate::log_info!("bridge_confirm_fill", "allowed one handout for host={host}");
     Ok(())
 }
 

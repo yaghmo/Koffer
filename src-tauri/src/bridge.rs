@@ -155,6 +155,11 @@ const KEY_ROTATE_SECS: i64 = 60 * 60;
 /// How long the key a rekey replaced keeps working. Only long enough to cover
 /// a call the browser had already signed when the swap happened.
 const KEY_GRACE_SECS: i64 = 30;
+/// How long an "Allow" on one fill stays good: the extension's retry, not a
+/// session.
+const GRANT_TTL: Duration = Duration::from_secs(30);
+/// Quiet window between fill confirmations pulling the window forward.
+const CONFIRM_REPROMPT: Duration = Duration::from_secs(5);
 /// How long a password copied through `/copy` stays on the clipboard. Same
 /// TTL the app's own copy buttons use.
 const COPY_TTL: Duration = Duration::from_secs(60);
@@ -199,12 +204,55 @@ pub struct Bridge {
 
     /// The port actually listened on, once `serve` has one.
     port: Mutex<Option<u16>>,
+
+    /// One-shot "Allow"s from the app, with "confirm every fill" on. Memory
+    /// only: they last seconds, and a restart owes nobody a fill.
+    grants: Mutex<Vec<Grant>>,
+    last_confirm: Mutex<Option<Instant>>,
+}
+
+/// One handout the user allowed: this browser, this item, this site.
+struct Grant {
+    client: String,
+    item: Uuid,
+    host: String,
+    until: Instant,
 }
 
 impl Bridge {
     /// The port the bridge is listening on, if it came up.
     pub fn port(&self) -> Option<u16> {
         *self.port.lock().unwrap()
+    }
+
+    /// The user clicked Allow on one handout.
+    pub fn grant(&self, client: &str, item: Uuid, host: &str) {
+        let now = Instant::now();
+        let mut grants = self.grants.lock().unwrap();
+        grants.retain(|g| g.until > now);
+        grants.push(Grant { client: client.to_string(), item, host: host.to_string(), until: now + GRANT_TTL });
+    }
+
+    /// Use up an Allow for this handout, if there is a live one.
+    fn take_grant(&self, client: &str, item: Uuid, host: &str, now: Instant) -> bool {
+        let mut grants = self.grants.lock().unwrap();
+        grants.retain(|g| g.until > now);
+        match grants.iter().position(|g| g.client == client && g.item == item && g.host == host) {
+            Some(i) => {
+                grants.remove(i);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn may_confirm(&self) -> bool {
+        let mut slot = self.last_confirm.lock().unwrap();
+        if slot.is_some_and(|when| when.elapsed() < CONFIRM_REPROMPT) {
+            return false;
+        }
+        *slot = Some(Instant::now());
+        true
     }
 
     /// Put a fresh pairing code on screen, replacing any code still pending.
@@ -1281,6 +1329,41 @@ pub(crate) fn offer_allowed(offer: &crate::capture::Offer, cfg: &crate::config::
 
 const TOTP_OFF: &str = "2FA codes in the browser are turned off in Settings";
 
+/// With "confirm every fill" on: has the user allowed this handout? When not,
+/// the app is asked and the refusal to send comes back. Called with the
+/// session held, so it only decides; the asking happens after `drop`.
+fn unconfirmed(app: &AppHandle, session: &Session, id: Uuid, page: &str, what: &str) -> Option<serde_json::Value> {
+    let host = host_of(page).unwrap_or_default();
+    let client = &session.client().origin;
+    if app.state::<Bridge>().take_grant(client, id, &host, Instant::now()) {
+        return None;
+    }
+    let (title, username) = match session.vault().items.iter().find(|i| i.id() == id) {
+        Some(Item::Login { base, fields }) => (base.title.clone(), fields.username.clone()),
+        _ => (String::new(), String::new()),
+    };
+    Some(serde_json::json!({
+        "label": session.client().label,
+        "origin": client,
+        "id": id.to_string(),
+        "host": host,
+        "title": title,
+        "username": username,
+        "what": what,
+    }))
+}
+
+/// Put the fill confirmation up in the app, then refuse this call. The
+/// extension retries, and the retry after an Allow goes through.
+fn ask_confirm(app: &AppHandle, request: serde_json::Value) -> Reply {
+    if app.state::<Bridge>().may_confirm() {
+        let _ = app.emit("vault://fill-request", request);
+        crate::tray::reveal(app);
+        crate::log_info!("bridge", "fill confirmation asked");
+    }
+    json(403, serde_json::json!({ "error": "confirm this in the app", "needsConfirm": true }))
+}
+
 fn needs_approval(host: &str) -> Reply {
     json(
         403,
@@ -1470,6 +1553,7 @@ fn gate(session: &Session, inc: &Incoming) -> Gate {
 }
 
 fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
+    let confirm = prefs(app).browser_confirm_fills;
     let state = app.state::<AppState>();
     let session = match authed(&state, inc) {
         Ok(s) => s,
@@ -1485,6 +1569,12 @@ fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
             return reply;
         }
     };
+    if confirm {
+        if let Some(request) = unconfirmed(app, &session, id, &page, "password") {
+            drop(session);
+            return ask_confirm(app, request);
+        }
+    }
     match credentials_for(session.vault(), id, &page) {
         Ok(out) => {
             drop(session);
@@ -1525,7 +1615,8 @@ fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
 /// same approval, same item rules as a fill: this is the same secret leaving
 /// by a different door.
 fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
-    let totp_on = prefs(app).browser_totp;
+    let cfg = prefs(app);
+    let (totp_on, confirm) = (cfg.browser_totp, cfg.browser_confirm_fills);
     let state = app.state::<AppState>();
     let session = match authed(&state, inc) {
         Ok(s) => s,
@@ -1548,6 +1639,12 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
             return reply;
         }
     };
+    if confirm {
+        if let Some(request) = unconfirmed(app, &session, id, &page, &which) {
+            drop(session);
+            return ask_confirm(app, request);
+        }
+    }
     let got = if which == "totp" {
         totp_for(session.vault(), id, &page, unix_now()).map(|c| c.code)
     } else {
@@ -1584,7 +1681,8 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
 /// without the password), but it is the second factor, so it gets no
 /// easier a path out.
 fn totp(app: &AppHandle, inc: &Incoming) -> Reply {
-    let totp_on = prefs(app).browser_totp;
+    let cfg = prefs(app);
+    let (totp_on, confirm) = (cfg.browser_totp, cfg.browser_confirm_fills);
     let state = app.state::<AppState>();
     let session = match authed(&state, inc) {
         Ok(s) => s,
@@ -1603,6 +1701,12 @@ fn totp(app: &AppHandle, inc: &Incoming) -> Reply {
             return reply;
         }
     };
+    if confirm {
+        if let Some(request) = unconfirmed(app, &session, id, &page, "2FA code") {
+            drop(session);
+            return ask_confirm(app, request);
+        }
+    }
     match totp_for(session.vault(), id, &page, unix_now()) {
         Ok(code) => {
             drop(session);
@@ -2412,5 +2516,27 @@ mod tests {
         let b = Bridge::default();
         let code = b.new_code();
         assert!(b.redeem(&display_code(&code, PORT + 3)).is_ok());
+    }
+
+    #[test]
+    fn an_allow_covers_one_handout_of_one_item_on_one_site() {
+        let b = Bridge::default();
+        let (item, other) = (Uuid::new_v4(), Uuid::new_v4());
+        let now = Instant::now();
+        b.grant(EXT, item, "bank.test");
+        assert!(!b.take_grant(EXT, other, "bank.test", now));
+        assert!(!b.take_grant(EXT, item, "evil.test", now));
+        assert!(!b.take_grant("chrome-extension://someone-else", item, "bank.test", now));
+        assert!(b.take_grant(EXT, item, "bank.test", now));
+        // Used up.
+        assert!(!b.take_grant(EXT, item, "bank.test", now));
+    }
+
+    #[test]
+    fn an_allow_does_not_outlive_its_few_seconds() {
+        let b = Bridge::default();
+        let item = Uuid::new_v4();
+        b.grant(EXT, item, "bank.test");
+        assert!(!b.take_grant(EXT, item, "bank.test", Instant::now() + GRANT_TTL + Duration::from_secs(1)));
     }
 }

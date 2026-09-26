@@ -33,7 +33,7 @@
  * not fire for a window switch, so without that the menu could also be left
  * showing the other window's accounts.
  */
-import { matches, credentials, totpCode, ask, offer, saveLogin, updateLogin, seen, never, NOT_PAIRED } from "./vault.js";
+import { matches, credentials, totpCode, whenAllowed, ask, offer, saveLogin, updateLogin, seen, never, NOT_PAIRED } from "./vault.js";
 import { createTracker, isFresh } from "./capture.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
@@ -494,7 +494,7 @@ ext.contextMenus.onClicked.addListener(async (info, tab) => {
     const state = (await allTabState())[tab.id];
     if (!state || !state.origin) return;
     try {
-      const { code } = await totpCode(id.slice(7), state.origin);
+      const { code } = await whenAllowed(() => totpCode(id.slice(7), state.origin));
       await ext.tabs.sendMessage(tab.id, { type: "fill-code", code, origin: state.origin });
     } catch {
       // Same as a password from the menu: nowhere to say why.
@@ -507,7 +507,7 @@ ext.contextMenus.onClicked.addListener(async (info, tab) => {
   const state = (await allTabState())[tab.id];
   if (!state || !state.origin) return;
   try {
-    const data = await credentials(id.slice(3), state.origin);
+    const data = await whenAllowed(() => credentials(id.slice(3), state.origin));
     // Reaching the tab works here on `activeTab` alone: executing a context
     // menu item grants it, exactly as clicking the toolbar icon does. That
     // is why building the menu never touches the tab and only the click

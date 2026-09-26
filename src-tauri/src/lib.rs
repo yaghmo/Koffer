@@ -86,6 +86,7 @@ pub fn run() {
             commands::set_autolock_mins,
             commands::set_auto_refresh_icons,
             commands::set_browser_pref,
+            commands::bridge_confirm_fill,
             commands::check_leaked_passwords,
             commands::reset_activity,
             commands::log_event,

@@ -141,7 +141,12 @@ asks whether to stay unlocked — only an answer there extends it.
   that way is real work rather than a `grep`, and the key is replaced hourly,
   but a determined local attacker gets there. It also needs the vault
   unlocked, and unpairing kills it. This is a deliberate trade for one-click
-  autofill.
+  autofill, and the trade can be refused: with *Confirm every fill in the
+  app* on (Settings → Browser extension), every password, copy and 2FA code
+  waits for an Allow in the app, good for that one request and 30 seconds.
+  The popup and the menu wait for it and fill the moment it comes. A key
+  copied out of the profile then gets a dialog you did not expect, not a
+  password.
 - **A forged `Origin` header.** Browsers will not let a page forge it, so
   pages really are shut out — but any local process can set it to anything.
   The pairing code and the token are what actually hold the door.

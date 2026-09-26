@@ -18,6 +18,7 @@ import {
   credentials,
   copy,
   totpCode,
+  whenAllowed,
 } from "./vault.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
@@ -337,7 +338,7 @@ async function copyPassword(button, item, origin) {
   button.disabled = true;
   const was = button.textContent;
   try {
-    const { seconds } = await copy(item.id, origin, "password");
+    const { seconds } = await whenAllowed(() => copy(item.id, origin, "password"), waitForApp);
     button.textContent = `Copied · ${seconds}s`;
   } catch (e) {
     text(vaultEl, `Could not copy: ${describe(e)}`);
@@ -347,6 +348,11 @@ async function copyPassword(button, item, origin) {
   setTimeout(() => {
     button.textContent = was;
   }, 1500);
+}
+
+/** "Confirm every fill" is on: the answer is in the app, not here. */
+function waitForApp() {
+  text(vaultEl, "Allow it in Password Manager. This fills as soon as you do.", "muted");
 }
 
 function codeButton(item, tabId, origin) {
@@ -368,7 +374,7 @@ async function fillCode(button, item, tabId, origin) {
   stopWatching();
   button.disabled = true;
   try {
-    const { code } = await totpCode(item.id, origin);
+    const { code } = await whenAllowed(() => totpCode(item.id, origin), waitForApp);
     const out = await ext.tabs.sendMessage(tabId, { type: "fill-code", code, origin }).catch(() => null);
     if (out && out.wrongOrigin) {
       text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
@@ -378,7 +384,7 @@ async function fillCode(button, item, tabId, origin) {
       window.close();
       return;
     }
-    await copy(item.id, origin, "totp");
+    await whenAllowed(() => copy(item.id, origin, "totp"), waitForApp);
     button.textContent = "Code copied";
   } catch (e) {
     text(vaultEl, `Could not get the code: ${describe(e)}`);
@@ -393,7 +399,7 @@ async function fill(button, item, tabId, origin) {
   try {
     // Fetched at the moment of the click and handed straight to the page:
     // the popup keeps no copy, and closing it takes the values with it.
-    const data = await credentials(item.id, origin);
+    const data = await whenAllowed(() => credentials(item.id, origin), waitForApp);
     // The origin travels with the fill so the content script can refuse if
     // the tab moved between the popup opening and this click.
     const out = await ext.tabs.sendMessage(tabId, { type: "fill", data, origin });

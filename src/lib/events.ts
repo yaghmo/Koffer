@@ -47,3 +47,19 @@ export function onItemsChanged(handler: () => void): Promise<UnlistenFn> {
 export function onBridgeChanged(handler: () => void): Promise<UnlistenFn> {
   return listen<void>("vault://bridge-changed", () => handler());
 }
+
+/** A paired browser wants one secret, and "confirm every fill" is on. */
+export interface FillRequest {
+  label: string;
+  origin: string;
+  id: string;
+  host: string;
+  title: string;
+  username: string;
+  /** "password", "username", "phone", "totp" or "2FA code". */
+  what: string;
+}
+
+export function onFillRequest(handler: (req: FillRequest) => void): Promise<UnlistenFn> {
+  return listen<FillRequest>("vault://fill-request", (e) => handler(e.payload));
+}

@@ -28,6 +28,13 @@ const FEATURES: { pref: BrowserPref; key: keyof Config; label: string; detail: s
     label: "Ask to approve a site on the page",
     detail: "A bar on sites this browser is not approved for yet. The popup can still ask.",
   },
+  {
+    pref: "confirm_fills",
+    key: "browser_confirm_fills",
+    label: "Confirm every fill in the app",
+    detail:
+      "Each password, copy and 2FA code waits for a click here. The browser's key lives in its profile, where a program on this computer could copy it; with this on, the copy is useless without you.",
+  },
 ];
 
 /**

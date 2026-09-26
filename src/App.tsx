@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-import { onApproveRequest, onExtendRequest, onItemsChanged, onVaultLocked, type ApproveRequest } from "./lib/events";
+import {
+  onApproveRequest,
+  onExtendRequest,
+  onFillRequest,
+  onItemsChanged,
+  onVaultLocked,
+  type ApproveRequest,
+  type FillRequest,
+} from "./lib/events";
 import { fetchMissingLogos, refreshSiteLogos } from "./lib/logos";
 import { logUi } from "./lib/log";
 import Setup from "./screens/Setup";
@@ -46,6 +54,8 @@ export default function App() {
   // been approved for. The call was already refused; this only decides
   // whether the next one is.
   const [approveAsk, setApproveAsk] = useState<ApproveRequest | null>(null);
+  // With "confirm every fill" on: one handout the browser is waiting on.
+  const [fillAsk, setFillAsk] = useState<FillRequest | null>(null);
   // A line that says what just happened and then gets out of the way. The
   // approval dialog closes the instant it is answered, which left no sign
   // that anything had been granted — and "did that work?" is the one
@@ -76,6 +86,7 @@ export default function App() {
       setReturnView(null);
       setExtendAsk(null);
       setApproveAsk(null);
+      setFillAsk(null);
       setNotice(null);
     });
     const unlistenExtend = onExtendRequest((remaining) => {
@@ -89,10 +100,16 @@ export default function App() {
       // pointer would change which site the next click approves.
       setApproveAsk((current) => current ?? req);
     });
+    const unlistenFill = onFillRequest((req) => {
+      logUi("info", "app", `extension asked to fill on ${req.host}`);
+      // Same rule as approvals: never swap the dialog under the pointer.
+      setFillAsk((current) => current ?? req);
+    });
     return () => {
       unlisten.then((fn) => fn());
       unlistenExtend.then((fn) => fn());
       unlistenApprove.then((fn) => fn());
+      unlistenFill.then((fn) => fn());
     };
   }, []);
 
@@ -378,6 +395,22 @@ export default function App() {
               setApproveAsk(null);
             }}
             onCancel={() => setApproveAsk(null)}
+          />
+        )}
+        {fillAsk !== null && approveAsk === null && status === "unlocked" && (
+          <ConfirmDialog
+            title={`Fill ${fillAsk.host}?`}
+            message={`${fillAsk.label} wants the ${fillAsk.what === "totp" ? "2FA code" : fillAsk.what} for ${
+              fillAsk.title || "a login"
+            }${fillAsk.username ? ` (${fillAsk.username})` : ""} on ${fillAsk.host}. Allow covers this one request. If you did not just ask for it in your browser, say no.`}
+            confirmLabel="Allow"
+            tone="primary"
+            onConfirm={() => {
+              const { origin, id, host } = fillAsk;
+              api.bridgeConfirmFill(origin, id, host).catch((e) => setNotice(`Could not allow it: ${String(e)}`));
+              setFillAsk(null);
+            }}
+            onCancel={() => setFillAsk(null)}
           />
         )}
         {notice !== null && (

@@ -51,6 +51,12 @@ pub struct Config {
     pub browser_offer_update: bool,
     #[serde(default = "on")]
     pub browser_site_prompt: bool,
+    /// Every handout (fill, copy, 2FA code) waits for a click in the app.
+    /// Off by default. It is the one defence against the browser's signing
+    /// key being copied out of its profile: with it on, the copy is useless
+    /// without someone at this window saying yes to each request.
+    #[serde(default)]
+    pub browser_confirm_fills: bool,
 }
 
 fn on() -> bool {
@@ -70,6 +76,7 @@ impl Default for Config {
             browser_offer_save: true,
             browser_offer_update: true,
             browser_site_prompt: true,
+            browser_confirm_fills: false,
         }
     }
 }
