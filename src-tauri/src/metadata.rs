@@ -32,7 +32,18 @@ pub struct UrlMetadata {
 /// Timeout 5s. Missing fields return None (not error).
 pub async fn fetch_metadata(url: &str) -> Result<UrlMetadata, MetadataError> {
     // A page cut off at the cap still has its <head>; parse what arrived.
-    let (html, _, _) = get_capped(url, MAX_HTML_BYTES).await?;
+    let html = match get_capped(url, MAX_HTML_BYTES).await {
+        Ok((html, _, _)) => html,
+        // Bot filters (Outlook's 417, PayPal's 403) refuse the page but often
+        // still serve /favicon.ico; a logo with no title beats nothing.
+        Err(e) => {
+            let icon = match extract_favicon("", url) {
+                Some(root) => fetch_favicon(&root).await.map_err(|_| e)?,
+                None => return Err(e),
+            };
+            return Ok(UrlMetadata { title: None, favicon_data_url: Some(icon) });
+        }
+    };
     let html = String::from_utf8_lossy(&html);
 
     let title = extract_title(&html);
@@ -293,9 +304,8 @@ async fn get_capped(
 
 /// True for http(s) URLs whose host is not loopback, private, link-local, or
 /// otherwise local.
-/// ponytail: checks the literal host only; a public DNS name that resolves to
-/// a LAN address (DNS rebinding) still passes. Resolve and pin the IP if that
-/// threat ever matters.
+/// Checks the literal host only; `resolve_public` checks and pins what a
+/// name resolves to.
 fn is_public_http(url: &reqwest::Url) -> bool {
     if !matches!(url.scheme(), "http" | "https") {
         return false;
