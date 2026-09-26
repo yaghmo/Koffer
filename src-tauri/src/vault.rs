@@ -623,6 +623,10 @@ pub fn deserialize_vault(bytes: &[u8]) -> Result<Vault, VaultError> {
     Ok(v)
 }
 
+fn first_port() -> u16 {
+    crate::bridge::PORT
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1188,8 +1192,4 @@ mod tests {
         assert!(fields.previous_passwords.is_empty());
         assert_eq!(fields.last_seen, None);
     }
-}
-
-fn first_port() -> u16 {
-    crate::bridge::PORT
 }
