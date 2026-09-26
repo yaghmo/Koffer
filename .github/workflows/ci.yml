@@ -65,9 +65,8 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
-      # The clipboard test knows to skip itself on a headless Linux runner:
-      # there is no clipboard owner there, and failing on that would say
-      # nothing about the code.
+      # The one test that writes the real clipboard is #[ignore]d: a headless
+      # runner has no clipboard, and on a desktop it wipes the user's.
       - name: cargo test
         working-directory: src-tauri
         run: cargo test
@@ -112,10 +111,64 @@ jobs:
 
       - run: npm ci
 
-      # Unsigned on every platform. macOS will refuse to open it without a
-      # right-click → Open, and Windows SmartScreen will warn, until there
-      # are certificates to sign with.
-      - run: npx tauri build
+      # Signing switches on by itself once its secrets exist, and not before:
+      # a secret that was never set reads as "", and handing the bundler an
+      # empty certificate fails the build instead of skipping the signature.
+      # How to get each one is in SIGNING.md.
+      #
+      # macOS: a Developer ID Application certificate signs; the Apple ID
+      # trio notarizes, without which Gatekeeper still refuses the app.
+      - name: macOS signing
+        if: matrix.os == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          [ -n "$APPLE_CERTIFICATE" ] || { echo "No Apple certificate: unsigned."; exit 0; }
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            value="${!name}"
+            [ -n "$value" ] || continue
+            echo "::add-mask::$value"
+            { echo "$name<<EOF_$name"; echo "$value"; echo "EOF_$name"; } >> "$GITHUB_ENV"
+          done
+          # A throwaway keychain holding only this certificate, as Tauri's
+          # signing guide does it; the runner is discarded after the job.
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          rm "$RUNNER_TEMP/certificate.p12"
+
+      # Windows: the provider's own command, with %1 for the file. Every
+      # current option (Azure Artifact Signing, DigiCert KeyLocker, Certum
+      # SimplySign) keeps the key in the cloud or on a token and signs
+      # through a command like this; a bare .pfx is no longer issued.
+      - name: Windows signing
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
+        run: |
+          [ -n "$WINDOWS_SIGN_COMMAND" ] || { echo "No Windows sign command: unsigned."; exit 0; }
+          node -e 'console.log("SIGN_CONFIG=" + JSON.stringify({ bundle: { windows: { signCommand: process.env.WINDOWS_SIGN_COMMAND } } }))' >> "$GITHUB_ENV"
+
+      - name: tauri build
+        shell: bash
+        # Whatever the provider's sign command needs to log in, e.g. Azure's
+        # service principal. Unset secrets are simply empty here.
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: npx tauri build ${SIGN_CONFIG:+--config "$SIGN_CONFIG"}
 
       - uses: actions/upload-artifact@v4
         with:
