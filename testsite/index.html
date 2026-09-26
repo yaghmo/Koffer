@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PM test site</title>
+<style>
+  :root { color-scheme: light; --ink: #1d2230; --muted: #5b6275; --line: #d9dce4; --accent: #2f5bd3; --ok: #1d7a46; --bad: #b3261e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; color: var(--ink); background: #f5f6f9; }
+  header { background: #fff; border-bottom: 1px solid var(--line); padding: 12px 24px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+  header strong { font-size: 16px; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
+  nav a[aria-current="page"] { background: #e8edfb; color: var(--accent); }
+  main { max-width: 440px; margin: 40px auto; padding: 0 16px; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 4px; }
+  input, select { width: 100%; font: inherit; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .row { display: flex; gap: 8px; }
+  .row select { width: 96px; flex-shrink: 0; }
+  .digits { display: flex; gap: 8px; }
+  .digits input { width: 44px; text-align: center; font-size: 20px; }
+  button { margin-top: 20px; width: 100%; font: inherit; font-weight: 600; padding: 10px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
+  button.link { background: none; color: var(--accent); width: auto; padding: 0; margin-top: 12px; font-weight: 500; }
+  .msg { margin: 16px 0 0; padding: 10px 12px; border-radius: 6px; font-size: 14px; }
+  .msg.ok { background: #e3f3ea; color: var(--ok); }
+  .msg.bad { background: #fbe6e4; color: var(--bad); }
+  .hint { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .hint code { background: #eef0f5; padding: 1px 5px; border-radius: 4px; }
+  #log { max-width: 440px; margin: 0 auto 40px; padding: 0 16px; font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <strong>PM test site</strong>
+  <nav id="nav"></nav>
+</header>
+<main id="app"></main>
+<div id="log"></div>
+
+<script>
+"use strict";
+// A fake site with a fake server in localStorage. Nothing here is real and
+// nothing leaves the page.
+const KEY = "JBSWY3DPEHPK3PXP"; // the public test 2FA key
+const DEFAULTS = { "test@example.com": { password: "Correct-Horse-1", phone: "+33612345678" } };
+const db = {
+  load() { try { return JSON.parse(localStorage.getItem("pm-test-accounts")) || { ...DEFAULTS }; } catch { return { ...DEFAULTS }; } },
+  save(a) { localStorage.setItem("pm-test-accounts", JSON.stringify(a)); },
+};
+const log = (t) => { const d = document.createElement("div"); d.textContent = new Date().toLocaleTimeString() + "  " + t; document.getElementById("log").prepend(d); };
+
+const PAGES = {
+  signin: ["Sign in", signin],
+  signup: ["Sign up", signup],
+  twostep: ["Two-step", twostep],
+  spa: ["No form (FR)", spa],
+  phone: ["Phone", phone],
+  change: ["Change password", change],
+  otp: ["2FA code", otp],
+  digits: ["2FA digits", digits],
+};
+
+function el(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
+function page(title, lead, body) {
+  const app = document.getElementById("app");
+  app.replaceChildren(el(`<div class="panel"><h1>${title}</h1><p class="lead">${lead}</p><div id="body"></div></div>`));
+  app.querySelector("#body").append(el(body));
+  return app;
+}
+function done(app, text) {
+  // The form goes away, which is how the extension tells a login worked.
+  app.querySelector("#body").replaceChildren(el(`<p class="msg ok">${text}</p><button class="link" type="button" id="again">Back to the form</button>`));
+  app.querySelector("#again").onclick = route;
+}
+function fail(app, text) {
+  let m = app.querySelector(".msg.bad");
+  if (!m) { m = document.createElement("p"); m.className = "msg bad"; app.querySelector("#body").append(m); }
+  m.textContent = text;
+}
+
+function signin() {
+  const app = page("Sign in", "A plain form. Correct password: the form goes away. Wrong: it stays with an error.", `
+    <form id="f"><label for="e">Email</label><input id="e" name="email" type="email" autocomplete="username">
+    <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">
+    <button>Sign in</button></form>
+    <p class="hint">Account: <code>test@example.com</code> / <code>${db.load()["test@example.com"]?.password ?? "?"}</code></p>`);
+  app.querySelector("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const a = db.load()[app.querySelector("#e").value.trim()];
+    if (a && a.password === app.querySelector("#p").value) { log("sign in ok"); done(app, "Signed in."); }
+    else { log("sign in refused"); fail(app, "Wrong email or password."); }
+  };
+}
+
+function signup() {
+  const app = page("Sign up", "New account: expect an offer to save it.", `
+    <form id="f"><label for="e">Email</label><input id="e" name="email" type="email" autocomplete="username">
+    <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="new-password">
+    <label for="c">Confirm password</label><input id="c" name="confirm" type="password" autocomplete="new-password">
+    <button>Create account</button></form>`);
+  app.querySelector("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const email = app.querySelector("#e").value.trim(), p = app.querySelector("#p").value;
+    if (!email || !p) return fail(app, "Fill in every field.");
+    if (p !== app.querySelector("#c").value) return fail(app, "The passwords do not match.");
+    const a = db.load(); a[email] = { password: p, phone: "" }; db.save(a);
+    log("account created " + email); done(app, "Account created for " + email + ".");
+  };
+}
+
+function twostep() {
+  const app = page("Two-step sign in", "Email first, then the password on its own step.", `
+    <form id="f"><label for="e">Email</label><input id="e" name="identifier" type="email" autocomplete="username"><button>Next</button></form>`);
+  app.querySelector("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const email = app.querySelector("#e").value.trim();
+    if (!db.load()[email]) return fail(app, "No account with that email.");
+    app.querySelector("#body").replaceChildren(el(`<p class="lead">Signing in as ${email}</p>
+      <form id="f2"><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password"><button>Sign in</button></form>`));
+    app.querySelector("#f2").onsubmit = (e2) => {
+      e2.preventDefault();
+      if (db.load()[email].password === app.querySelector("#p").value) { log("two-step ok"); done(app, "Signed in."); }
+      else fail(app, "Wrong password.");
+    };
+  };
+}
+
+function spa() {
+  const app = page("Connexion", "No form element and a French button, like a single-page app.", `
+    <div><label for="e">Adresse e-mail</label><input id="e" type="email">
+    <label for="p">Mot de passe</label><input id="p" type="password">
+    <button type="button" id="go">Se connecter</button></div>`);
+  app.querySelector("#go").onclick = () => {
+    const a = db.load()[app.querySelector("#e").value.trim()];
+    if (a && a.password === app.querySelector("#p").value) { log("spa ok"); done(app, "Connecté."); }
+    else fail(app, "Adresse ou mot de passe incorrect.");
+  };
+}
+
+function phone() {
+  const app = page("Sign in with your phone", "A dial-code picker and a phone box.", `
+    <form id="f"><label for="n">Phone number</label>
+    <div class="row"><select id="d" name="country_code" aria-label="Country code"><option>+1</option><option>+33</option><option>+44</option></select>
+    <input id="n" name="phone" type="tel" autocomplete="tel-national"></div>
+    <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">
+    <button>Sign in</button></form>`);
+  app.querySelector("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const full = app.querySelector("#d").value + app.querySelector("#n").value.replace(/\D/g, "");
+    const a = Object.values(db.load()).find((x) => x.phone === full);
+    if (a && a.password === app.querySelector("#p").value) { log("phone ok"); done(app, "Signed in."); }
+    else fail(app, "Wrong number or password.");
+  };
+}
+
+function change() {
+  const app = page("Change password", "Settings page style: on success the boxes empty and the form stays. On a wrong current password they keep what you typed.", `
+    <form id="f"><label for="o">Current password</label><input id="o" name="current" type="password" autocomplete="current-password">
+    <label for="n">New password</label><input id="n" name="new" type="password" autocomplete="new-password">
+    <label for="c">Confirm new password</label><input id="c" name="confirm" type="password" autocomplete="new-password">
+    <button>Change password</button></form>
+    <p class="hint">Changes the password of <code>test@example.com</code>.</p>`);
+  app.querySelector("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const a = db.load(), me = a["test@example.com"];
+    app.querySelector(".msg")?.remove();
+    if (app.querySelector("#o").value !== me.password) return fail(app, "The current password is wrong.");
+    const n = app.querySelector("#n").value;
+    if (!n || n !== app.querySelector("#c").value) return fail(app, "The new passwords do not match.");
+    me.password = n; db.save(a);
+    for (const id of ["#o", "#n", "#c"]) app.querySelector(id).value = "";
+    const m = document.createElement("p"); m.className = "msg ok"; m.textContent = "Password changed."; app.querySelector("#body").append(m);
+    log("password changed");
+  };
+}
+
+// RFC 6238 with WebCrypto: the page checks the code the extension typed.
+function base32(s) {
+  const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; let bits = "", out = [];
+  for (const c of s.replace(/=+$/, "")) bits += A.indexOf(c).toString(2).padStart(5, "0");
+  for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2));
+  return new Uint8Array(out);
+}
+async function totp(step) {
+  const key = await crypto.subtle.importKey("raw", base32(KEY), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const msg = new ArrayBuffer(8); new DataView(msg).setUint32(4, step);
+  const h = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg)), o = h[19] & 15;
+  const n = ((h[o] & 127) << 24 | h[o + 1] << 16 | h[o + 2] << 8 | h[o + 3]) % 1e6;
+  return String(n).padStart(6, "0");
+}
+async function codeOk(code) {
+  const step = Math.floor(Date.now() / 30000);
+  for (const s of [step - 1, step, step + 1]) if ((await totp(s)) === code) return true;
+  return false;
+}
+const setupHint = `<p class="hint">Save a login for this site in the app and put <code>${KEY}</code> in its 2FA key. The zip and promo boxes are decoys: the code must not land there.</p>`;
+
+function otp() {
+  const app = page("Two-factor code", "One box marked as a one-time code, next to boxes that must stay empty.", `
+    <form id="f"><label for="z">Zip code</label><input id="z" name="zip">
+    <label for="o">Authentication code</label><input id="o" name="otp" inputmode="numeric" autocomplete="one-time-code">
+    <label for="pr">Promo code</label><input id="pr" name="promo">
+    <button>Verify</button></form>${setupHint}`);
+  app.querySelector("#f").onsubmit = async (e) => {
+    e.preventDefault();
+    if (await codeOk(app.querySelector("#o").value.trim())) { log("2FA ok"); done(app, "Code accepted."); }
+    else fail(app, "That code is not right.");
+  };
+}
+
+function digits() {
+  const app = page("Two-factor code", "One box per digit.", `
+    <form id="f"><label>Verification code</label>
+    <div class="digits">${[0, 1, 2, 3, 4, 5].map((i) => `<input maxlength="1" inputmode="numeric" aria-label="Digit ${i + 1}">`).join("")}</div>
+    <button>Verify</button></form>${setupHint}`);
+  const boxes = [...app.querySelectorAll(".digits input")];
+  boxes.forEach((b, i) => (b.oninput = () => b.value && boxes[i + 1]?.focus()));
+  app.querySelector("#f").onsubmit = async (e) => {
+    e.preventDefault();
+    if (await codeOk(boxes.map((b) => b.value).join(""))) { log("2FA digits ok"); done(app, "Code accepted."); }
+    else fail(app, "That code is not right.");
+  };
+}
+
+function route() {
+  const id = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : "signin";
+  document.getElementById("nav").replaceChildren(
+    ...Object.entries(PAGES).map(([k, [label]]) => {
+      const a = document.createElement("a"); a.href = "#" + k; a.textContent = label;
+      if (k === id) a.setAttribute("aria-current", "page");
+      return a;
+    }),
+    Object.assign(document.createElement("a"), {
+      href: "#", textContent: "Reset accounts",
+      onclick: (e) => { e.preventDefault(); localStorage.removeItem("pm-test-accounts"); log("accounts reset"); route(); },
+    }),
+  );
+  PAGES[id][1]();
+}
+addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>
