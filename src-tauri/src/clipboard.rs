@@ -10,46 +10,44 @@ pub enum ClipboardError {
     Backend(String),
 }
 
-// ponytail: Windows clipboard history/cloud sync are separate stores from the
-// live clipboard. Marking the write as excluded stops the password from
-// landing in Win+V history or syncing to other devices; the TTL clear below
-// only ever affected the live clipboard, not history.
-#[cfg(windows)]
-fn set_text_excluding_history(text: &str) -> Result<(), ClipboardError> {
-    use clipboard_win::{options::DoClear, raw};
-
-    raw::open().map_err(|e| ClipboardError::Backend(e.to_string()))?;
-    let result = raw::set_string_with(text, DoClear)
-        .map_err(|e| ClipboardError::Backend(e.to_string()))
-        .map(|_| {
-            for name in ["CanIncludeInClipboardHistory", "CanUploadToCloudClipboard"] {
-                if let Some(fmt) = raw::register_format(name) {
-                    let _ = raw::set_without_clear(fmt.get(), &0u32.to_ne_bytes());
-                }
-            }
-        });
-    let _ = raw::close();
-    result
-}
-
-#[cfg(not(windows))]
-fn set_text_excluding_history(text: &str) -> Result<(), ClipboardError> {
-    let mut cb = arboard::Clipboard::new().map_err(|e| ClipboardError::Backend(e.to_string()))?;
-    cb.set_text(text.to_string())
-        .map_err(|e| ClipboardError::Backend(e.to_string()))
-}
-
+/// Put a secret on the clipboard, marked so clipboard history and managers
+/// skip it, and clear it after `ttl` if it is still there.
+///
+/// - Windows: kept out of Win+V history and the cloud clipboard.
+/// - macOS: `org.nspasteboard.ConcealedType`, which Mac clipboard managers
+///   honour by not archiving the entry.
+/// - Linux: `x-kde-passwordManagerHint`, the convention KDE and most
+///   clipboard managers follow. The X11/Wayland clipboard is served by the
+///   process that set it, so the `Clipboard` lives in the timer thread: the
+///   secret stays pasteable for the whole TTL instead of vanishing when a
+///   short-lived handle is dropped.
 pub fn copy_with_ttl(text: &str, ttl: Duration) -> Result<(), ClipboardError> {
-    set_text_excluding_history(text)?;
+    let err = |e: arboard::Error| ClipboardError::Backend(e.to_string());
+    let mut cb = arboard::Clipboard::new().map_err(err)?;
+    let set = cb.set();
+    #[cfg(windows)]
+    let set = {
+        use arboard::SetExtWindows;
+        set.exclude_from_history().exclude_from_cloud()
+    };
+    #[cfg(target_os = "macos")]
+    let set = {
+        use arboard::SetExtApple;
+        set.exclude_from_history()
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let set = {
+        use arboard::SetExtLinux;
+        set.exclude_from_history()
+    };
+    set.text(text.to_string()).map_err(err)?;
     let copied = text.to_string();
     thread::spawn(move || {
         thread::sleep(ttl);
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            // Only our own copy is cleared. Anything the user copied since
-            // (a QR screenshot to paste, a link) is theirs and stays.
-            if still_ours(cb.get_text().ok().as_deref(), &copied) {
-                let _ = cb.set_text(String::new());
-            }
+        // Only our own copy is cleared. Anything the user copied since
+        // (a QR screenshot to paste, a link) is theirs and stays.
+        if still_ours(cb.get_text().ok().as_deref(), &copied) {
+            let _ = cb.clear();
         }
     });
     Ok(())

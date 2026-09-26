@@ -2715,7 +2715,6 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "chrono",
- "clipboard-win",
  "dirs 5.0.1",
  "getrandom 0.2.17",
  "http-body-util",
