@@ -19,7 +19,8 @@ beforeAll(async () => {
 beforeEach(() => Bar.hide());
 
 const buttons = (root: ShadowRoot) => [...root.querySelectorAll("button")];
-const press = (root: ShadowRoot, name: RegExp) => buttons(root).find((b) => name.test(b.textContent || ""))!.click();
+const press = (root: ShadowRoot, name: RegExp) =>
+  buttons(root).find((b) => name.test(b.textContent || b.getAttribute("aria-label") || ""))!.click();
 
 describe("save bar", () => {
   it("offers to save a new login, naming the site and account", () => {
@@ -42,7 +43,7 @@ describe("save bar", () => {
     expect(buttons(root).map((b) => b.textContent)).toEqual([
       "Approve this website",
       "Not now",
-      "▾",
+      "",
       "Never for this site",
     ]);
   });
@@ -60,7 +61,7 @@ describe("save bar", () => {
     const root = Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice);
     const menu = root.querySelector(".menu") as HTMLElement;
     expect(menu.hidden).toBe(true);
-    press(root, /▾/);
+    press(root, /more choices/i);
     expect(menu.hidden).toBe(false);
     // The arrow itself chooses nothing.
     expect(onChoice).not.toHaveBeenCalled();

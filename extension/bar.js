@@ -20,19 +20,38 @@
   };
   var PRIMARY = { new: "Save", update: "Update", approve: "Save", locked: "Try again", site: "Approve this website" };
 
+  // The app's own tokens (src/styles.css), so the bar reads as the app
+  // speaking rather than the page.
   var STYLE =
     ":host{all:initial}" +
     ".bar{position:fixed;top:16px;right:16px;z-index:2147483647;max-width:340px;margin:0;" +
-    "font:13px/1.4 system-ui,sans-serif;color:#e6e1e5;background:#1d1b20;" +
-    "border:1px solid #3a3740;border-radius:10px;padding:12px 14px;box-shadow:0 8px 24px rgba(0,0,0,.4)}" +
-    ".title{font-weight:600;margin:0 0 4px}.who{opacity:.75;margin:0 0 10px;word-break:break-all}" +
-    ".row{display:flex;gap:6px;flex-wrap:wrap}" +
-    "button{font:inherit;border-radius:6px;padding:5px 10px;cursor:pointer;" +
-    "border:1px solid #4a4650;background:transparent;color:inherit}" +
-    "button.primary{background:#b8a4ff;border-color:#b8a4ff;color:#1d1b20;font-weight:600}" +
-    ".split{display:inline-flex}.split .later{border-radius:6px 0 0 6px}" +
-    ".split .caret{border-left:0;border-radius:0 6px 6px 0;padding:5px 7px}" +
-    ".menu{margin-top:6px}.menu[hidden]{display:none}";
+    "font:13px/1.4 system-ui,sans-serif;color:#e1e2ec;background:#1d1f27;" +
+    "border:1px solid #464554;border-radius:12px;padding:14px 16px;box-shadow:0 12px 32px rgba(5,7,12,.55)}" +
+    ".title{font-weight:600;margin:0 0 4px}.who{color:#c7c4d7;margin:0 0 12px;word-break:break-all}" +
+    ".row{display:flex;gap:8px;flex-wrap:wrap}" +
+    "button{font:inherit;border-radius:8px;padding:6px 12px;cursor:pointer;" +
+    "border:1px solid #464554;background:transparent;color:inherit;transition:background-color .15s,color .15s}" +
+    "button:hover{background:#272a32}button:disabled{opacity:.5;cursor:default}" +
+    "button:focus-visible{outline:2px solid #c0c1ff;outline-offset:2px}" +
+    "button.primary{background:#c0c1ff;border-color:#c0c1ff;color:#10131a;font-weight:600}" +
+    "button.primary:hover{background:#d6d6ff}" +
+    ".split{display:inline-flex}.split .later{border-radius:8px 0 0 8px}" +
+    ".split .caret{border-left:0;border-radius:0 8px 8px 0;padding:6px 8px;display:inline-flex;align-items:center}" +
+    ".caret svg{transition:transform .2s cubic-bezier(.16,1,.3,1)}" +
+    ".caret[aria-expanded=true] svg{transform:rotate(180deg)}" +
+    // Never sits on its own line under a hairline, centred: apart from Save,
+    // so it cannot be hit on the way to it.
+    ".menu{margin-top:12px;padding-top:8px;border-top:1px solid #32353d;text-align:center;" +
+    "transition:opacity .2s cubic-bezier(.16,1,.3,1),transform .2s cubic-bezier(.16,1,.3,1)}" +
+    "@starting-style{.menu{opacity:0;transform:translateY(-4px)}}" +
+    ".menu[hidden]{display:none}" +
+    ".menu button{border-color:transparent;color:#c7c4d7}" +
+    ".menu button:hover{color:#ffb4ab;background:rgba(255,180,171,.08)}" +
+    "@media (prefers-reduced-motion:reduce){.menu,.caret svg{transition:none}}";
+
+  var CHEVRON =
+    '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" ' +
+    'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg>';
 
   var host = null;
   var root = null;
@@ -83,7 +102,9 @@
     var split = el("span", "split");
     var later = button("Not now", false, "later");
     later.className = "later";
-    var caret = el("button", "caret", "▾");
+    var caret = el("button", "caret");
+    // Our own constant markup, inside our own closed root.
+    caret.innerHTML = CHEVRON;
     caret.type = "button";
     caret.setAttribute("aria-label", "More choices");
     caret.setAttribute("aria-expanded", "false");
