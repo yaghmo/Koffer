@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { onBridgeChanged } from "../lib/events";
 import { ShieldIcon, XIcon } from "./Icon";
 
 /**
@@ -10,7 +11,12 @@ export default function NeverSaveSites() {
   const [hosts, setHosts] = useState<string[] | null>(null);
 
   useEffect(() => {
-    api.listNeverSave().then(setHosts).catch(() => setHosts([]));
+    const load = () => api.listNeverSave().then(setHosts).catch(() => setHosts([]));
+    load();
+    const unlisten = onBridgeChanged(load);
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   async function remove(host: string) {

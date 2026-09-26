@@ -1289,6 +1289,7 @@ fn never(app: &AppHandle, inc: &Incoming) -> Reply {
     if let Some(host) = host_of(&field(&inc.body, "origin")) {
         if crate::capture::add_never(session.vault_mut(), &host) {
             let _ = persist(app, session);
+            let _ = app.emit("vault://bridge-changed", ());
         }
     }
     reply(serde_json::json!({}), due)

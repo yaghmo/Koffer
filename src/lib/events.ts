@@ -42,3 +42,8 @@ export function onApproveRequest(
 export function onItemsChanged(handler: () => void): Promise<UnlistenFn> {
   return listen<void>("vault://items-changed", () => handler());
 }
+
+/** An approval or the never-save list changed outside Settings. */
+export function onBridgeChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen<void>("vault://bridge-changed", () => handler());
+}

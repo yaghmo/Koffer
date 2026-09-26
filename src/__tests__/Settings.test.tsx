@@ -62,6 +62,14 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(),
 }));
 
+const bridgeChanged: Array<() => void> = [];
+vi.mock("../lib/events", () => ({
+  onBridgeChanged: (fn: () => void) => {
+    bridgeChanged.push(fn);
+    return Promise.resolve(() => {});
+  },
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -318,6 +326,18 @@ describe("Settings browser extension card", () => {
     fireEvent.click(await screen.findByRole("button", { name: /cancel pairing/i }));
     await waitFor(() => expect(api.bridgeCancelPairing).toHaveBeenCalled());
     expect(screen.queryByText("K7F2Q9MR")).toBeNull();
+  });
+
+  it("re-reads approvals and the never list when they change elsewhere", async () => {
+    const { api } = await import("../lib/api");
+    bridgeChanged.length = 0;
+    render(<Settings accountId="a1" onLock={() => {}} />);
+    await waitFor(() => expect(bridgeChanged.length).toBeGreaterThan(0));
+    const bridgeCalls = vi.mocked(api.bridgeState).mock.calls.length;
+    const neverCalls = vi.mocked(api.listNeverSave).mock.calls.length;
+    bridgeChanged.forEach((fn) => fn());
+    await waitFor(() => expect(vi.mocked(api.bridgeState).mock.calls.length).toBe(bridgeCalls + 1));
+    expect(vi.mocked(api.listNeverSave).mock.calls.length).toBeGreaterThan(neverCalls);
   });
 
   it("lists a paired browser and unpairs it by origin", async () => {

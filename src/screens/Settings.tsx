@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
+import { onBridgeChanged } from "../lib/events";
 import { refreshSiteLogos } from "../lib/logos";
 import type { BackupState, BridgeState, SecurityState, VaultStorage } from "../lib/types";
 import { SettingsIcon, ShieldIcon, ImageIcon, XIcon, DatabaseIcon, KeyIcon, CloudIcon } from "../components/Icon";
@@ -99,6 +100,11 @@ export default function Settings({ accountId, onLock }: Props) {
       })
       .catch(() => {});
     loadBridge();
+    // Approvals land from the app's dialog or the browser, not from here.
+    const unlisten = onBridgeChanged(loadBridge);
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   function loadBridge() {
