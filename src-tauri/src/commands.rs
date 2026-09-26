@@ -280,9 +280,14 @@ pub fn lock_vault(state: State<'_, AppState>, app: AppHandle) -> Result<(), Stri
     Ok(())
 }
 
+/// The open vault's account, or None when locked. A reload of the window
+/// (F5) keeps the backend unlocked, so the UI asks rather than assuming.
 #[tauri::command]
-pub fn is_unlocked(state: State<'_, AppState>) -> bool {
-    state.key.lock().unwrap().is_some()
+pub fn unlocked_account(state: State<'_, AppState>) -> Option<AccountMeta> {
+    if state.key.lock().unwrap().is_none() {
+        return None;
+    }
+    state.current_account.lock().unwrap().as_ref().map(AccountMeta::from)
 }
 
 #[derive(Serialize)]
@@ -1193,6 +1198,7 @@ pub(crate) fn add_paired_client(
 pub fn bridge_approve(
     origin: String,
     host: String,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let host = host.trim().to_lowercase();
@@ -1213,6 +1219,8 @@ pub fn bridge_approve(
     // wants it after all: offers to save come back too.
     crate::capture::remove_never(vault, &host);
     save_unlocked(&state, vault)?;
+    // Settings may be open on the approved-sites list, which reads it once.
+    let _ = app.emit("vault://bridge-changed", ());
     crate::log_info!("bridge_approve", "approved host={host}");
     Ok(())
 }

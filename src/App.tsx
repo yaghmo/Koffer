@@ -53,8 +53,15 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listAccounts().then((list) => {
+    Promise.all([api.listAccounts(), api.unlockedAccount().catch(() => null)]).then(([list, open]) => {
       setAccounts(list);
+      // A reload (F5) keeps the backend unlocked; showing the lock screen
+      // over an open vault would lie about its state.
+      if (open) {
+        setCurrentAccount(open);
+        setStatus("unlocked");
+        return;
+      }
       // Zero accounts is not itself a reason to skip AccountLock — its own
       // empty state ("No vaults exist on this device") already handles that
       // and offers both "Create one" and "Import vault" (onAddNew/import).

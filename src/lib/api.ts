@@ -11,7 +11,7 @@ export const api = {
     invoke<void>("unlock_vault", { password, accountId }),
 
   lockVault: () => invoke<void>("lock_vault"),
-  isUnlocked: () => invoke<boolean>("is_unlocked"),
+  unlockedAccount: () => invoke<Account | null>("unlocked_account"),
   autolockStatus: () =>
     invoke<{ locked: boolean; remaining_secs: number; timeout_secs: number }>("autolock_status"),
 

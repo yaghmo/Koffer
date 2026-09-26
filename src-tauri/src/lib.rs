@@ -62,7 +62,7 @@ pub fn run() {
             commands::setup_vault,
             commands::unlock_vault,
             commands::lock_vault,
-            commands::is_unlocked,
+            commands::unlocked_account,
             commands::autolock_status,
             commands::list_items,
             commands::vault_stats,
