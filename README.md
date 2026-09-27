@@ -65,3 +65,29 @@ cd src-tauri && cargo test  # backend
 
 - Sync, mobile, multi-user
 - Lock on Windows session lock (planned for v1.1)
+
+## Browser extension
+
+Fills, saves and offers 2FA codes in Chrome and Firefox, talking only to the
+app on `127.0.0.1`. See [`extension/README.md`](extension/README.md).
+
+## Contributing, security and privacy
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to build, test and send a change.
+- [SECURITY.md](SECURITY.md): report vulnerabilities privately, never in an issue.
+- [PRIVACY.md](PRIVACY.md): nothing is collected; the few network calls, all started by you.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [CHANGELOG.md](CHANGELOG.md).
+
+## Support
+
+If this is useful to you, you can [sponsor its development](https://github.com/sponsors/yaghmo).
+
+## License
+
+Copyright (C) 2026 yaghmo.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. It is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE) for
+the full text.
