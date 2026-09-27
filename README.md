@@ -56,9 +56,9 @@ cd src-tauri && cargo test  # backend
 
 - Master password is never stored; lose it = lose your vault
 - Vault file is encrypted at rest; safe to back up
-- Window close locks the vault
+- Closing the window hides it to the tray; the vault stays unlocked until you lock it (tray or button) or auto-lock fires. Exiting from the tray locks and wipes first
 - Master key lives in Rust memory only; never crosses the IPC boundary
-- Only network call: fetching a site's title and favicon when you enter a login URL (public hosts only, size-capped). Vault contents are never sent.
+- Network calls, all started by you: a site's title and favicon when you enter a login URL (public hosts only, size-capped), the opt-in leaked-password check (5 characters of a hash), and the opt-in backup to your own Cloudflare account. Vault contents are never sent in the clear. See `PRIVACY.md`.
 - The browser extension talks to the app over `127.0.0.1:38471` (or the next free port, which the pairing code then names) — loopback only, and only after you pair it by hand. There is no shared token: the browser signs each request with a key its own JavaScript cannot export, and a password for a site it has not been approved for raises a dialog here first. `extension/README.md` has the whole model, including what it does not defend against.
 
 ## Out of scope (v1)
@@ -84,7 +84,7 @@ If this is useful to you, you can [sponsor its development](https://github.com/s
 
 ## License
 
-Copyright (C) 2026 yaghmo.
+Copyright (C) 2026 Yaghmoracen Belmir.
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software

@@ -35,7 +35,7 @@ export default function PhoneField({
         dial={dial}
         onChange={(newDial) => {
           const regrouped = formatPhoneLocal(local, newDial);
-          if (logScope) logUi("info", logScope, `phone country=${newDial}`);
+          if (logScope) logUi("info", logScope, "phone country changed");
           onChange(regrouped ? `${newDial} ${regrouped}` : newDial);
         }}
       />

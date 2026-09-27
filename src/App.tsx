@@ -94,14 +94,15 @@ export default function App() {
       setExtendAsk(remaining);
     });
     const unlistenApprove = onApproveRequest((req) => {
-      logUi("info", "app", `extension asked to be approved for ${req.host}`);
+      // Never the host: the log is plaintext (see bridge.rs).
+      logUi("info", "app", "extension asked to be approved for a site");
       // First come, first served. A second request while one is on screen is
       // dropped rather than swapped in: re-rendering this dialog under the
       // pointer would change which site the next click approves.
       setApproveAsk((current) => current ?? req);
     });
     const unlistenFill = onFillRequest((req) => {
-      logUi("info", "app", `extension asked to fill on ${req.host}`);
+      logUi("info", "app", "extension asked to fill");
       // Same rule as approvals: never swap the dialog under the pointer.
       setFillAsk((current) => current ?? req);
     });

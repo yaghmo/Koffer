@@ -749,7 +749,8 @@ fn signed_by(public_key: &str, inc: &Incoming, now: i64) -> bool {
     if public_key.is_empty() || inc.signature.len() != 64 {
         return false;
     }
-    if (now - inc.timestamp).abs() > SIGNATURE_SKEW_SECS {
+    // `abs_diff`: a timestamp near i64::MIN overflows a plain subtraction.
+    if now.abs_diff(inc.timestamp) > SIGNATURE_SKEW_SECS as u64 {
         return false;
     }
     let Some(point) = from_hex(public_key) else {
@@ -823,7 +824,9 @@ fn ask_approval(app: &AppHandle, label: &str, origin: &str, host: &str, count: u
         serde_json::json!({ "label": label, "origin": origin, "host": host, "count": count }),
     );
     crate::tray::reveal(app);
-    crate::log_info!("bridge", "approval asked for host={host}");
+    // Never the host: the log is plaintext, and a list of the sites asked
+    // about is the account inventory the vault exists to hide.
+    crate::log_info!("bridge", "approval asked");
 }
 
 /// A secret just left the vault for the browser.
@@ -1007,16 +1010,19 @@ fn route(app: &AppHandle, inc: &Incoming) -> Reply {
 
 fn pair(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
+    // Checked before the lock state: answered after it, a malformed key got
+    // a different reply from an open vault than from a shut one, and polling
+    // that told any local process the moment the user unlocked.
+    let public_key = field(&inc.body, "publicKey");
+    if !is_public_key(&public_key) {
+        return fail(400, "that is not a P-256 public key");
+    }
     if !state.is_unlocked() {
         // The same answer a good code gets when no pairing is in progress. A
         // locked vault cannot have one anyway — the code is issued from
         // Settings, which is behind the unlock — so saying "unlock first"
         // only ever told a local process that the vault was shut.
         return fail(403, "no pairing in progress");
-    }
-    let public_key = field(&inc.body, "publicKey");
-    if !is_public_key(&public_key) {
-        return fail(400, "that is not a P-256 public key");
     }
     let redeemed = match app.state::<Bridge>().redeem(&field(&inc.body, "code")) {
         Ok(code) => code,
@@ -1213,7 +1219,7 @@ fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
         // `never` says the user silenced the site, so the extension does not
         // put its approval prompt up there. That is already written into the
         // vault from this browser, and answering an offer tells the same.
-        crate::log_info!("bridge", "matches withheld host={host}");
+        crate::log_info!("bridge", "matches withheld");
         let never = crate::capture::is_never(session.vault(), &host);
         return reply(
             serde_json::json!({

@@ -80,6 +80,9 @@ impl AppState {
         *v = None;
         drop(v);
         *self.current_account.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        // A password copied just before locking is gone with the rest;
+        // exiting locks first, so this covers quitting too.
+        crate::clipboard::clear_ours();
     }
 
     /// Lock at the end of a session, backing up first if the vault changed.
@@ -900,6 +903,11 @@ pub fn create_recovery_code(
     let (secret, code) = crate::recovery::generate();
     keys.set_recovery_secret(&secret);
     let saved = storage::save_vault(&account, &vault, &keys);
+    // The local copies are wrapped under the old code: with it, any of them
+    // would still open. Same reasoning as a password change.
+    if saved.is_ok() {
+        storage::delete_backups(&account);
+    }
     // A second fully decrypted vault, separate from the one in AppState and
     // dropped here — wipe it rather than leave it in freed memory.
     vault::zeroize_secrets(&mut vault);
@@ -1294,7 +1302,8 @@ pub fn bridge_approve(
     save_unlocked(&state, vault)?;
     // Settings may be open on the approved-sites list, which reads it once.
     let _ = app.emit("vault://bridge-changed", ());
-    crate::log_info!("bridge_approve", "approved host={host}");
+    // No host in the log (see `ask_approval` in bridge.rs).
+    crate::log_info!("bridge_approve", "approved a host");
     Ok(())
 }
 
@@ -1305,7 +1314,7 @@ pub fn bridge_approve(
 pub fn bridge_confirm_fill(origin: String, id: String, host: String, app: AppHandle) -> Result<(), String> {
     let id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
     app.state::<crate::bridge::Bridge>().grant(&origin, id, &host.trim().to_lowercase());
-    crate::log_info!("bridge_confirm_fill", "allowed one handout for host={host}");
+    crate::log_info!("bridge_confirm_fill", "allowed one handout");
     Ok(())
 }
 
@@ -1325,7 +1334,7 @@ pub fn bridge_revoke_host(
         .ok_or_else(|| "that extension is not paired".to_string())?;
     client.allowed_hosts.retain(|h| *h != host);
     save_unlocked(&state, vault)?;
-    crate::log_info!("bridge_revoke_host", "revoked host={host}");
+    crate::log_info!("bridge_revoke_host", "revoked a host");
     Ok(())
 }
 

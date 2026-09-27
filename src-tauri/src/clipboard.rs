@@ -1,8 +1,27 @@
 //! Clipboard with auto-clear.
 
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
+use zeroize::Zeroizing;
+
+/// What this app last put on the clipboard, so locking can take it back
+/// before its timer: the timer thread dies with the process.
+static COPIED: Mutex<Option<Zeroizing<String>>> = Mutex::new(None);
+
+/// Clear the clipboard now if it still holds what this app put there.
+/// Anything the user copied since is theirs and stays.
+pub fn clear_ours() {
+    let Some(copied) = COPIED.lock().unwrap_or_else(|p| p.into_inner()).take() else {
+        return;
+    };
+    if let Ok(mut cb) = arboard::Clipboard::new() {
+        if still_ours(cb.get_text().ok().as_deref(), &copied) {
+            let _ = cb.clear();
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum ClipboardError {
@@ -41,7 +60,8 @@ pub fn copy_with_ttl(text: &str, ttl: Duration) -> Result<(), ClipboardError> {
         set.exclude_from_history()
     };
     set.text(text.to_string()).map_err(err)?;
-    let copied = text.to_string();
+    *COPIED.lock().unwrap_or_else(|p| p.into_inner()) = Some(Zeroizing::new(text.to_string()));
+    let copied = Zeroizing::new(text.to_string());
     thread::spawn(move || {
         thread::sleep(ttl);
         // Only our own copy is cleared. Anything the user copied since

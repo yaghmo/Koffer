@@ -172,8 +172,10 @@ fn sniff_mime(content_type: Option<&str>, bytes: &[u8]) -> &'static str {
     }
 }
 
+/// Without the URL: reqwest's message ends in the address it was fetching,
+/// which is a login's own URL, and this error ends up in the log.
 fn req_err(e: reqwest::Error) -> MetadataError {
-    MetadataError::Request(e.to_string())
+    MetadataError::Request(e.without_url().to_string())
 }
 
 /// Build a client that will only ever talk to `addr` for this request's

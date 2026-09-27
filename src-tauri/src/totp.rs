@@ -30,10 +30,22 @@ pub struct Code {
 pub fn parse(input: &str) -> Result<TOTP, String> {
     let s = input.trim();
     if s.to_ascii_lowercase().starts_with("otpauth://") {
+        // totp-rs unwraps the link's host, so `otpauth:///x` panics inside
+        // it; only a `totp` link goes in. The catch is for whatever else it
+        // unwraps: a link can come from a web page.
+        let is_totp = reqwest::Url::parse(s)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.eq_ignore_ascii_case("totp")))
+            .unwrap_or(false);
+        if !is_totp {
+            return Err("Not a valid 2FA setup link.".into());
+        }
         // Unchecked: the checked parser refuses the 80-bit keys plenty of
         // real sites still hand out.
-        let totp =
-            TOTP::from_url_unchecked(s).map_err(|_| "Not a valid 2FA setup link.".to_string())?;
+        let totp = std::panic::catch_unwind(|| TOTP::from_url_unchecked(s))
+            .ok()
+            .and_then(|r| r.ok())
+            .ok_or_else(|| "Not a valid 2FA setup link.".to_string())?;
         if totp.secret.len() < MIN_KEY_BYTES {
             return Err("That 2FA key is too short.".into());
         }
@@ -204,6 +216,9 @@ mod tests {
     #[test]
     fn a_link_with_settings_no_authenticator_uses_is_refused() {
         // Each of these used to panic the moment a code was made.
+        for link in ["otpauth:///x", "otpauth://", "otpauth://hotp/S?secret=GEZDGNBVGY3TQOJQ"] {
+            assert!(parse(link).is_err(), "{link}");
+        }
         for bad in ["period=0", "digits=10", "digits=4", "period=100000"] {
             let link = format!("otpauth://totp/S:me?secret={RFC_KEY}&{bad}");
             assert!(parse(&link).is_err(), "{bad}");
