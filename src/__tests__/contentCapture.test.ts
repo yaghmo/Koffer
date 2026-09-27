@@ -9,6 +9,8 @@ type Listener = (msg: Record<string, unknown>, sender: unknown, respond: (r: unk
 let listener: Listener;
 /** The page-level click listener, so a test can hand it a trusted event. */
 let onClick: (e: unknown) => void;
+/** The page-level input listener, for the same reason. */
+let onInput: (e: unknown) => void;
 
 beforeAll(async () => {
   Element.prototype.getClientRects = function (this: Element) {
@@ -36,6 +38,7 @@ beforeAll(async () => {
   const add = document.addEventListener.bind(document);
   const spy = vi.spyOn(document, "addEventListener").mockImplementation((type, fn, opts) => {
     if (type === "click") onClick = fn as (e: unknown) => void;
+    if (type === "input") onInput = fn as (e: unknown) => void;
     add(type, fn, opts);
   });
   // @ts-expect-error untyped extension source
@@ -154,5 +157,36 @@ describe("offer bar plumbing", () => {
     // Anything but Save closes the bar at once.
     expect(document.querySelector("[data-pm-bar]")).toBeNull();
     show.mockRestore();
+  });
+});
+
+describe("2FA key capture", () => {
+  const keyCaptures = () => sent.filter((m) => m.type === "captured-key");
+
+  function typeCode(code: string) {
+    const box = document.querySelector("[autocomplete]") as HTMLInputElement;
+    box.value = code;
+    onInput({ isTrusted: true, target: box });
+  }
+
+  it("sends a whole code with the key the page shows, once", async () => {
+    document.body.innerHTML =
+      `<p>Enter this key</p>
+<code>JBSW Y3DP EHPK 3PXP</code>
+<input autocomplete="one-time-code">`;
+    typeCode("2870");
+    typeCode("287082");
+    typeCode("287082");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(keyCaptures()).toEqual([
+      { type: "captured-key", origin: location.origin, code: "287082", keys: ["JBSWY3DPEHPK3PXP"], qr: [] },
+    ]);
+  });
+
+  it("sends nothing from a sign-in page's code box, which shows no key", async () => {
+    document.body.innerHTML = '<p>Enter the code from your app</p><input autocomplete="one-time-code">';
+    typeCode("123456");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(keyCaptures()).toEqual([]);
   });
 });

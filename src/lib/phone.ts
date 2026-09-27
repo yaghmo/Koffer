@@ -6,7 +6,7 @@
  * picker and a number box is an interface detail, and it lives here so the
  * personal-info screen and the login editor cannot disagree about it.
  */
-import { COUNTRIES, groupsForDial, keepsTrunkZero } from "./countries";
+import { COUNTRIES, groupsForDial, keepsTrunkZero, maxDigitsForDial } from "./countries";
 
 const DIALS = [...new Set(COUNTRIES.map((c) => c.dial))].sort((a, b) => b.length - a.length);
 
@@ -27,11 +27,14 @@ export function splitPhone(phone: string): { dial: string; local: string } {
 // once a country code is attached, so it is dropped — but only once a second
 // digit arrives, otherwise the first 0 someone types vanishes under them.
 // Italy is the notable country that keeps it.
+//
+// Digits past the country's longest number are dropped as they are typed.
 export function formatPhoneLocal(raw: string, dial: string): string {
-  let digits = raw.replace(/\D/g, "").slice(0, 15);
+  let digits = raw.replace(/\D/g, "");
   if (digits.length > 1 && digits.startsWith("0") && !keepsTrunkZero(dial)) {
     digits = digits.replace(/^0+/, "");
   }
+  digits = digits.slice(0, maxDigitsForDial(dial));
 
   const pattern = groupsForDial(dial);
   const out: string[] = [];

@@ -60,6 +60,15 @@ export function isFresh(record, now) {
   return !!record && now - record.at <= HOLD_MS;
 }
 
+/**
+ * Session-storage key for the login last used on a site: a fill, a save
+ * from the bar, or a typed login the vault already had. The site's 2FA step
+ * offers that login's code first.
+ */
+export function lastLoginKey(origin) {
+  return "lastLogin:" + siteOf(origin);
+}
+
 export function sameSite(a, b) {
   const s = siteOf(a);
   return s !== "" && s === siteOf(b);

@@ -814,6 +814,7 @@ pub fn set_browser_pref(name: String, on: bool, state: State<'_, AppState>) -> R
         "offer_save" => &mut c.browser_offer_save,
         "offer_update" => &mut c.browser_offer_update,
         "site_prompt" => &mut c.browser_site_prompt,
+        "personal" => &mut c.browser_personal,
         "confirm_fills" => &mut c.browser_confirm_fills,
         _ => return Err(format!("no browser setting called {name}")),
     };

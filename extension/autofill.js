@@ -66,6 +66,17 @@
       nameRe: /loginid|user(name|id)?|login\b/i,
       report: "username",
     },
+    // Before `name`: a form that splits the name gets it split (`expand`).
+    first_name: {
+      autocomplete: "given-name",
+      nameRe: /first[-_\s]?name|given[-_\s]?name|\bfname\b|prénom|prenom|vorname|\bnombre\b|\bnome\b/i,
+      report: "first_name",
+    },
+    last_name: {
+      autocomplete: "family-name",
+      nameRe: /last[-_\s]?name|family[-_\s]?name|surname|\blname\b|\bnom\b|nachname|apellido|cognome|sobrenome/i,
+      report: "last_name",
+    },
     name: {
       autocomplete: "name",
       nameRe: /full\s?name|contactname|^\s*name\s*/i,
@@ -74,12 +85,12 @@
     website: { nameRe: /website|web[-_\s]?site|homepage|portfolio/i, report: "website" },
     github: { nameRe: /github/i, report: "github" },
     linkedin: { nameRe: /linkedin/i, report: "linkedin" },
-    address: { nameRe: /street|\baddress\b|addressline|addr1/i, report: "address" },
-    city: { nameRe: /\bcity\b/i, report: "city" },
-    state: { nameRe: /state|province|region/i, report: "state" },
-    zip: { nameRe: /zip|postal|postcode/i, report: "zip" },
-    country: { nameRe: /country|nation/i, report: "country" },
-    date_of_birth: { nameRe: /date\s?of\s?birth|birthdate|\bdob\b/i, report: "date_of_birth" },
+    address: { autocomplete: "street-address", nameRe: /street|\baddress\b|addressline|addr1/i, report: "address" },
+    city: { autocomplete: "address-level2", nameRe: /\bcity\b/i, report: "city" },
+    state: { autocomplete: "address-level1", nameRe: /state|province|region/i, report: "state" },
+    zip: { autocomplete: "postal-code", nameRe: /zip|postal|postcode/i, report: "zip" },
+    country: { autocomplete: "country-name", nameRe: /country|nation/i, report: "country" },
+    date_of_birth: { autocomplete: "bday", nameRe: /date\s?of\s?birth|birthdate|\bdob\b/i, report: "date_of_birth" },
     current_title: { nameRe: /job\s?title|jobtitle|\bposition\b|current\s?title/i, report: "current_title" },
     current_company: { nameRe: /company|employer|organisation|organization/i, report: "current_company" },
     years_experience: { nameRe: /years?\s?(of\s?)?experience|experience\b/i, report: "years_experience" },
@@ -441,7 +452,8 @@
    *
    *   { passwords: <visible password boxes, revealed ones included>,
    *     filled: <how many of those hold text>,
-   *     identifier: <bool> }
+   *     identifier: <bool>,
+   *     declared: <bool: a box says autocomplete="username"> }
    *
    * Counts only. `isLogin` turns them into a verdict, because that needs
    * the page URL and this function deliberately only looks at the DOM.
@@ -458,7 +470,12 @@
     var filled = passwords.filter(function (el) {
       return !!el.value;
     }).length;
-    return { passwords: passwords.length, filled: filled, identifier: identifier };
+    // A box the page itself calls `username`: step one of a sign-in says so
+    // even when its URL does not. Newsletters ask for `email`.
+    var declared = inputs.some(function (el) {
+      return !isPasswordBox(el) && hasAuto(el, "username");
+    });
+    return { passwords: passwords.length, filled: filled, identifier: identifier, declared: declared };
   }
 
   /**
@@ -522,11 +539,19 @@
    * "+1 555-123-4567" as its dial code and the rest.
    *
    * Done here rather than in the app so no country table has to cross the
-   * bridge: a leading `+` and up to four digits is a dial code everywhere.
+   * bridge. Country codes never prefix one another (ITU E.164), so the
+   * digits alone say where the code ends, with or without a space after it:
+   * "+33612345678" is +33, not +3361. One digit for zones 1 and 7, two for
+   * the pairs below, three for everything else.
    */
+  var DIAL_TWO = /^(2[07]|3[0-469]|4[013-9]|5[1-8]|6[0-6]|8[1246]|9[0-58])/;
+
   function splitDial(value) {
-    var m = /^\s*(\+\d{1,4})[\s\-.]*(.*)$/.exec(String(value == null ? "" : value));
-    return m ? { dial: m[1], local: m[2].trim() } : { dial: "", local: String(value || "").trim() };
+    var s = String(value == null ? "" : value).trim();
+    if (s.charAt(0) !== "+") return { dial: "", local: s };
+    var d = digits(s);
+    var n = /^[17]/.test(d) ? 1 : DIAL_TWO.test(d) ? 2 : 3;
+    return { dial: "+" + d.slice(0, n), local: d.slice(n) };
   }
 
   function digits(value) {
@@ -545,11 +570,11 @@
    * No password box at all is step one of a two-step login (Google,
    * Microsoft) — but an identifier box on its own is also every newsletter
    * signup on the web, so that case only counts when the URL admits what
-   * the page is.
+   * the page is, or the box declares `autocomplete="username"`.
    */
   function isLogin(result, href) {
     if (result.passwords === 1) return true;
-    return result.passwords === 0 && result.identifier && LOGIN_URL.test(String(href || ""));
+    return result.passwords === 0 && result.identifier && (result.declared || LOGIN_URL.test(String(href || "")));
   }
 
   /**
@@ -565,6 +590,14 @@
     Object.keys(data).forEach(function (k) {
       out[k] = data[k];
     });
+    // "Ada Lovelace" for a form with a first and a last box. Everything
+    // after the first space is the last name, which is right more often
+    // than any cleverer split.
+    var full = String(data.name || "").trim();
+    if (full.indexOf(" ") !== -1 && out.first_name === undefined && out.last_name === undefined) {
+      out.first_name = full.slice(0, full.indexOf(" "));
+      out.last_name = full.slice(full.indexOf(" ") + 1).trim();
+    }
     if (data.phone && out.dial_code === undefined) {
       var dial = splitDial(data.phone).dial;
       if (dial) out.dial_code = dial;
@@ -606,9 +639,15 @@
     return { value: local };
   }
 
-  function fillOnce(scope, wanted) {
+  /**
+   * `all` is the whole fill when this is a retry of part of it, and `held`
+   * the boxes the first pass wrote that kept their value: those are not
+   * the retry's to take.
+   */
+  function fillOnce(scope, wanted, all, held) {
     var inputs = collectInputs(scope);
-    var claimed = [];
+    var claimed = (held || []).slice();
+    var writes = [];
     var filled = [];
     var missing = [];
     var mismatch = null;
@@ -631,7 +670,9 @@
       // whatever you actually type into it. With no box of its own, the
       // username goes there rather than nowhere -- still never into a
       // phone-only box, which `matchesRole` refuses.
-      if (!match && role === "username") {
+      // Not when the fill has an email of its own: a profile's username is
+      // not an email address, and on a retry the box is already its email's.
+      if (!match && role === "username" && !(all || wanted).email) {
         for (var j = 0; j < inputs.length; j++) {
           var box = inputs[j];
           if (claimed.indexOf(box) !== -1) continue;
@@ -664,6 +705,10 @@
         value = decided.value;
         if (String(value).trim() === "") return;
       }
+      // The profile keeps a GitHub handle; a box that wants a link gets one.
+      if (role === "github" && !/^https?:/i.test(value) && (match.type === "url" || /url|link|http/.test(fieldMeta(match)))) {
+        value = "https://github.com/" + String(value).trim();
+      }
       if (!setValue(match, String(value).trim())) {
         // A select with no option for this value. Saying it landed would be
         // a lie, and claiming the element would hide the next candidate.
@@ -671,6 +716,7 @@
         return;
       }
       claimed.push(match);
+      writes.push({ el: match, value: String(value).trim() });
       filled.push({ field: ROLES[role].report, value: value, matchedBy: matchesRole(role, match) });
     });
 
@@ -681,6 +727,7 @@
       // Set when a number was refused because the page's own country picker
       // is on a different country and cannot be changed from here.
       mismatch: mismatch,
+      writes: writes,
     };
   }
 
@@ -741,7 +788,17 @@
     var out = fillOnce(scope, data);
     var left = pending(scope, data);
     if (Object.keys(left).length > 0) {
-      var again = fillOnce(scope, left);
+      // A box that took its value stays that value's. Without this, an email
+      // box that also says autocomplete="username" -- most sign-ups -- got
+      // the profile's email, then its username over it on the retry.
+      var held = out.writes
+        .filter(function (w) {
+          return w.el.value === w.value;
+        })
+        .map(function (w) {
+          return w.el;
+        });
+      var again = fillOnce(scope, left, data, held);
       out.retried = true;
       if (!out.mismatch) out.mismatch = again.mismatch;
       again.filled.forEach(function (f) {
@@ -755,6 +812,7 @@
         out.filled.push(f);
       });
     }
+    delete out.writes;
     return out;
   }
 
@@ -776,22 +834,18 @@
   }
 
   /**
-   * Type a 2FA code into the page's code box. True when it went somewhere.
+   * The page's 2FA code box: `{ digits }` for a row of one-character boxes
+   * at least `len` long, else `{ box }`.
    *
-   * Only a box that says what it is gets the code: `one-time-code`, or a
-   * label or name that reads like a code field. A page of single-character
-   * boxes, one per digit, gets a digit each. Anything else is left alone --
-   * the popup copies the code instead, which is a paste away.
+   * Only a box that says what it is counts: `one-time-code`, or a label or
+   * name that reads like a code field. Anything else is left alone.
    */
-  function fillCode(scope, code) {
+  function codeBox(scope, len) {
     var boxes = collectInputs(scope).filter(isCodeCandidate);
     var digits = boxes.filter(function (el) {
       return el.maxLength === 1;
     });
-    if (digits.length >= code.length) {
-      for (var i = 0; i < code.length; i++) setValue(digits[i], code.charAt(i));
-      return true;
-    }
+    if (digits.length >= len) return { digits: digits };
     var box =
       boxes.filter(function (el) {
         return hasAuto(el, "one-time-code");
@@ -800,10 +854,316 @@
         var words = humanMeta(el);
         return CODE_WORDS.test(words) && !NOT_CODE.test(words);
       })[0];
-    if (!box) return false;
-    setValue(box, code);
+    return box ? { box: box } : null;
+  }
+
+  /**
+   * Type a 2FA code into the page's code box. True when it went somewhere;
+   * when it did not, the popup copies the code instead, which is a paste
+   * away.
+   */
+  function fillCode(scope, code) {
+    var found = codeBox(scope, code.length);
+    if (!found) return false;
+    if (found.digits) {
+      for (var i = 0; i < code.length; i++) setValue(found.digits[i], code.charAt(i));
+    } else {
+      setValue(found.box, code);
+    }
     return true;
   }
 
-  global.Autofill = { fill: fill, detect: detect, isLogin: isLogin, captured: captured, fillCode: fillCode };
+  /** The 2FA code typed into the page's code box, or "". */
+  function typedCode(scope) {
+    var found = codeBox(scope, 6);
+    if (!found) return "";
+    var v = found.digits
+      ? found.digits
+          .map(function (el) {
+            return el.value;
+          })
+          .join("")
+      : found.box.value;
+    v = String(v || "").replace(/\s/g, "");
+    return /^\d{6,8}$/.test(v) ? v : "";
+  }
+
+  /**
+   * A key printed under "can't scan it?": base32, in one run or in groups
+   * of four, either case. A group run can pick up a four-letter word on
+   * either side, so each is also tried without its first or last group.
+   * Plain words match too; a candidate needs a letter and a digit, and the
+   * app keeps only one that made the code the user typed.
+   */
+  var KEY_TEXT = /\b(?:[A-Za-z2-7]{16,64}|[A-Za-z2-7]{4}(?:[ -][A-Za-z2-7]{1,4}){3,15})\b/g;
+  var MAX_KEYS = 8;
+
+  function printedKeys(scope) {
+    var root = scope.body || scope;
+    // `innerText` breaks between blocks, where `textContent` would run a
+    // label straight into the key. It also skips hidden text, which is fine:
+    // a key typed from the page was on show when the code was.
+    var text = typeof root.innerText === "string" ? root.innerText : root.textContent;
+    var keys = [];
+    (String(text || "").match(KEY_TEXT) || []).forEach(function (run) {
+      var groups = run.split(/[ -]/);
+      [groups, groups.slice(1), groups.slice(0, -1)].forEach(function (g) {
+        var key = g.join("").toUpperCase();
+        if (key.length < 16 || !/[A-Z]/.test(key) || !/[2-7]/.test(key)) return;
+        if (keys.length < MAX_KEYS && keys.indexOf(key) === -1) keys.push(key);
+      });
+    });
+    return keys;
+  }
+
+  /** What each sign-in provider's button says, or where it points. */
+  var PROVIDER_WORDS = {
+    google: /google/,
+    github: /github/,
+    microsoft: /microsoft|outlook|\blive\.com|azure/,
+    apple: /apple/,
+    facebook: /facebook/,
+  };
+
+  /**
+   * A provider button also has to read as signing in, or "Follow us on
+   * GitHub" in the footer would do -- unless it says the provider's name and
+   * nothing else, which is the row of buttons under "or sign in with".
+   */
+  var SIGN_IN_WORDS = /sign[\s-]?in|sign[\s-]?up|log[\s-]?in|continue|connect|oauth|\bauth|sso|connexion|se connecter|continuer|anmelden|fortfahren|iniciar|continuar|accedi|continua|entrar|تسجيل|متابعة/;
+
+  function shownOnScreen(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    return typeof el.checkVisibility === "function" ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) : true;
+  }
+
+  /**
+   * The page's "Sign in with GitHub" (Google, Microsoft...) button, if it has
+   * one on show. Found, never clicked: that click leaves the site and may
+   * grant access, so it stays the user's.
+   */
+  function providerButton(scope, method) {
+    var want = PROVIDER_WORDS[method];
+    if (!want) return null;
+    var best = null;
+    var bestLen = Infinity;
+    var all = scope.querySelectorAll('button, a[href], [role="button"], input[type="submit"], input[type="button"]');
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var imgs = Array.prototype.map
+        .call(el.querySelectorAll("img[alt], svg[aria-label]"), function (n) {
+          return n.getAttribute("alt") || n.getAttribute("aria-label") || "";
+        })
+        .join(" ");
+      var text = (el.textContent || "") + " " + (el.value || "");
+      var words = (
+        text +
+        " " +
+        (el.getAttribute("aria-label") || "") +
+        " " +
+        (el.getAttribute("title") || "") +
+        " " +
+        imgs +
+        " " +
+        (el.getAttribute("href") || "")
+      ).toLowerCase();
+      var named = text.trim().toLowerCase() === method;
+      if (!want.test(words) || !(named || SIGN_IN_WORDS.test(words)) || !shownOnScreen(el)) continue;
+      // The tightest match: a wrapper around every provider button says all
+      // of their names at once.
+      var len = text.trim().length;
+      if (len < bestLen) {
+        best = el;
+        bestLen = len;
+      }
+    }
+    return best;
+  }
+
+  /** Roles a profile fills; the login ones are not among them. */
+  var PERSONAL_ROLES = Object.keys(ROLES).filter(function (k) {
+    return k !== "password" && k !== "username" && k !== "dial_code";
+  });
+
+  /**
+   * How many kinds of personal field the page has a box for: name, email,
+   * phone, address... Two or more is a form the profile can help with; a
+   * sign-in's lone email box is not.
+   */
+  function personalFields(scope) {
+    var inputs = collectInputs(scope).filter(function (el) {
+      return !isPasswordBox(el);
+    });
+    return PERSONAL_ROLES.filter(function (k) {
+      return inputs.some(function (el) {
+        return roleMatches(ROLES[k], el);
+      });
+    }).length;
+  }
+
+  /** The current password on a change form, by what it says it is. */
+  var CURRENT_WORDS = /current|old|existing|actuel|ancien|aktuell|alt|actual|anterior|attuale|vecchi|atual|الحالية/;
+
+  /**
+   * The boxes a new password goes in: a sign-up's password and its
+   * confirmation, or a change form's new and confirm -- never its current
+   * one. Empty when the page is not asking for a new password: one box is a
+   * sign-in unless it says `new-password`.
+   */
+  function newPasswordBoxes(scope) {
+    var boxes = collectInputs(scope).filter(isPasswordBox);
+    var fresh = boxes.filter(function (el) {
+      return hasAuto(el, "new-password");
+    });
+    if (fresh.length > 0) return fresh;
+    if (boxes.length < 2) return [];
+    return boxes.filter(function (el) {
+      return !hasAuto(el, "current-password") && !CURRENT_WORDS.test(humanMeta(el));
+    });
+  }
+
+  /** The app's generator alphabet (password.rs), all four kinds. */
+  var GEN_CLASSES = ["abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0123456789", "!@#$%^&*()-_=+[]{};:,.<>?/"];
+  var GEN_LENGTH = 20;
+
+  /** A uniform index below `n`: bytes past the last multiple are redrawn. */
+  function uniformBelow(n) {
+    var limit = 256 - (256 % n);
+    var b = new Uint8Array(1);
+    do crypto.getRandomValues(b);
+    while (b[0] >= limit);
+    return b[0] % n;
+  }
+
+  /** A fresh password with at least one of each kind, in random order. */
+  function generatePassword() {
+    var all = GEN_CLASSES.join("");
+    var chars = GEN_CLASSES.map(function (c) {
+      return c.charAt(uniformBelow(c.length));
+    });
+    while (chars.length < GEN_LENGTH) chars.push(all.charAt(uniformBelow(all.length)));
+    for (var i = chars.length - 1; i > 0; i--) {
+      var j = uniformBelow(i + 1);
+      var t = chars[i];
+      chars[i] = chars[j];
+      chars[j] = t;
+    }
+    return chars.join("");
+  }
+
+  /** Put one new password in every new-password box. How many took it. */
+  function fillNewPassword(scope, password) {
+    var boxes = newPasswordBoxes(scope);
+    boxes.forEach(function (el) {
+      setValue(el, password);
+    });
+    return boxes.length;
+  }
+
+  /** Largest side sent to the app; `MAX_BITS_SIDE` in totp.rs. */
+  var QR_SIDE = 256;
+  /** A setup page shows one QR code; `MAX_PAGE_QR` in bridge.rs. */
+  var MAX_QR = 2;
+
+  /**
+   * One picture as black and white, one bit a pixel, rows packed high bit
+   * first, base64. A QR code drawn from another origin taints the canvas
+   * and cannot be read; null then.
+   */
+  function bitsOf(source, w, h) {
+    var scale = Math.min(1, QR_SIDE / Math.max(w, h));
+    w = Math.max(1, Math.round(w * scale));
+    h = Math.max(1, Math.round(h * scale));
+    try {
+      var canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      var g = canvas.getContext("2d");
+      if (!g) return null;
+      // A transparent PNG's background is white on the page.
+      g.fillStyle = "#fff";
+      g.fillRect(0, 0, w, h);
+      g.drawImage(source, 0, 0, w, h);
+      var px = g.getImageData(0, 0, w, h).data;
+      var row = Math.ceil(w / 8);
+      var out = new Uint8Array(row * h);
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var i = (y * w + x) * 4;
+          if (px[i] * 3 + px[i + 1] * 6 + px[i + 2] < 1280) out[y * row + (x >> 3)] |= 0x80 >> (x & 7);
+        }
+      }
+      var bin = "";
+      for (var j = 0; j < out.length; j++) bin += String.fromCharCode(out[j]);
+      return { w: w, h: h, bits: btoa(bin) };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** An inline SVG as a picture the canvas can draw. */
+  function svgImage(svg, w, h) {
+    return new Promise(function (done) {
+      var copy = svg.cloneNode(true);
+      copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      copy.setAttribute("width", String(w));
+      copy.setAttribute("height", String(h));
+      var img = new Image();
+      img.onload = function () {
+        done(img);
+      };
+      img.onerror = function () {
+        done(null);
+      };
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(copy));
+    });
+  }
+
+  /**
+   * The square pictures on the page that could be a QR code: images,
+   * canvases and inline SVGs between 64 and 1024 pixels a side. Nothing is
+   * decoded here; the app does that.
+   */
+  function qrImages(scope) {
+    var shown = Array.prototype.filter.call(scope.querySelectorAll("img, canvas, svg"), function (el) {
+      var r = el.getBoundingClientRect();
+      var side = Math.max(r.width, r.height);
+      return side >= 64 && side <= 1024 && Math.abs(r.width - r.height) <= side * 0.2;
+    });
+    return Promise.all(
+      shown.slice(0, MAX_QR * 2).map(function (el) {
+        var r = el.getBoundingClientRect();
+        if (el.tagName === "IMG") {
+          return el.complete ? bitsOf(el, el.naturalWidth || r.width, el.naturalHeight || r.height) : null;
+        }
+        if (el.tagName === "CANVAS") return bitsOf(el, el.width, el.height);
+        // Vector: draw it at full size, whatever it is shown at.
+        return svgImage(el, QR_SIDE, QR_SIDE).then(function (img) {
+          return img ? bitsOf(img, QR_SIDE, QR_SIDE) : null;
+        });
+      })
+    ).then(function (all) {
+      return all.filter(Boolean).slice(0, MAX_QR);
+    });
+  }
+
+  global.Autofill = {
+    fill: fill,
+    detect: detect,
+    isLogin: isLogin,
+    captured: captured,
+    fillCode: fillCode,
+    typedCode: typedCode,
+    newPasswordBoxes: newPasswordBoxes,
+    personalFields: personalFields,
+    providerButton: providerButton,
+    generatePassword: generatePassword,
+    fillNewPassword: fillNewPassword,
+    hasCodeBox: function (scope) {
+      return !!codeBox(scope, 6);
+    },
+    printedKeys: printedKeys,
+    qrImages: qrImages,
+  };
 })(typeof window !== "undefined" ? window : this);

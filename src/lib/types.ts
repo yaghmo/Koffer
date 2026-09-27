@@ -97,6 +97,7 @@ export interface Config {
   browser_offer_save: boolean;
   browser_offer_update: boolean;
   browser_site_prompt: boolean;
+  browser_personal: boolean;
   browser_confirm_fills: boolean;
 }
 
@@ -193,7 +194,7 @@ export interface VaultStats {
 }
 
 /** A browser-extension feature the user can switch off in Settings. */
-export type BrowserPref = "totp" | "offer_save" | "offer_update" | "site_prompt" | "confirm_fills";
+export type BrowserPref = "totp" | "offer_save" | "offer_update" | "site_prompt" | "personal" | "confirm_fills";
 
 /** A login whose password appears in a known data leak. */
 export interface LeakedLogin {

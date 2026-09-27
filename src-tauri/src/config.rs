@@ -51,6 +51,9 @@ pub struct Config {
     pub browser_offer_update: bool,
     #[serde(default = "on")]
     pub browser_site_prompt: bool,
+    /// The popup's personal-info card: name, email, address into a form.
+    #[serde(default = "on")]
+    pub browser_personal: bool,
     /// Every handout (fill, copy, 2FA code) waits for a click in the app.
     /// Off by default. It is the one defence against the browser's signing
     /// key being copied out of its profile: with it on, the copy is useless
@@ -76,6 +79,7 @@ impl Default for Config {
             browser_offer_save: true,
             browser_offer_update: true,
             browser_site_prompt: true,
+            browser_personal: true,
             browser_confirm_fills: false,
         }
     }

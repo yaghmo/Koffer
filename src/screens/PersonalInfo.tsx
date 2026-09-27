@@ -5,6 +5,7 @@ import { CheckIcon, UserIcon } from "../components/Icon";
 import { useHotkey } from "../lib/useHotkey";
 import { isValidPhone, splitPhone } from "../lib/phone";
 import PhoneField from "../components/PhoneField";
+import BirthDateField from "../components/BirthDateField";
 
 // Field metadata: label + optional fill target hint used by the extension.
 type Group = "Basics" | "Address" | "Online" | "Work & education";
@@ -21,7 +22,7 @@ const FIELDS: { key: keyof PersonalInfo; label: string; placeholder?: string; gr
   { key: "zip", label: "ZIP / Postal code", placeholder: "W1T 3AL", group: "Address" },
   { key: "country", label: "Country", placeholder: "United Kingdom", group: "Address" },
   { key: "website", label: "Portfolio / Website", placeholder: "https://example.com", group: "Online" },
-  { key: "github", label: "GitHub", placeholder: "yourhandle", group: "Online" },
+  { key: "github", label: "GitHub", placeholder: "yourhandle or github.com/yourhandle", group: "Online" },
   { key: "linkedin", label: "LinkedIn", placeholder: "https://linkedin.com/in/yourname", group: "Online" },
   { key: "current_title", label: "Current job title", placeholder: "Senior Engineer", group: "Work & education" },
   { key: "current_company", label: "Current company", placeholder: "Acme Corp", group: "Work & education" },
@@ -42,7 +43,7 @@ const empty = (): PersonalInfo => ({
 
 // Strip anything that can't be part of the field's format as the user types.
 // Keeps invalid characters from ever entering the value.
-function sanitize(key: keyof PersonalInfo, value: string): string {
+export function sanitize(key: keyof PersonalInfo, value: string): string {
   switch (key) {
     case "email":
       // Addresses are case-insensitive in practice and never hold spaces.
@@ -60,25 +61,27 @@ function sanitize(key: keyof PersonalInfo, value: string): string {
       // Names of people and places: letters (incl. accents) and the few
       // separators they really use. Keeps digits and punctuation out.
       return value.replace(/[^\p{L}\s.'-]/gu, "").slice(0, 60);
+    case "github": {
+      // A pasted profile link keeps just the handle; the extension turns it
+      // back into a link for a form that asks for one.
+      const link = /^\s*(?:https?:\/\/)?(?:www\.)?github\.com\/([^/?#\s]*)/i.exec(value);
+      return (link ? link[1] : value.replace(/\s/g, "")).slice(0, 39);
+    }
     case "username":
-    case "github":
       return value.replace(/\s/g, "").slice(0, 39);
     default:
       return value.slice(0, 120);
   }
 }
 
-// Native `<input type="date">` renders the browser calendar; its value is
-// always "YYYY-MM-DD". Regex fields get `inputType` hints so the OS keyboard
-// matches too.
+// Regex fields get `inputType` hints so the OS keyboard matches too. The
+// date of birth has boxes of its own (BirthDateField).
 function inputFor(key: keyof PersonalInfo): { type: string; inputMode?: "numeric" | "decimal" } {
   switch (key) {
     case "email":
       return { type: "email" };
     case "phone":
       return { type: "tel" };
-    case "date_of_birth":
-      return { type: "date" };
     case "years_experience":
       return { type: "text", inputMode: "decimal" };
     case "desired_salary":
@@ -118,14 +121,17 @@ export default function PersonalInfoScreen() {
       errors.website = "Website must start with http:// or https://";
     }
     if (profile.github && !/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(profile.github)) {
-      errors.github = "Handle only — letters, digits and single hyphens.";
+      errors.github = "Your GitHub handle, like octocat, or paste your profile link.";
     }
     if (profile.linkedin && !/^(https?:\/\/)?([a-z]{2,3}\.)?linkedin\.com\/\S+$/i.test(profile.linkedin)) {
       errors.linkedin = "Must be a linkedin.com profile link.";
     }
     if (profile.date_of_birth) {
       const d = new Date(`${profile.date_of_birth}T00:00:00`);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.date_of_birth) || Number.isNaN(d.getTime())) {
+      // 31 February rolls over into March rather than failing, so the day
+      // has to come back as typed.
+      const day = Number(profile.date_of_birth.slice(8));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.date_of_birth) || Number.isNaN(d.getTime()) || d.getDate() !== day) {
         errors.date_of_birth = "Pick a valid date.";
       } else if (d > new Date()) {
         errors.date_of_birth = "Date of birth can't be in the future.";
@@ -198,7 +204,12 @@ export default function PersonalInfoScreen() {
                     {f.label}
                     {f.required && <span className="text-primary"> *</span>}
                   </p>
-                  {f.key === "phone" ? (
+                  {f.key === "date_of_birth" ? (
+                    <BirthDateField
+                      value={profile.date_of_birth}
+                      onChange={(date_of_birth) => setProfile({ ...profile, date_of_birth })}
+                    />
+                  ) : f.key === "phone" ? (
                     <PhoneField
                       value={profile.phone}
                       onChange={(phone) => setProfile({ ...profile, phone })}
@@ -213,8 +224,7 @@ export default function PersonalInfoScreen() {
                       aria-label={f.label}
                       spellCheck={false}
                       autoComplete="off"
-                      placeholder={f.key === "date_of_birth" ? undefined : f.placeholder}
-                      max={f.key === "date_of_birth" ? new Date().toISOString().slice(0, 10) : undefined}
+                      placeholder={f.placeholder}
                       className="field"
                       {...inputProps}
                     />

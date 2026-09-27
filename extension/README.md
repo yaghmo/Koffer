@@ -185,8 +185,8 @@ The same question also appears on the page by itself: a login form on an
 unapproved site gets a bar, top-right, with **Approve this website**, so
 the site is approved before you log in and the login can be offered for
 saving. Every unapproved site gets the identical bar, so it tells the page
-nothing about the vault. **Not now** silences it for that site until the
-browser restarts; **Never for this site**, under the arrow next to it, puts
+nothing about the vault. **Not now** silences it until the page is
+reloaded or the tab goes somewhere else; **Never for this site**, under the arrow next to it, puts
 the site on the vault's never list, so neither this bar nor the offer to
 save appears there again. The popup still offers to approve it, and
 approving takes it off the list.
@@ -225,19 +225,86 @@ in a closed shadow root the page can neither read nor click.
 What was typed is held by the extension in session storage (memory, never
 disk) for at most two minutes, and dropped when the offer is answered.
 
+## Personal info
+
+On a page with two or more kinds of personal field -- a sign-up, a checkout,
+a job application -- the popup shows a **Personal info** card. It fills
+each box the page has from the profile under *Personal info* in the app:
+name (split into first and last when the form asks for both), email, phone
+with its country, date of birth, address, and the rest. A sign-in's lone
+email box does not count. The profile comes from `/personal`, behind the
+same approval as a password, and the same click in the app when *Confirm
+every fill* is on; values the page has no box for are never written. Off
+with *Personal info in forms* in Settings, which hides the card and makes
+the app refuse `/personal`.
+
+In the popup, each login shows its logo -- the one the app stored, sent as
+an image, never as an address the popup would fetch -- and a login that
+signs in through Google, GitHub, Microsoft, Apple or Facebook wears that
+provider's mark on its corner.
+
+## Logins that sign in with Google, GitHub...
+
+A login saved as signing in through a provider has no password to fill.
+Clicking it in the popup or the right-click menu scrolls the page to its
+"Sign in with GitHub" (Google, Microsoft, Apple, Facebook) button and
+outlines it, with a note naming the account. It is never clicked for you:
+that click leaves the site and may grant access, and a page can dress any
+button up as a provider's. A button counts when it names the provider and
+reads as signing in, or says the provider's name and nothing else; "Follow
+us on GitHub" does not. The outline stays until the next click anywhere,
+Escape, or the button leaving the page. On a page of provider buttons with no
+password form, the popup lists just those logins.
+
+## Strong passwords on sign-up
+
+The first time a sign-up or change-password box gets focus, the bar offers
+**Fill a strong password**: 20 characters from the app's generator alphabet,
+all four kinds, made in the extension and typed into the password box and
+its confirmation. A change form's current password is left alone -- the box
+marked `current-password`, or labelled current or old. After the site takes
+it, the usual offer to save follows. Once per page, never over another bar.
+
 ## 2FA codes
 
-A login with a 2FA key saved in the app gets a **2FA code** button in the
-popup, and a *2FA code for …* entry in the right-click menu. It types the
-current code into the page's code box: one marked `one-time-code`, one
-whose label or name reads like a code field (in the same languages as the
-login words), or a row of one-digit boxes. A zip, promo or other code box
-is left alone. With no code box on the page, the popup has the app copy
-the code instead, cleared after a minute.
+On a page asking for a 2FA code, the popup and the right-click menu offer
+the code of the login last used on this site -- filled from the popup or the
+menu, saved or updated from the bar, or typed by hand and already in the
+vault -- and only that one; the popup keeps the site's other logins behind
+a link. With no login seen used, every login with a key is listed. A click
+types the current code
+into the page's code box: one marked `one-time-code`, one whose label or
+name reads like a code field (in the same languages as the login words), or
+a row of one-digit boxes. A zip, promo or other code box is left alone.
+With no code box it reaches, the popup has the app copy the code instead,
+cleared after a minute. On a sign-in page the popup shows each account once;
+the fill puts every value in its own box.
 
 The code comes from `/totp`, behind the same approval as a password, and
 only for the login's own site. A login that signs in through Google still
 gets its own site's code there: that is the site asking, not Google.
+
+### Saving the key when you turn 2FA on
+
+On a site's "turn on two-factor" page, once you type the first code from
+your authenticator and the site takes it, the bar offers to **Save** the
+key onto that site's login. The extension sends the code and what the page
+shows -- its square pictures as one-bit pixels, and anything printed that
+looks like a key -- and the app keeps the key only if it made that code.
+That is the proof it is the key the site issued, and it is why a sign-in
+page's code box, which shows no key, never gets an offer.
+
+- The bar waits until the code box no longer holds the code: the site
+  accepted it, or the page moved on. A code typed and left there is a
+  setup not finished.
+- The key goes on the login the QR code names, or the site's only login.
+  A login that already has a key is never changed from the browser: a
+  page could otherwise swap a working key for its own. Change it in the
+  app.
+- A QR code served from another origin cannot be read (the canvas is
+  tainted); the printed key under "can't scan it?" still works once shown,
+  and so does pasting a screenshot into the app's editor.
+- Off with *2FA codes in the browser* in Settings.
 
 ## Phone numbers
 

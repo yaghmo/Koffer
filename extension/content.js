@@ -116,6 +116,8 @@
         passwords: found.passwords,
         filled: found.filled,
         fresh: fresh,
+        code: window.Autofill.typedCode(document),
+        codeBox: window.Autofill.hasCodeBox(document),
       });
       // MV3 hands back a promise in both browsers, and it rejects whenever
       // the worker is asleep or gone. Unhandled, that fills the page's own
@@ -207,10 +209,89 @@
     true
   );
 
+  /**
+   * A 2FA setup page: once its code box holds a whole code, hand the code
+   * and whatever the page shows that could be the key -- its QR codes, as
+   * pixels, and any printed key -- to the background. The app decides
+   * whether one of them made that code; nothing here reads a QR code.
+   *
+   * On typing rather than on submit, because plenty of setup pages check
+   * the code the moment the last digit goes in. The offer itself waits for
+   * the code box to be answered (background.js). A sign-in page asking for
+   * a code shows no key, so nothing is sent from one.
+   */
+  var lastCode = "";
+
+  function captureKey() {
+    var code = window.Autofill.typedCode(document);
+    if (!code || code === lastCode) return;
+    lastCode = code;
+    var keys = window.Autofill.printedKeys(document);
+    window.Autofill.qrImages(document).then(function (qr) {
+      if (qr.length === 0 && keys.length === 0) return;
+      try {
+        var sent = ext.runtime.sendMessage({ type: "captured-key", origin: location.origin, code: code, keys: keys, qr: qr });
+        if (sent && typeof sent.catch === "function") sent.catch(function () {});
+      } catch (e) {
+        // Worker asleep: this key is simply not offered.
+      }
+    });
+  }
+
+  document.addEventListener(
+    "input",
+    function (e) {
+      if (e.isTrusted && e.target && e.target.tagName === "INPUT") captureKey();
+    },
+    true
+  );
+
+  /**
+   * A sign-up or change-password form: the first time a new-password box
+   * gets focus, the bar offers to fill a strong password into it and its
+   * confirmation. Made here, in the isolated world, and written straight
+   * into the page -- which is where it is going anyway; the usual offer to
+   * save follows once the site accepts it. Once per page, and never over a
+   * bar that is already up.
+   */
+  var offeredPassword = false;
+
+  document.addEventListener(
+    "focusin",
+    function (e) {
+      if (offeredPassword || !e.isTrusted || window.PMBar.isOpen()) return;
+      if (window.Autofill.newPasswordBoxes(document).indexOf(e.target) === -1) return;
+      offeredPassword = true;
+      var view = {
+        kind: "generate",
+        host: location.hostname,
+        detail: "Password Manager makes one and fills it in, confirmation too.",
+        never: false,
+      };
+      window.PMBar.show(view, function (choice) {
+        if (choice !== "save") return window.PMBar.hide();
+        var n = window.Autofill.fillNewPassword(document, window.Autofill.generatePassword());
+        window.PMBar.say(
+          n > 0 ? "Filled. Save it when the site takes it." : "The password boxes went away. Try again from the page.",
+          true
+        );
+      });
+    },
+    true
+  );
+
   ext.runtime.onMessage.addListener(function (msg, _sender, respond) {
     if (msg && msg.type === "state") {
       var found = boxes();
-      respond({ login: isLoginPage(), origin: location.origin, passwords: found.passwords, filled: found.filled });
+      respond({
+        login: isLoginPage(),
+        origin: location.origin,
+        passwords: found.passwords,
+        filled: found.filled,
+        code: window.Autofill.typedCode(document),
+        codeBox: window.Autofill.hasCodeBox(document),
+        personal: window.Autofill.personalFields(document),
+      });
       return false;
     }
     if (msg && msg.type === "offer") {
@@ -229,6 +310,13 @@
     }
     if (msg && msg.type === "offer-say") {
       window.PMBar.say(msg.text, !!msg.done);
+      return false;
+    }
+    if (msg && msg.type === "highlight-provider") {
+      // Show the user the button; the click that leaves the site is theirs.
+      var button = window.Autofill.providerButton(document, String(msg.method || ""));
+      if (button) window.PMBar.spotlight(button, String(msg.note || ""));
+      respond({ found: !!button });
       return false;
     }
     if (msg && msg.type === "fill-code") {

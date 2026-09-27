@@ -33,8 +33,22 @@
  * not fire for a window switch, so without that the menu could also be left
  * showing the other window's accounts.
  */
-import { matches, credentials, totpCode, whenAllowed, ask, offer, saveLogin, updateLogin, seen, never, NOT_PAIRED } from "./vault.js";
-import { createTracker, isFresh } from "./capture.js";
+import {
+  matches,
+  credentials,
+  totpCode,
+  whenAllowed,
+  ask,
+  offer,
+  saveLogin,
+  updateLogin,
+  seen,
+  never,
+  keyOffer,
+  saveKey,
+  NOT_PAIRED,
+} from "./vault.js";
+import { createTracker, isFresh, sameSite, lastLoginKey, CONFIRM_MS } from "./capture.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
 const ext = globalThis.browser ?? globalThis.chrome;
@@ -89,6 +103,8 @@ async function setTabState(tabId, value) {
 }
 
 async function renderMenu(state) {
+  // Read before the menu is cleared, so the clear and the rebuild stay close.
+  const last = state && state.codeOnly ? await lastLogin(state.origin) : "";
   try {
     await ext.contextMenus.removeAll();
   } catch {
@@ -110,19 +126,42 @@ async function renderMenu(state) {
   }
   if (!state.items || state.items.length === 0) return;
 
+  // A page asking for a 2FA code: the codes, the login just used first.
+  // Its accounts have nowhere to go here.
+  if (state.codeOnly) {
+    // Only the account just signed in with, when that is known: two codes
+    // side by side are one wrong click from the other account's.
+    const all = state.items.filter((i) => i.totp);
+    const lastItem = all.find((i) => i.id === last);
+    const withCode = lastItem ? [lastItem] : all;
+    if (withCode.length === 0) return;
+    ext.contextMenus.create({ id: ROOT_ID, title: "Password Manager", contexts: ["editable"] });
+    for (const item of withCode) {
+      ext.contextMenus.create({
+        id: `pmcode:${item.id}`,
+        parentId: ROOT_ID,
+        title:
+          `2FA code for ${item.title}` +
+          (item.username ? ` (${item.username})` : "") +
+          (item.id === last ? " — just signed in" : ""),
+        contexts: ["editable"],
+      });
+    }
+    return;
+  }
+
   ext.contextMenus.create({ id: ROOT_ID, title: "Password Manager", contexts: ["editable"] });
   for (const item of state.items) {
     ext.contextMenus.create({
       id: `pm:${item.id}`,
       parentId: ROOT_ID,
-      // A provider login has nothing to type here; it is listed anyway, and
-      // greyed out, for the same reason the popup lists it — to remind you
-      // which account you used.
+      // A provider login has nothing to type here. Clicking it points at the
+      // page's "Sign in with ..." button instead.
       title: item.fillable
         ? `${item.title} — ${item.username || "no username"}`
         : `${item.title} — signs in with ${PROVIDER_LABELS[item.method] || item.method}` +
           (item.username ? ` (${item.username})` : ""),
-      enabled: !!item.fillable,
+      enabled: item.fillable || (item.method !== "credentials" && item.method !== "other"),
       contexts: ["editable"],
     });
   }
@@ -144,7 +183,7 @@ function stale(state) {
 }
 
 /** Ask the app what it has for this origin, store it, and redraw the menu. */
-async function refresh(tabId, origin) {
+async function refresh(tabId, origin, codeOnly = false) {
   let found = { items: [], needsApproval: false, host: "", never: false, prompt: true };
   try {
     found = await matches(origin);
@@ -152,24 +191,38 @@ async function refresh(tabId, origin) {
     // Not paired, app closed, or vault locked. The popup explains all three;
     // a menu that cannot fill anything is just noise.
   }
-  const state = { origin, checkedAt: Date.now(), ...found };
+  const state = { origin, checkedAt: Date.now(), codeOnly, ...found };
   await setTabState(tabId, state);
   await renderMenu(state);
   return state;
 }
 
-async function onDetectedLogin(tabId, origin) {
+/** `codeOnly`: the page asks for a 2FA code and has no login form. */
+async function onDetectedLogin(tabId, origin, codeOnly) {
   const known = (await allTabState())[tabId];
   // Rebuilding on every mutation would hammer the bridge and race with
   // itself; the accounts for an origin do not change while you sit on it.
   // A refusal is the exception — that one changes in the app, behind our
   // back.
+  //
+  // The same origin can move from its sign-in to its code step, though, so
+  // that much is kept up to date.
   if (known && known.origin === origin && !stale(known)) {
-    await renderMenu(known);
+    if (known.codeOnly !== codeOnly) await setTabState(tabId, { ...known, codeOnly });
+    await renderMenu({ ...known, codeOnly });
     return;
   }
-  const state = await refresh(tabId, origin);
+  const state = await refresh(tabId, origin, codeOnly);
   await promptApproval(tabId, state);
+}
+
+async function lastLogin(origin) {
+  const r = await sessionGet(lastLoginKey(origin));
+  return r ? r.id : "";
+}
+
+function rememberLogin(origin, id) {
+  if (id) return sessionSet(lastLoginKey(origin), { id, at: Date.now() });
 }
 
 /**
@@ -179,12 +232,12 @@ async function onDetectedLogin(tabId, origin) {
  *
  * It says nothing the page could not already learn: every unapproved site
  * gets the same bar, whether the vault holds anything there or not. Shown
- * once per page; "Not now" silences an origin until the browser restarts,
+ * once per page; "Not now" silences it until that tab loads a page again,
  * "Never" for good -- the popup still offers to approve it.
  */
 async function promptApproval(tabId, state) {
   if (!state.needsApproval || !state.host || state.never || state.prompt === false) return;
-  if (await sessionGet(DISMISSED_KEY + state.origin)) return;
+  if (await sessionGet(DISMISSED_KEY + tabId)) return;
   // Already up on this page, or a save offer is using the bar.
   if (await sessionGet(OFFER_KEY + tabId)) return;
   await sessionSet(OFFER_KEY + tabId, { kind: "site", origin: state.origin, at: Date.now() });
@@ -207,7 +260,7 @@ async function waitForApproval(tabId, origin) {
     const current = (await allTabState())[tabId];
     // The tab went away, or moved on: stop.
     if (!current || current.origin !== origin) return;
-    const state = await refresh(tabId, origin);
+    const state = await refresh(tabId, origin, current.codeOnly);
     if (!state.needsApproval) return;
   }
 }
@@ -222,7 +275,7 @@ async function waitForApproval(tabId, origin) {
  */
 const CAPTURE_KEY = "capture:";
 const OFFER_KEY = "offer:";
-/** Origins whose approval prompt got "Not now", until the browser restarts. */
+/** Tabs whose approval prompt got "Not now", until that tab loads a page again. */
 const DISMISSED_KEY = "dismissed:";
 
 async function sessionGet(key) {
@@ -271,7 +324,8 @@ async function offerFor(tabId, capture) {
     return showBar(tabId, "locked", capture);
   }
   // "off": the user turned this kind of offer off in the app's Settings.
-  if (res.offer === "never" || res.offer === "same" || res.offer === "off") return;
+  if (res.offer === "same") return rememberLogin(capture.origin, res.id);
+  if (res.offer === "never" || res.offer === "off") return;
   // A change of password matched no saved login and names no account:
   // saving it would make a login with no username.
   if (res.offer === "new" && capture.current && !capture.username) return;
@@ -303,6 +357,7 @@ async function onChoice(tabId, choice) {
   const open = await sessionGet(OFFER_KEY + tabId);
   if (!open) return;
   if (open.kind === "site") return onSiteChoice(tabId, open.origin, choice);
+  if (open.key) return onKeyChoice(tabId, open, choice);
   if (!isFresh(open, Date.now())) {
     await sessionSet(OFFER_KEY + tabId, null);
     return say(tabId, "That was a while ago. Log in again to be offered it.", true);
@@ -315,10 +370,12 @@ async function onChoice(tabId, choice) {
       // On an update the app remembers the password that worked.
       await seen(capture.origin, capture.username, capture.password);
     } else if (kind === "new") {
-      await saveLogin(capture.origin, capture.username, capture.password);
+      const saved = await saveLogin(capture.origin, capture.username, capture.password);
+      await rememberLogin(capture.origin, saved && saved.id);
       await say(tabId, "Saved to Password Manager.", true);
     } else if (kind === "update") {
       await updateLogin(id, capture.origin, capture.password);
+      await rememberLogin(capture.origin, id);
       await say(tabId, "Password updated.", true);
     } else if (kind === "approve") {
       // The first click raises the app's dialog; the next asks again.
@@ -341,6 +398,93 @@ async function onChoice(tabId, choice) {
   await sessionSet(OFFER_KEY + tabId, null);
 }
 
+/**
+ * Offer to save a 2FA key the user has just set up.
+ *
+ * The app is asked straight away, while the code typed is current, and its
+ * answer -- the key with it -- is held as the tab's open offer, in session
+ * storage like a captured password and for as long. The bar waits until the
+ * code box no longer holds that code: the site took it, or the page moved
+ * on. A code typed and left sitting there is a setup not finished, and
+ * gets nothing.
+ */
+async function onKeyCaptured(tabId, msg) {
+  let res;
+  try {
+    res = await keyOffer(msg.origin, msg.code, msg.keys || [], msg.qr || [], await lastLogin(msg.origin));
+  } catch {
+    return; // ponytail: locked or app closed gets no offer; the editor's QR paste still works
+  }
+  const open = { key: true, origin: msg.origin, code: msg.code, at: Date.now(), shown: false };
+  if (res.offer === "add") {
+    await sessionSet(OFFER_KEY + tabId, { ...open, kind: "key", id: res.id, secret: res.key, username: res.username || res.title || "" });
+  } else if (res.offer === "needsApproval") {
+    // The page is asked again once the site is approved.
+    await sessionSet(OFFER_KEY + tabId, { ...open, kind: "keyApprove", capture: msg, username: "" });
+  } else if (res.offer === "hasKey") {
+    // Nothing to save; said so, or a missing offer looks like a bug.
+    await sessionSet(OFFER_KEY + tabId, { ...open, kind: "keyHas", username: "" });
+  } else {
+    return;
+  }
+  setTimeout(() => showKeyOffer(tabId, null), CONFIRM_MS);
+}
+
+/** Put a held 2FA offer up, once its code box has been answered. */
+async function showKeyOffer(tabId, state) {
+  const open = await sessionGet(OFFER_KEY + tabId);
+  if (!open || !open.key || open.shown || !isFresh(open, Date.now())) return;
+  if (!state) state = await ext.tabs.sendMessage(tabId, { type: "state" }).catch(() => null);
+  // Between pages, or the code still sitting in its box: not yet.
+  if (!state || state.code === open.code || !sameSite(open.origin, state.origin)) return;
+  await sessionSet(OFFER_KEY + tabId, { ...open, shown: true });
+  const view =
+    open.kind === "keyHas"
+      ? { kind: "keyHas", host: hostOf(open.origin), detail: "It was left as it is. If the site gave you a new key, change it in the app.", never: false }
+      : { kind: "key", host: hostOf(open.origin), username: open.username };
+  return ext.tabs.sendMessage(tabId, { type: "offer", view }).catch(() => {});
+}
+
+async function onKeyChoice(tabId, open, choice) {
+  if (open.kind === "keyHas") {
+    await sessionSet(OFFER_KEY + tabId, null);
+    return choice === "save" ? say(tabId, "Nothing was changed.", true) : undefined;
+  }
+  if (!isFresh(open, Date.now())) {
+    await sessionSet(OFFER_KEY + tabId, null);
+    return say(tabId, "That was a while ago. Add the key from the app instead.", true);
+  }
+  try {
+    if (choice === "never") {
+      await never(open.origin);
+    } else if (choice === "save" && open.kind === "keyApprove") {
+      await ask(open.origin);
+      await sessionSet(OFFER_KEY + tabId, { ...open, kind: "keyRecheck" });
+      return say(tabId, "Approve this site in the app, then click Save again.");
+    } else if (choice === "save") {
+      let { id, secret } = open;
+      if (open.kind === "keyRecheck") {
+        const c = open.capture;
+        const res = await keyOffer(c.origin, c.code, c.keys || [], c.qr || [], await lastLogin(c.origin));
+        if (res.offer === "needsApproval") return say(tabId, "Approve this site in the app, then click Save again.");
+        if (res.offer !== "add") {
+          await sessionSet(OFFER_KEY + tabId, null);
+          return say(tabId, "No saved login here can take this key. Add it from the app.", true);
+        }
+        ({ id, key: secret } = res);
+      }
+      await saveKey(id, open.origin, secret);
+      await say(tabId, "2FA key saved. Password Manager has this site's codes now.", true);
+    }
+  } catch (e) {
+    return say(
+      tabId,
+      e.message === NOT_PAIRED ? "Unlock Password Manager, then click Save again." : "That did not work. Add the key from the app."
+    );
+  }
+  await sessionSet(OFFER_KEY + tabId, null);
+}
+
 /** A button on the approval prompt. It holds no secret, so it never goes stale. */
 async function onSiteChoice(tabId, origin, choice) {
   await sessionSet(OFFER_KEY + tabId, null);
@@ -350,7 +494,8 @@ async function onSiteChoice(tabId, origin, choice) {
     await never(origin).catch(() => {});
     return refresh(tabId, origin);
   }
-  if (choice !== "save") return sessionSet(DISMISSED_KEY + origin, true);
+  // "Not now" is for this page: a reload asks again.
+  if (choice !== "save") return sessionSet(DISMISSED_KEY + tabId, true);
   let answer;
   try {
     answer = await ask(origin);
@@ -377,6 +522,10 @@ ext.runtime.onMessage.addListener((msg, sender) => {
     });
     return false;
   }
+  if (msg.type === "captured-key") {
+    onKeyCaptured(tabId, msg);
+    return false;
+  }
   if (msg.type === "offer-choice") {
     onChoice(tabId, msg.choice);
     return false;
@@ -384,10 +533,11 @@ ext.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type !== "detect") return false;
   tracker.detected(tabId, msg);
   dropStaleOffer(tabId);
-  if (msg.login) {
+  showKeyOffer(tabId, msg);
+  if (msg.login || msg.codeBox) {
     ext.action.setBadgeText({ tabId, text: BADGE });
     ext.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOUR });
-    onDetectedLogin(tabId, msg.origin);
+    onDetectedLogin(tabId, msg.origin, !msg.login);
     return false;
   }
   // A `login:false` on the *same* origin is usually the page rebuilding its
@@ -417,6 +567,7 @@ ext.tabs.onUpdated.addListener((tabId, changeInfo) => {
   ext.action.setBadgeText({ tabId, text: "" });
   setTabState(tabId, null);
   dropSitePrompt(tabId);
+  sessionSet(DISMISSED_KEY + tabId, null);
   ext.contextMenus.removeAll().catch(() => {});
 });
 
@@ -430,6 +581,7 @@ ext.tabs.onRemoved.addListener((tabId) => {
   setTabState(tabId, null);
   sessionSet(CAPTURE_KEY + tabId, null);
   sessionSet(OFFER_KEY + tabId, null);
+  sessionSet(DISMISSED_KEY + tabId, null);
 });
 
 /**
@@ -506,6 +658,13 @@ ext.contextMenus.onClicked.addListener(async (info, tab) => {
   // killed and restarted between building this menu and clicking it.
   const state = (await allTabState())[tab.id];
   if (!state || !state.origin) return;
+  const picked = (state.items || []).find((i) => i.id === id.slice(3));
+  if (picked && !picked.fillable) {
+    const name = PROVIDER_LABELS[picked.method] || picked.method;
+    const note = `You sign in here with ${name}` + (picked.username ? ` as ${picked.username}` : "") + ".";
+    await ext.tabs.sendMessage(tab.id, { type: "highlight-provider", method: picked.method, note }).catch(() => {});
+    return;
+  }
   try {
     const data = await whenAllowed(() => credentials(id.slice(3), state.origin));
     // Reaching the tab works here on `activeTab` alone: executing a context
@@ -516,7 +675,8 @@ ext.contextMenus.onClicked.addListener(async (info, tab) => {
     // The origin goes with it: if this tab is no longer the one the menu was
     // built for, the content script drops the fill rather than typing a
     // password into whatever is there now.
-    await ext.tabs.sendMessage(tab.id, { type: "fill", data, origin: state.origin });
+    const out = await ext.tabs.sendMessage(tab.id, { type: "fill", data, origin: state.origin });
+    if (out && out.filled && out.filled.length > 0) await rememberLogin(state.origin, id.slice(3));
   } catch {
     // Locked, unpaired, or refused. There is no surface to report it on in a
     // toolbar-less window, and the popup says why when it can be opened.

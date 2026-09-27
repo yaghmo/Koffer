@@ -188,6 +188,96 @@ pub fn clear_last_seen(vault: &mut Vault, id: Uuid) -> bool {
     }
 }
 
+/// What to offer after a 2FA setup page took its first code.
+#[derive(Debug, PartialEq)]
+pub enum KeyOffer {
+    Never,
+    NeedsApproval,
+    /// No key on the page made the code, or no one login here can take it.
+    Nothing,
+    /// The login it would go on already has a key, which the browser never
+    /// replaces. Said, rather than nothing, so the user knows why.
+    HasKey { id: Uuid },
+    /// Offer to put `key` on login `id`.
+    Add { id: Uuid, key: String },
+}
+
+/// `keys` are what the page showed: links read from its QR codes, and
+/// anything printed that looks like a key. Only one that made the `code`
+/// the user typed is offered -- that is what proves it is the key the site
+/// issued, and it is also what makes a stray base32-looking word harmless.
+///
+/// The login is the one the QR code names, else `last` -- the login the
+/// extension last saw used on this site -- else the site's only login.
+/// One that already has a key is left alone: the browser adds a key and
+/// never replaces one, so a page cannot swap a working key for its own.
+///
+/// ponytail: several logins on one site, a QR code naming none of them and
+/// no login seen used gets no offer; a picker on the bar if that is common.
+pub fn key_offer_for(
+    vault: &Vault,
+    approved: bool,
+    origin: &str,
+    code: &str,
+    keys: &[String],
+    last: Option<Uuid>,
+    now: u64,
+) -> KeyOffer {
+    // The page's own data first: whether it shows a key is no secret, and
+    // answering it before approval keeps a sign-in page's code box, next to
+    // a square logo, from raising "approve this site" for nothing.
+    let Some((key, totp)) = keys.iter().find_map(|k| {
+        let t = crate::totp::parse(k).ok()?;
+        crate::totp::made_code(&t, code, now).then(|| (k.trim().to_string(), t))
+    }) else {
+        return KeyOffer::Nothing;
+    };
+    let host = host_of(origin).unwrap_or_default();
+    if is_never(vault, &host) {
+        return KeyOffer::Never;
+    }
+    if !approved {
+        return KeyOffer::NeedsApproval;
+    }
+    let logins: Vec<_> = logins_for(vault, origin).collect();
+    let named = logins
+        .iter()
+        .find(|(_, f)| !totp.account_name.trim().is_empty() && same_account(&f.username, &totp.account_name));
+    let used = logins.iter().find(|(b, _)| Some(b.id) == last);
+    let pick = named.or(used).or(if logins.len() == 1 { logins.first() } else { None });
+    // A site issues one key per account. One a saved login already holds is
+    // that login's, shown again -- a sign-in page's hint, say -- and putting
+    // it on a second login gives two accounts the same codes.
+    let held = vault.items.iter().any(|i| match i {
+        Item::Login { fields, .. } => crate::totp::parse(&fields.totp).is_ok_and(|t| t.secret == totp.secret),
+        _ => false,
+    });
+    match pick {
+        Some((b, f)) if !f.totp.trim().is_empty() => KeyOffer::HasKey { id: b.id },
+        Some(_) if held => KeyOffer::Nothing,
+        Some((b, _)) => KeyOffer::Add { id: b.id, key },
+        None => KeyOffer::Nothing,
+    }
+}
+
+/// "Save" on a 2FA offer: onto a login this origin would be offered, and
+/// only one that has no key yet (see `key_offer_for`).
+pub fn add_key(vault: &mut Vault, id: Uuid, origin: &str, key: &str, now: i64) -> Result<(), &'static str> {
+    if crate::totp::parse(key).is_err() {
+        return Err("not a 2FA key");
+    }
+    match vault.items.iter_mut().find(|i| i.id() == id) {
+        Some(Item::Login { base, fields })
+            if fields.method == "credentials" && url_covers(&fields.url, origin) && fields.totp.trim().is_empty() =>
+        {
+            fields.totp = key.trim().to_string();
+            base.updated_at = now;
+            Ok(())
+        }
+        _ => Err("no login here without a 2FA key"),
+    }
+}
+
 /// Most hosts the never list holds. It is the one write a key holder can
 /// make for an unapproved host, so it must not grow without bound.
 pub const MAX_NEVER: usize = 500;
@@ -221,6 +311,84 @@ mod tests {
         let mut v = new_vault(vec![0; 16]);
         let id = save_new(&mut v, SITE, user, pass, 1);
         (v, id)
+    }
+
+    // RFC 6238's key; its code at t=59 is 287082.
+    const KEY: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+
+    fn totp_of(v: &Vault, id: Uuid) -> String {
+        match v.items.iter().find(|i| i.id() == id) {
+            Some(Item::Login { fields, .. }) => fields.totp.clone(),
+            _ => panic!("no login"),
+        }
+    }
+
+    #[test]
+    fn a_key_is_offered_only_when_it_made_the_typed_code() {
+        let (v, id) = vault_with("me", "pw");
+        let keys = vec!["this code will make".to_string(), KEY.to_string()];
+        assert_eq!(
+            key_offer_for(&v, true, SITE, "287082", &keys, None, 59),
+            KeyOffer::Add { id, key: KEY.to_string() }
+        );
+        assert_eq!(key_offer_for(&v, true, SITE, "123456", &keys, None, 59), KeyOffer::Nothing);
+        assert_eq!(key_offer_for(&v, false, SITE, "287082", &keys, None, 59), KeyOffer::NeedsApproval);
+        assert_eq!(key_offer_for(&v, false, SITE, "123456", &keys, None, 59), KeyOffer::Nothing);
+        assert_eq!(key_offer_for(&v, true, "https://other.test", "287082", &keys, None, 59), KeyOffer::Nothing);
+    }
+
+    #[test]
+    fn a_key_goes_to_the_login_its_qr_code_names() {
+        let (mut v, _) = vault_with("someone", "pw");
+        let me = save_new(&mut v, SITE, "Me@Site.test", "pw2", 1);
+        let link = format!("otpauth://totp/Site:me@site.test?secret={KEY}&issuer=Site");
+        assert_eq!(
+            key_offer_for(&v, true, SITE, "287082", std::slice::from_ref(&link), None, 59),
+            KeyOffer::Add { id: me, key: link }
+        );
+        // A bare key names nobody, and two logins leave no one to pick.
+        assert_eq!(key_offer_for(&v, true, SITE, "287082", &[KEY.to_string()], None, 59), KeyOffer::Nothing);
+    }
+
+    #[test]
+    fn a_key_goes_to_the_login_just_used_when_the_qr_code_names_nobody() {
+        let (mut v, _) = vault_with("someone", "pw");
+        let used = save_new(&mut v, SITE, "other", "pw2", 1);
+        assert_eq!(
+            key_offer_for(&v, true, SITE, "287082", &[KEY.to_string()], Some(used), 59),
+            KeyOffer::Add { id: used, key: KEY.to_string() }
+        );
+        // Another site's login is never "the one just used" here.
+        let elsewhere = save_new(&mut v, "https://other.test", "x", "y", 1);
+        assert_eq!(
+            key_offer_for(&v, true, SITE, "287082", &[KEY.to_string()], Some(elsewhere), 59),
+            KeyOffer::Nothing
+        );
+    }
+
+    #[test]
+    fn a_key_another_login_holds_is_never_offered_again() {
+        let (mut v, a) = vault_with("someone", "pw");
+        add_key(&mut v, a, SITE, KEY, 1).unwrap();
+        let b = save_new(&mut v, SITE, "other", "pw2", 1);
+        // The same key, even written as a link, is still someone's.
+        let link = format!("otpauth://totp/Site?secret={KEY}");
+        for k in [KEY.to_string(), link] {
+            assert_eq!(key_offer_for(&v, true, SITE, "287082", &[k], Some(b), 59), KeyOffer::Nothing);
+        }
+    }
+
+    #[test]
+    fn a_key_is_added_never_replaced() {
+        let (mut v, id) = vault_with("me", "pw");
+        assert_eq!(add_key(&mut v, id, "https://other.test", KEY, 5), Err("no login here without a 2FA key"));
+        assert_eq!(add_key(&mut v, id, SITE, "not a key", 5), Err("not a 2FA key"));
+        add_key(&mut v, id, SITE, KEY, 5).unwrap();
+        assert_eq!(totp_of(&v, id), KEY);
+        let other = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+        assert!(add_key(&mut v, id, SITE, other, 6).is_err());
+        assert_eq!(totp_of(&v, id), KEY);
+        assert_eq!(key_offer_for(&v, true, SITE, "287082", &[KEY.to_string()], None, 59), KeyOffer::HasKey { id });
     }
 
     #[test]

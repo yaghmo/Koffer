@@ -336,6 +336,8 @@ export async function matches(origin) {
     never: !!data.never,
     // The user turned the on-page approval prompt off in the app.
     prompt: data.prompt !== false,
+    // The popup's personal-info card, unless turned off in the app.
+    personal: data.personal !== false,
   };
 }
 
@@ -368,6 +370,14 @@ export async function totpCode(id, origin) {
   return signedPost("/totp", { id, origin });
 }
 
+/**
+ * The profile's filled-in fields, for a form on this origin. Same approval,
+ * and same confirmation when that is on, as a password.
+ */
+export async function personal(origin) {
+  return signedPost("/personal", { origin });
+}
+
 /** What to offer after a login that looks like it worked. */
 export async function offer(origin, username, password, current) {
   return signedPost("/offer", { origin, username, password, current });
@@ -391,4 +401,19 @@ export async function seen(origin, username, password) {
 
 export async function never(origin) {
   return signedPost("/never", { origin });
+}
+
+/**
+ * What to offer after a 2FA setup page took a code. `keys` and `qr` are what
+ * the page showed, `last` the login last used on this site; the app answers
+ * `add` with the key that made `code` and the login it would go on, or
+ * `hasKey` when that login already has one.
+ */
+export async function keyOffer(origin, code, keys, qr, last) {
+  return signedPost("/key-offer", { origin, code, keys, qr, last: last || "" });
+}
+
+/** Put a 2FA key on a login that has none. */
+export async function saveKey(id, origin, key) {
+  return signedPost("/key-save", { id, origin, key });
 }

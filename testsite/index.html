@@ -13,6 +13,10 @@
   nav { display: flex; gap: 4px; flex-wrap: wrap; }
   nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
   nav a[aria-current="page"] { background: #e8edfb; color: var(--accent); }
+  /* Not a page: it wipes the fake accounts. Red and apart, so it is not
+     clicked on the way to another sign-in. */
+  nav a.danger { color: var(--bad); border: 1px solid var(--bad); margin-left: 12px; }
+  nav a.danger:hover { background: #fbe6e4; }
   main { max-width: 440px; margin: 40px auto; padding: 0 16px; }
   .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
@@ -30,6 +34,11 @@
   .msg.ok { background: #e3f3ea; color: var(--ok); }
   .msg.bad { background: #fbe6e4; color: var(--bad); }
   .hint { margin-top: 24px; font-size: 13px; color: var(--muted); }
+  .oauth { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; background: #fff; color: var(--ink); border: 1px solid var(--line); text-decoration: none; border-radius: 6px; padding: 10px; font-weight: 600; }
+  .oauth svg { width: 18px; height: 18px; }
+  .icons { display: flex; gap: 8px; margin-top: 10px; }
+  .icons button { margin-top: 0; background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  footer.site { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; display: flex; gap: 16px; }
   .hint code { background: #eef0f5; padding: 1px 5px; border-radius: 4px; }
   #log { max-width: 440px; margin: 0 auto 40px; padding: 0 16px; font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--muted); }
 </style>
@@ -57,12 +66,15 @@ const log = (t) => { const d = document.createElement("div"); d.textContent = ne
 const PAGES = {
   signin: ["Sign in", signin],
   signup: ["Sign up", signup],
+  register: ["Create account", register],
   twostep: ["Two-step", twostep],
   spa: ["No form (FR)", spa],
   phone: ["Phone", phone],
   change: ["Change password", change],
   otp: ["2FA code", otp],
   digits: ["2FA digits", digits],
+  setup: ["2FA setup", setup],
+  providers: ["Sign in with…", providers],
 };
 
 function el(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
@@ -113,6 +125,59 @@ function signup() {
   };
 }
 
+function register() {
+  const app = page("Create your account", "Every field a sign-up can ask for. Expect a Personal info card in the popup, and a strong-password bar on the password box.", `
+    <form id="f">
+    <div class="row"><div style="flex:1"><label for="fn">First name</label><input id="fn" name="first_name" autocomplete="given-name"></div>
+    <div style="flex:1"><label for="ln">Last name</label><input id="ln" name="last_name" autocomplete="family-name"></div></div>
+    <label for="e">Email</label><input id="e" name="email" type="email" autocomplete="email">
+    <label for="n">Phone</label>
+    <div class="row"><select id="d" name="country_code" aria-label="Country code"><option>+1</option><option>+33</option><option>+44</option><option>+49</option></select>
+    <input id="n" name="phone" type="tel" autocomplete="tel-national"></div>
+    <label for="b">Date of birth</label><input id="b" name="birthdate" type="date" autocomplete="bday">
+    <label for="a">Street address</label><input id="a" name="address" autocomplete="street-address">
+    <div class="row"><div style="flex:2"><label for="c">City</label><input id="c" name="city" autocomplete="address-level2"></div>
+    <div style="flex:1"><label for="z">Postal code</label><input id="z" name="zip" autocomplete="postal-code"></div></div>
+    <label for="co">Country</label><select id="co" name="country" autocomplete="country-name"><option value="">Choose…</option>
+      <option>France</option><option>Germany</option><option>United Kingdom</option><option>United States</option></select>
+    <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="new-password">
+    <label for="pc">Confirm password</label><input id="pc" name="confirm" type="password" autocomplete="new-password">
+    <button>Create account</button></form>`);
+  app.querySelector("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const v = (id) => app.querySelector(id).value.trim();
+    const email = v("#e"), p = app.querySelector("#p").value;
+    if (!email || !p) return fail(app, "Email and password are required.");
+    if (p !== app.querySelector("#pc").value) return fail(app, "The passwords do not match.");
+    const phone = v("#n") ? v("#d") + v("#n").replace(/\D/g, "") : "";
+    const a = db.load(); a[email] = { password: p, phone }; db.save(a);
+    log(`account created ${email} · ${v("#fn")} ${v("#ln")} · ${phone || "no phone"} · ${v("#b") || "no birth date"} · ${[v("#a"), v("#c"), v("#z"), v("#co")].filter(Boolean).join(", ") || "no address"}`);
+    done(app, "Account created for " + email + ". Its phone works on the Phone page.");
+  };
+}
+
+// The author's LinkedIn profile for the footer; the link is left out while empty.
+const LINKEDIN = "https://www.linkedin.com/in/belmir-yaghmoracen/";
+
+function providers() {
+  const app = page("Sign in to PM test site", "No password form: only sign-in providers, like many sites. Save a login for this site in the app with GitHub (or Google...) as its sign-in method, then click it in the popup: the page scrolls to that button and outlines it. Nothing is clicked for you.", `
+    <div style="height:520px;border:1px dashed var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;text-align:center;padding:16px">
+      Filler, so the buttons start below the fold.<br>The highlight scrolls them into view.</div>
+    <button class="oauth" type="button" data-p="Google"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-2.7-.4-3.9H24v7.1h12.1c-.2 1.8-1.6 4.5-4.5 6.3l6.9 5.3c4.1-3.8 6.6-9.4 6.6-14.8z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.3c-1.8 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41.1 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.5 28.5c-.5-1.4-.7-2.9-.7-4.5s.3-3.1.7-4.5l-7.1-5.5C2.9 17 2 20.4 2 24s.9 7 2.4 10z"/><path fill="#EA4335" d="M24 10.6c4.1 0 6.9 1.8 8.5 3.3l6.2-6C34.9 4.5 29.9 2 24 2 15.4 2 8.1 6.9 4.4 14l7.1 5.5c1.8-5.3 6.7-8.9 12.5-8.9z"/></svg>Continue with Google</button>
+    <button class="oauth" type="button" data-p="GitHub">Sign in with GitHub</button>
+    <a class="oauth" href="#providers" data-p="Microsoft">Log in with Microsoft</a>
+    <p class="lead" style="margin:18px 0 0">Or with</p>
+    <div class="icons"><button type="button" data-p="Apple">Apple</button><button type="button" data-p="Facebook">Facebook</button></div>
+    <footer class="site">Decoys, never outlined:
+      <a href="https://github.com/yaghmo" target="_blank" rel="noopener">Follow me on GitHub</a>
+      ${LINKEDIN ? `<a href="${LINKEDIN}" target="_blank" rel="noopener">Find me on LinkedIn</a>` : ""}</footer>`);
+  app.querySelectorAll("[data-p]").forEach((b) => (b.onclick = (e) => {
+    e.preventDefault();
+    log("clicked " + b.dataset.p);
+    done(app, `Off to ${b.dataset.p}... (not really, this is a test site).`);
+  }));
+}
+
 function twostep() {
   const app = page("Two-step sign in", "Email first, then the password on its own step.", `
     <form id="f"><label for="e">Email</label><input id="e" name="identifier" type="email" autocomplete="username"><button>Next</button></form>`);
@@ -148,13 +213,24 @@ function phone() {
     <div class="row"><select id="d" name="country_code" aria-label="Country code"><option>+1</option><option>+33</option><option>+44</option></select>
     <input id="n" name="phone" type="tel" autocomplete="tel-national"></div>
     <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password">
-    <button>Sign in</button></form>`);
+    <button>Sign in</button></form>
+    <p class="hint">Account: <code>${db.load()["test@example.com"]?.phone ?? "?"}</code> / <code>${db.load()["test@example.com"]?.password ?? "?"}</code>.
+    The vault login needs that number in its phone field.</p>`);
   app.querySelector("#f").onsubmit = (e) => {
     e.preventDefault();
     const full = app.querySelector("#d").value + app.querySelector("#n").value.replace(/\D/g, "");
     const a = Object.values(db.load()).find((x) => x.phone === full);
-    if (a && a.password === app.querySelector("#p").value) { log("phone ok"); done(app, "Signed in."); }
-    else fail(app, "Wrong number or password.");
+    log("phone submitted " + full);
+    if (!a) {
+      fail(app, `No account with ${full}. `);
+      const use = Object.assign(document.createElement("button"), {
+        type: "button", className: "link", textContent: "Make it test@example.com's number",
+        onclick: () => { const all = db.load(); all["test@example.com"].phone = full; db.save(all); log("phone set " + full); route(); },
+      });
+      app.querySelector(".msg.bad").append(use);
+    }
+    else if (a.password !== app.querySelector("#p").value) fail(app, "Wrong password.");
+    else { log("phone ok"); done(app, "Signed in."); }
   };
 }
 
@@ -186,16 +262,16 @@ function base32(s) {
   for (let i = 0; i + 8 <= bits.length; i += 8) out.push(parseInt(bits.slice(i, i + 8), 2));
   return new Uint8Array(out);
 }
-async function totp(step) {
-  const key = await crypto.subtle.importKey("raw", base32(KEY), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+async function totp(step, secret = KEY) {
+  const key = await crypto.subtle.importKey("raw", base32(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
   const msg = new ArrayBuffer(8); new DataView(msg).setUint32(4, step);
   const h = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg)), o = h[19] & 15;
   const n = ((h[o] & 127) << 24 | h[o + 1] << 16 | h[o + 2] << 8 | h[o + 3]) % 1e6;
   return String(n).padStart(6, "0");
 }
-async function codeOk(code) {
+async function codeOk(code, secret = KEY) {
   const step = Math.floor(Date.now() / 30000);
-  for (const s of [step - 1, step, step + 1]) if ((await totp(s)) === code) return true;
+  for (const s of [step - 1, step, step + 1]) if ((await totp(s, secret)) === code) return true;
   return false;
 }
 const setupHint = `<p class="hint">Save a login for this site in the app and put <code>${KEY}</code> in its 2FA key. The zip and promo boxes are decoys: the code must not land there.</p>`;
@@ -227,6 +303,35 @@ function digits() {
   };
 }
 
+// A different key from KEY, so a login that already holds KEY is not the
+// one this page is about. setup-qr.svg is this key's otpauth link. It names
+// no account, so the key goes to the login last used here.
+const SETUP_KEY = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+
+function setup() {
+  const app = page("Turn on two-factor authentication", "Scan the QR code with your authenticator app, then enter the code it shows. Expect an offer to save the key once the code is accepted.", `
+    <p style="text-align:center"><img src="setup-qr.svg" width="196" height="196" alt="QR code for your authenticator app"></p>
+    <button class="link" type="button" id="show">Can't scan it?</button>
+    <p id="key" hidden>Enter this key instead: <code>${SETUP_KEY.match(/.{4}/g).join(" ")}</code></p>
+    <form id="f"><label for="o">Code from the app</label><input id="o" name="code" inputmode="numeric" autocomplete="one-time-code">
+    <button>Verify and turn on</button></form>
+    <p class="hint">Test helper, standing in for the authenticator app: the code now is <code id="now">…</code>.
+    Sign in first with the account to protect; the key goes to it. A login that already has a 2FA key gets a note instead.</p>`);
+  app.querySelector("#show").onclick = () => (app.querySelector("#key").hidden = false);
+  const tick = async () => {
+    const now = app.querySelector("#now");
+    if (!now) return clearInterval(timer);
+    now.textContent = await totp(Math.floor(Date.now() / 30000), SETUP_KEY);
+  };
+  const timer = setInterval(tick, 1000);
+  tick();
+  app.querySelector("#f").onsubmit = async (e) => {
+    e.preventDefault();
+    if (await codeOk(app.querySelector("#o").value.trim(), SETUP_KEY)) { log("2FA turned on"); done(app, "Two-factor authentication is on."); }
+    else fail(app, "That code is not right.");
+  };
+}
+
 function route() {
   const id = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : "signin";
   document.getElementById("nav").replaceChildren(
@@ -236,7 +341,7 @@ function route() {
       return a;
     }),
     Object.assign(document.createElement("a"), {
-      href: "#", textContent: "Reset accounts",
+      href: "#", textContent: "Reset accounts", className: "danger",
       onclick: (e) => { e.preventDefault(); localStorage.removeItem("pm-test-accounts"); log("accounts reset"); route(); },
     }),
   );

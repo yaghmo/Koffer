@@ -17,8 +17,11 @@
     approve: "Save this login to Password Manager?",
     locked: "Unlock Password Manager to save this login.",
     site: "Use Password Manager on this site?",
+    key: "Save this 2FA key to Password Manager?",
+    generate: "Use a strong password?",
+    keyHas: "This login already has a 2FA key",
   };
-  var PRIMARY = { new: "Save", update: "Update", approve: "Save", locked: "Try again", site: "Approve this website" };
+  var PRIMARY = { new: "Save", update: "Update", approve: "Save", locked: "Try again", site: "Approve this website", key: "Save", generate: "Fill a strong password", keyHas: "OK" };
 
   // The app's own tokens (src/styles.css), so the bar reads as the app
   // speaking rather than the page.
@@ -94,7 +97,7 @@
       onChoice(e.submitter.value);
     });
     bar.appendChild(el("p", "title", TITLES[view.kind] || TITLES.new));
-    bar.appendChild(el("p", "who", view.username ? view.username + " on " + view.host : view.host));
+    bar.appendChild(el("p", "who", view.detail || (view.username ? view.username + " on " + view.host : view.host)));
     var row = el("div", "row");
     row.appendChild(button(PRIMARY[view.kind] || "Save", true, "save"));
     // "Never" waits behind the arrow: next to Save it is too easy to hit by
@@ -111,15 +114,21 @@
     split.appendChild(later);
     split.appendChild(caret);
     row.appendChild(split);
-    var menu = el("div", "menu");
-    menu.hidden = true;
-    menu.appendChild(button("Never for this site", false, "never"));
-    caret.addEventListener("click", function () {
-      menu.hidden = !menu.hidden;
-      caret.setAttribute("aria-expanded", String(!menu.hidden));
-    });
     bar.appendChild(row);
-    bar.appendChild(menu);
+    // A view with nothing to silence for good has no "Never".
+    if (view.never === false) {
+      caret.remove();
+      later.className = "";
+    } else {
+      var menu = el("div", "menu");
+      menu.hidden = true;
+      menu.appendChild(button("Never for this site", false, "never"));
+      caret.addEventListener("click", function () {
+        menu.hidden = !menu.hidden;
+        caret.setAttribute("aria-expanded", String(!menu.hidden));
+      });
+      bar.appendChild(menu);
+    }
     root.appendChild(style);
     root.appendChild(bar);
     (document.body || document.documentElement).appendChild(host);
@@ -151,5 +160,91 @@
     }
   }
 
-  window.PMBar = { show: show, say: say, hide: hide };
+  /**
+   * Point at one element on the page: an outline over it and a note beside
+   * it, in a closed shadow root that lets every click through to the page.
+   * It stays until the next click anywhere, Escape, or the element leaving
+   * the page -- a single-page app swapping its view keeps this document, so
+   * a navigation alone would leave the ring floating over something else.
+   */
+  var spot = null;
+
+  function unspot() {
+    if (!spot) return;
+    spot.stop();
+    spot = null;
+  }
+
+  function spotlight(target, note) {
+    unspot();
+    var holder = document.createElement("div");
+    holder.setAttribute("data-pm-spot", "");
+    var sroot = holder.attachShadow({ mode: "closed" });
+    var style = document.createElement("style");
+    style.textContent =
+      ":host{all:initial}" +
+      ".ring{position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #c0c1ff;border-radius:10px;" +
+      "box-shadow:0 0 0 4px rgba(192,193,255,.25),0 0 24px rgba(192,193,255,.45);animation:pulse 1.4s ease-in-out infinite}" +
+      ".note{position:fixed;z-index:2147483647;pointer-events:none;max-width:280px;padding:7px 10px;border-radius:8px;" +
+      "font:12px/1.4 system-ui,sans-serif;color:#e1e2ec;background:#1d1f27;border:1px solid #464554;box-shadow:0 8px 24px rgba(5,7,12,.5)}" +
+      "@keyframes pulse{50%{box-shadow:0 0 0 7px rgba(192,193,255,.12),0 0 32px rgba(192,193,255,.3)}}" +
+      "@media (prefers-reduced-motion:reduce){.ring{animation:none}}";
+    var ring = el("div", "ring");
+    var label = el("div", "note", note);
+    sroot.appendChild(style);
+    sroot.appendChild(ring);
+    sroot.appendChild(label);
+    (document.body || document.documentElement).appendChild(holder);
+
+    function place() {
+      var r = target.getBoundingClientRect();
+      ring.style.left = r.left - 5 + "px";
+      ring.style.top = r.top - 5 + "px";
+      ring.style.width = r.width + 10 + "px";
+      ring.style.height = r.height + 10 + "px";
+      label.style.left = Math.max(8, r.left) + "px";
+      // Under the button, or over it when it sits at the bottom.
+      var below = r.bottom + 10;
+      label.style.top = (below + 40 < window.innerHeight ? below : Math.max(8, r.top - 44)) + "px";
+    }
+    function onKey(e) {
+      if (e.key === "Escape") unspot();
+    }
+    // Gone from the page, or hidden: nothing left to point at.
+    var watch = new MutationObserver(function () {
+      if (!target.isConnected || target.getClientRects().length === 0) unspot();
+      else place();
+    });
+    watch.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    window.addEventListener("hashchange", unspot);
+    window.addEventListener("popstate", unspot);
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("pointerdown", unspot, true);
+    spot = {
+      stop: function () {
+        watch.disconnect();
+        window.removeEventListener("scroll", place, true);
+        window.removeEventListener("resize", place);
+        window.removeEventListener("hashchange", unspot);
+        window.removeEventListener("popstate", unspot);
+        document.removeEventListener("keydown", onKey, true);
+        document.removeEventListener("pointerdown", unspot, true);
+        holder.remove();
+      },
+    };
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    place();
+  }
+
+  window.PMBar = {
+    spotlight: spotlight,
+    show: show,
+    say: say,
+    hide: hide,
+    isOpen: function () {
+      return !!host;
+    },
+  };
 })();

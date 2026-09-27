@@ -18,6 +18,13 @@ describe("formatPhoneLocal", () => {
     expect(formatPhoneLocal("06", "+33")).toBe("6");
   });
 
+  it("stops at the country's longest number", () => {
+    expect(formatPhoneLocal("61234567899999", "+33")).toBe("6-12-34-56-78");
+    expect(formatPhoneLocal("555123456789", "+1")).toBe("555-123-4567");
+    // No known length: E.164's 15 digits, dial code included.
+    expect(formatPhoneLocal("1234567890123456", "+49").replace(/\D/g, "")).toHaveLength(13);
+  });
+
   it("keeps the trunk zero for Italy", () => {
     expect(formatPhoneLocal("0612345678", "+39")).toBe("061-234-5678");
   });

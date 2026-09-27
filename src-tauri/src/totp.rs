@@ -71,16 +71,39 @@ pub fn qr_from_rgba(width: usize, height: usize, rgba: &[u8]) -> Result<String, 
     if rgba.len() < width * height * 4 {
         return Err("The copied image could not be read.".into());
     }
+    link_in(width, height, |x, y| {
+        let i = (y * width + x) * 4;
+        // Luma, near enough; the QR only needs dark told from light.
+        ((rgba[i] as u16 * 3 + rgba[i + 1] as u16 * 6 + rgba[i + 2] as u16) / 10) as u8
+    })
+}
+
+/// Largest side of a bitmap the browser may send: a setup page's QR code
+/// read at four pixels a module or so, and no more.
+const MAX_BITS_SIDE: usize = 256;
+
+/// The same, from a black-and-white bitmap, one bit a pixel with each row
+/// packed high bit first. It is what the extension reads off a 2FA setup
+/// page: a QR code small enough to cross the bridge in one request.
+pub fn qr_from_bits(width: usize, height: usize, bits: &[u8]) -> Option<String> {
+    let row = width.div_ceil(8);
+    if width == 0 || height == 0 || width > MAX_BITS_SIDE || height > MAX_BITS_SIDE || bits.len() < row * height {
+        return None;
+    }
+    link_in(width, height, |x, y| if bits[y * row + x / 8] >> (7 - x % 8) & 1 == 1 { 0 } else { 255 }).ok()
+}
+
+/// The 2FA link in a greyscale picture, dark modules on light or the
+/// reverse.
+fn link_in(width: usize, height: usize, luma: impl Fn(usize, usize) -> u8) -> Result<String, String> {
     // Light-on-dark first fails, then reads: a dark-themed page draws its QR
     // code inverted, and the decoder only looks for dark modules.
     let text = [false, true]
         .into_iter()
         .find_map(|invert| {
             let mut img = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
-                let i = (y * width + x) * 4;
-                // Luma, near enough; the QR only needs dark told from light.
-                let luma = ((rgba[i] as u16 * 3 + rgba[i + 1] as u16 * 6 + rgba[i + 2] as u16) / 10) as u8;
-                if invert { 255 - luma } else { luma }
+                let l = luma(x, y);
+                if invert { 255 - l } else { l }
             });
             img.detect_grids().iter().find_map(|g| g.decode().ok().map(|(_, text)| text))
         })
@@ -90,6 +113,17 @@ pub fn qr_from_rgba(width: usize, height: usize, rgba: &[u8]) -> Result<String, 
     }
     parse(&text)?;
     Ok(text)
+}
+
+/// Did this key make `code` in the last two minutes or so? A setup page
+/// asks for the first code before it turns 2FA on; a key that made the
+/// code the user typed there is the key the site issued. Two minutes is
+/// how long the extension holds the offer.
+pub fn made_code(totp: &TOTP, code: &str, unix: u64) -> bool {
+    (-5i64..=1).any(|k| {
+        let t = unix as i64 + k * totp.step as i64;
+        t >= 0 && totp.generate(t as u64) == code
+    })
 }
 
 /// The key drawn back as a QR code, so the editor can show that it was read.
@@ -139,6 +173,44 @@ mod tests {
     fn reads_a_key_the_way_sites_print_it() {
         let grouped = "gezd gnbv gy3t qojq gezd gnbv gy3t qojq";
         assert_eq!(code_at(&parse(grouped).unwrap(), 59).code, "287082");
+    }
+
+    #[test]
+    fn a_key_made_a_recent_code_and_no_other() {
+        let t = parse(RFC_KEY).unwrap();
+        // 287082 is the RFC's code for t=59, one step old at t=89.
+        assert!(made_code(&t, "287082", 59));
+        assert!(made_code(&t, "287082", 59 + 120));
+        assert!(!made_code(&t, "287082", 59 + 200));
+        assert!(!made_code(&t, "000000", 59));
+    }
+
+    #[test]
+    fn reads_a_qr_code_from_packed_bits() {
+        let link = format!("otpauth://totp/Site:me@example.com?secret={RFC_KEY}&issuer=Site");
+        let code = qrcode::QrCode::new(link.as_bytes()).unwrap();
+        let modules = code.width();
+        // Four pixels a module, with a four-module quiet zone.
+        let (scale, quiet) = (4, 4);
+        let side = (modules + 2 * quiet) * scale;
+        let row = side.div_ceil(8);
+        let mut bits = vec![0u8; row * side];
+        for y in 0..side {
+            for x in 0..side {
+                let (mx, my) = ((x / scale) as isize - quiet as isize, (y / scale) as isize - quiet as isize);
+                let dark = mx >= 0
+                    && my >= 0
+                    && (mx as usize) < modules
+                    && (my as usize) < modules
+                    && code[(mx as usize, my as usize)] == qrcode::Color::Dark;
+                if dark {
+                    bits[y * row + x / 8] |= 0x80 >> (x % 8);
+                }
+            }
+        }
+        assert_eq!(qr_from_bits(side, side, &bits), Some(link));
+        assert_eq!(qr_from_bits(side, side, &bits[..10]), None);
+        assert_eq!(qr_from_bits(side, side, &vec![0; row * side]), None);
     }
 
     #[test]

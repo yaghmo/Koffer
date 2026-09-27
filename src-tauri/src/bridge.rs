@@ -120,8 +120,9 @@ const CODE_TTL: Duration = Duration::from_secs(180);
 /// Wrong codes allowed before the code is burnt, so a local process cannot
 /// sit and guess. Three, because the user is typing it by hand.
 const CODE_TRIES: u8 = 3;
-/// Nothing this endpoint accepts is large.
-const MAX_BODY: usize = 8 * 1024;
+/// Nothing this endpoint accepts is large. The largest is `/key-offer`: two
+/// QR codes read off a 2FA setup page, one bit a pixel (`qr_from_bits`).
+const MAX_BODY: usize = 32 * 1024;
 /// Connections served at once. One browser needs one; the rest are slack.
 /// Past this the socket is closed rather than queued, because a queue is what
 /// an attacker would be trying to fill.
@@ -423,6 +424,22 @@ pub(crate) struct Match {
     pub fillable: bool,
     /// Whether a 2FA code would be granted here, on the same terms.
     pub totp: bool,
+    /// The item's logo, when the app has one stored as an image data URL.
+    /// Never a web address: the popup would fetch it, telling that site the
+    /// user holds an account there.
+    pub favicon: String,
+}
+
+/// Largest logo sent to the popup. Stored logos are a few KB; anything far
+/// past that is not worth a slower popup.
+const MAX_FAVICON: usize = 32 * 1024;
+
+fn popup_logo(favicon: &str) -> String {
+    if favicon.starts_with("data:image/") && favicon.len() <= MAX_FAVICON {
+        favicon.to_string()
+    } else {
+        String::new()
+    }
 }
 
 /// Does this login sign in through a provider rather than with a password
@@ -566,6 +583,7 @@ pub(crate) fn matches_for(vault: &Vault, origin: &str) -> Vec<Match> {
                     method: fields.method.clone(),
                     fillable: refuse_fill(fields, origin).is_none(),
                     totp: refuse_code(fields, origin).is_none(),
+                    favicon: popup_logo(&base.favicon),
                 })
             }
             _ => None,
@@ -976,6 +994,9 @@ fn route(app: &AppHandle, inc: &Incoming) -> Reply {
         "/update" => update(app, inc),
         "/seen" => seen(app, inc),
         "/never" => never(app, inc),
+        "/key-offer" => key_offer(app, inc),
+        "/key-save" => key_save(app, inc),
+        "/personal" => personal(app, inc),
         _ => fail(404, "no such endpoint"),
     }
 }
@@ -1213,7 +1234,8 @@ fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
         }
     }
     crate::log_info!("bridge", "matches n={}", items.len());
-    reply(serde_json::json!({ "items": items }), due)
+    // Whether the popup may show its personal-info card here.
+    reply(serde_json::json!({ "items": items, "personal": cfg.browser_personal }), due)
 }
 
 /// Ask the app to put the approval dialog up, and nothing else.
@@ -1301,7 +1323,9 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
             if crate::capture::clear_last_seen(session.vault_mut(), id) {
                 let _ = persist(app, session);
             }
-            serde_json::json!({ "offer": "same" })
+            // The id says which login just signed in, so the site's 2FA step
+            // can put that login's code first. Past approval, like the rest.
+            serde_json::json!({ "offer": "same", "id": id.to_string() })
         }
     };
     crate::log_info!("bridge", "offer answered {}", body["offer"]);
@@ -1505,6 +1529,109 @@ fn never(app: &AppHandle, inc: &Incoming) -> Reply {
     reply(serde_json::json!({}), due)
 }
 
+/// QR codes read from one page, at most. A setup page shows one.
+const MAX_PAGE_QR: usize = 2;
+/// Printed keys tried from one page, at most.
+const MAX_PAGE_KEYS: usize = 8;
+
+/// The keys a 2FA setup page showed: its QR codes, read here, then anything
+/// printed that looks like a key.
+fn page_keys(body: &serde_json::Value) -> Vec<String> {
+    use base64::Engine;
+    let list = |name: &str| body[name].as_array().cloned().unwrap_or_default();
+    let mut keys: Vec<String> = list("qr")
+        .iter()
+        .take(MAX_PAGE_QR)
+        .filter_map(|q| {
+            let bits = base64::engine::general_purpose::STANDARD.decode(q["bits"].as_str()?).ok()?;
+            crate::totp::qr_from_bits(q["w"].as_u64()? as usize, q["h"].as_u64()? as usize, &bits)
+        })
+        .collect();
+    keys.extend(list("keys").iter().take(MAX_PAGE_KEYS).filter_map(|k| k.as_str().map(str::to_string)));
+    keys
+}
+
+/// What to offer after a 2FA setup page took its first code. The key goes
+/// back to the extension, which read it off the page in the first place.
+fn key_offer(app: &AppHandle, inc: &Incoming) -> Reply {
+    let totp_on = prefs(app).browser_totp;
+    let state = app.state::<AppState>();
+    let session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    let due = rekey_due(&session);
+    if !totp_on {
+        return reply(serde_json::json!({ "offer": "off" }), due);
+    }
+    let origin = field(&inc.body, "origin");
+    let Some(host) = host_of(&origin) else {
+        return fail(400, "not a web origin");
+    };
+    let offer = crate::capture::key_offer_for(
+        session.vault(),
+        approved(session.client(), &host),
+        &origin,
+        &field(&inc.body, "code"),
+        &page_keys(&inc.body),
+        Uuid::parse_str(&field(&inc.body, "last")).ok(),
+        unix_now(),
+    );
+    use crate::capture::KeyOffer;
+    let body = match offer {
+        KeyOffer::Never => serde_json::json!({ "offer": "never" }),
+        KeyOffer::NeedsApproval => serde_json::json!({ "offer": "needsApproval", "host": host }),
+        KeyOffer::Nothing => serde_json::json!({ "offer": "none" }),
+        KeyOffer::HasKey { id } => serde_json::json!({ "offer": "hasKey", "id": id.to_string() }),
+        KeyOffer::Add { id, key } => {
+            let (title, username) = match session.vault().items.iter().find(|i| i.id() == id) {
+                Some(Item::Login { base, fields }) => (base.title.clone(), fields.username.clone()),
+                _ => (String::new(), String::new()),
+            };
+            serde_json::json!({
+                "offer": "add", "id": id.to_string(), "key": key,
+                "title": title, "username": username, "host": host,
+            })
+        }
+    };
+    crate::log_info!("bridge", "key offer answered {}", body["offer"]);
+    reply(body, due)
+}
+
+/// "Save" on a 2FA offer.
+fn key_save(app: &AppHandle, inc: &Incoming) -> Reply {
+    let totp_on = prefs(app).browser_totp;
+    let state = app.state::<AppState>();
+    let mut session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    if !totp_on {
+        return fail(403, TOTP_OFF);
+    }
+    let due = rekey_due(&session);
+    let Ok(id) = Uuid::parse_str(&field(&inc.body, "id")) else {
+        return fail(400, "not an item id");
+    };
+    let origin = field(&inc.body, "origin");
+    let Some(host) = host_of(&origin) else {
+        return fail(400, "not a web origin");
+    };
+    if !approved(session.client(), &host) {
+        return needs_approval(&host);
+    }
+    let now = chrono::Utc::now().timestamp();
+    if let Err(e) = crate::capture::add_key(session.vault_mut(), id, &origin, &field(&inc.body, "key"), now) {
+        return fail(409, e);
+    }
+    if let Err(e) = persist(app, session) {
+        crate::log_warn!("bridge", "2FA key could not be written: {e}");
+        return fail(500, "the 2FA key could not be saved");
+    }
+    crate::log_info!("bridge", "2FA key saved id={id}");
+    reply(serde_json::json!({ "saved": true }), due)
+}
+
 /// What the gate below decided.
 enum Gate {
     /// Cleared: this item, for this page origin.
@@ -1600,6 +1727,54 @@ fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
             fail(403, e)
         }
     }
+}
+
+/// The personal-info fields that are filled in, for a form on an approved
+/// site: a sign-up, a checkout, a job application. Behind the same approval
+/// as a password and, with "confirm every fill" on, the same click in the
+/// app. The extension writes only the ones the page has a box for.
+fn personal(app: &AppHandle, inc: &Incoming) -> Reply {
+    let cfg = prefs(app);
+    let confirm = cfg.browser_confirm_fills;
+    let state = app.state::<AppState>();
+    let session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
+    if !cfg.browser_personal {
+        return fail(403, "personal info in the browser is turned off in Settings");
+    }
+    let due = rekey_due(&session);
+    let page = field(&inc.body, "origin");
+    let Some(host) = host_of(&page) else {
+        return fail(400, "not a web origin");
+    };
+    if !approved(session.client(), &host) {
+        let (label, origin) = (session.client().label.clone(), session.client().origin.clone());
+        let count = matches_for(session.vault(), &page).len();
+        drop(session);
+        ask_approval(app, &label, &origin, &host, count);
+        return needs_approval(&host);
+    }
+    // The profile is not an item; the nil id stands for it in a grant.
+    if confirm {
+        if let Some(mut request) = unconfirmed(app, &session, Uuid::nil(), &page, "personal info") {
+            request["title"] = "your profile".into();
+            drop(session);
+            return ask_confirm(app, request);
+        }
+    }
+    let mut body = serde_json::to_value(&session.vault().personal).unwrap_or_default();
+    drop(session);
+    if let Some(map) = body.as_object_mut() {
+        map.retain(|_, v| v.as_str().is_some_and(|s| !s.trim().is_empty()));
+    }
+    after_handout(app, &state);
+    crate::log_info!("bridge", "handed out personal info");
+    if due {
+        body["rekey"] = serde_json::Value::Bool(true);
+    }
+    json_raw(200, &Zeroizing::new(body.to_string()))
 }
 
 /// Put a value on the clipboard **without letting the extension see it**.
@@ -1748,6 +1923,14 @@ mod tests {
                 password_from_browser: false,
             },
         }
+    }
+
+    #[test]
+    fn the_popup_gets_a_stored_logo_and_never_an_address() {
+        assert_eq!(popup_logo("data:image/png;base64,AAAA"), "data:image/png;base64,AAAA");
+        assert_eq!(popup_logo("https://site.test/favicon.ico"), "");
+        assert_eq!(popup_logo("data:text/html,<script>"), "");
+        assert_eq!(popup_logo(&format!("data:image/png;base64,{}", "A".repeat(MAX_FAVICON))), "");
     }
 
     #[test]

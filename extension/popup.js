@@ -18,8 +18,11 @@ import {
   credentials,
   copy,
   totpCode,
+  personal,
   whenAllowed,
 } from "./vault.js";
+import { lastLoginKey } from "./capture.js";
+import { mark } from "./marks.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
 const ext = globalThis.browser ?? globalThis.chrome;
@@ -55,8 +58,9 @@ function renderPage(state) {
     return;
   }
   const head = document.createElement("div");
-  head.className = state.login ? "muted" : "dim";
-  head.textContent = state.login ? "Login form detected on" : "No login form on";
+  const found = state.login || state.codeBox;
+  head.className = found ? "muted" : "dim";
+  head.textContent = state.login ? "Login form detected on" : state.codeBox ? "2FA code box on" : "No login form on";
   const origin = document.createElement("div");
   origin.className = "origin";
   origin.textContent = state.origin;
@@ -207,26 +211,91 @@ function providerLabel(method) {
  * On the provider's own sign-in page the same item becomes fillable, and
  * the app says so with `fillable`; this is only the other case.
  */
-function renderProviderHint(item) {
-  const row = document.createElement("div");
-  row.className = "hint";
+/**
+ * The login's logo: the one the app stored, else its initial. A login that
+ * signs in through Google, GitHub... wears that provider's mark as a small
+ * badge on the corner, so "which way did I sign in here" is visible before
+ * reading anything.
+ */
+function logo(item) {
+  const box = document.createElement("span");
+  box.className = "logo";
+  if (item.favicon && item.favicon.startsWith("data:image/")) {
+    const img = document.createElement("img");
+    img.src = item.favicon;
+    img.alt = "";
+    box.append(img);
+  } else {
+    box.classList.add("letter");
+    box.textContent = (item.title || "?").charAt(0).toUpperCase();
+  }
+  const provider = item.method && item.method !== "credentials" ? mark(item.method) : null;
+  if (provider) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.title = `Signs in with ${providerLabel(item.method)}`;
+    badge.append(provider);
+    box.append(badge);
+  }
+  return box;
+}
+
+/** Logo on the left, title and a line under it on the right. */
+function accountFace(el, item, subText) {
+  const text = document.createElement("span");
+  text.className = "text";
   const title = document.createElement("span");
   title.className = "title";
   title.textContent = item.title;
   const sub = document.createElement("span");
   sub.className = "sub";
-  sub.textContent =
-    item.method && item.method !== "credentials"
-      ? `Signs in with ${providerLabel(item.method)}`
-      : "No password saved";
-  row.append(title, sub);
+  sub.textContent = subText;
+  text.append(title, sub);
+  el.append(logo(item), text);
+  return text;
+}
+
+function renderProviderHint(item, tabId) {
+  const provider = item.method && item.method !== "credentials" && item.method !== "other";
+  // Clickable when there is a provider button to point at; the click that
+  // signs in stays the user's, on the page.
+  const row = document.createElement(provider ? "button" : "div");
+  row.className = "hint";
+  const text = accountFace(
+    row,
+    item,
+    item.method && item.method !== "credentials" ? `Signs in with ${providerLabel(item.method)}` : "No password saved"
+  );
   if (item.username) {
     const who = document.createElement("span");
     who.className = "who";
     who.textContent = item.username;
-    row.append(who);
+    text.append(who);
+  }
+  if (provider) {
+    row.type = "button";
+    row.title = `Show the ${providerLabel(item.method)} button on this page`;
+    row.addEventListener("click", () => highlightProvider(item, tabId));
   }
   return row;
+}
+
+/** A login that signs in through Google, GitHub... rather than here. */
+function signsInElsewhere(item) {
+  return !item.fillable && item.method !== "credentials" && item.method !== "other";
+}
+
+/** Point at the page's "Sign in with ..." button for this login. */
+async function highlightProvider(item, tabId) {
+  stopWatching();
+  const name = providerLabel(item.method);
+  const note = `You sign in here with ${name}` + (item.username ? ` as ${item.username}` : "") + ".";
+  const out = await ext.tabs.sendMessage(tabId, { type: "highlight-provider", method: item.method, note }).catch(() => null);
+  if (out && out.found) {
+    window.close();
+    return;
+  }
+  text(vaultEl, `No "${name}" button on this page. Look for "Sign in with ${name}", or open the site's login page first.`, "muted");
 }
 
 /**
@@ -265,104 +334,176 @@ function renderApproval(result, origin) {
   vaultEl.replaceChildren(stack(head, note, go));
 }
 
-function renderItems(result, tabId, origin) {
+function renderItems(result, tabId, origin, withCard) {
   if (result.needsApproval) {
     renderApproval(result, origin);
     return;
   }
   const items = result.items;
-  if (items.length === 0) {
+  if (items.length === 0 && !withCard) {
     text(vaultEl, `No saved login for ${origin}.`);
     return;
   }
   const list = document.createElement("ul");
+  if (withCard) list.append(personalCard(tabId, origin));
   for (const item of items) {
     const li = document.createElement("li");
     // The app decides what is fillable, not this file: a button the next
     // call would refuse is worse than no button.
     if (!item.fillable) {
-      const hint = renderProviderHint(item);
-      // A provider login has no password here, but the site may still ask
-      // for its own 2FA code after the provider hands it back.
-      if (item.totp) {
-        const row = document.createElement("div");
-        row.className = "pair";
-        row.append(hint, codeButton(item, tabId, origin));
-        li.append(row);
-      } else {
-        li.append(hint);
-      }
+      li.append(renderProviderHint(item, tabId));
       list.append(li);
       continue;
     }
     const button = document.createElement("button");
     button.className = "item";
     button.type = "button";
-    const title = document.createElement("span");
-    title.className = "title";
-    title.textContent = item.title;
-    const sub = document.createElement("span");
-    sub.className = "sub";
-    sub.textContent = item.username || item.phone || "no username saved";
-    button.append(title, sub);
+    accountFace(button, item, item.username || item.phone || "no username saved");
     button.addEventListener("click", () => fill(button, item, tabId, origin));
-
-    // The password goes to the clipboard through the app, never through
-    // here: the popup asks, the app copies and clears it a minute later, and
-    // the reply says only that it happened. For the boxes the filler cannot
-    // name — a PIN, a CVV, a second form on the same page.
-    const copyBtn = document.createElement("button");
-    copyBtn.className = "copy";
-    copyBtn.type = "button";
-    copyBtn.textContent = "Copy password";
-    copyBtn.title = "Put the password on the clipboard — the app clears it after a minute";
-    copyBtn.addEventListener("click", () => copyPassword(copyBtn, item, origin));
-
-    const row = document.createElement("div");
-    row.className = "pair";
-    row.append(button, copyBtn);
-    if (item.totp) row.append(codeButton(item, tabId, origin));
-    li.append(row);
+    // One button per account: the fill already puts each value in its own
+    // box, and a login's 2FA code is offered on the page that asks for it.
+    li.append(button);
     list.append(li);
   }
   const caption = document.createElement("div");
   caption.className = "caption";
   caption.textContent =
-    "Click an account to fill it. Copy password puts it on the clipboard for a minute instead — for boxes the filler cannot reach." +
-    (items.some((i) => i.totp) ? " 2FA code types the current code into the page's code box." : "");
+    items.length === 0
+      ? "Fills each box the page has from your profile."
+      : items.every(signsInElsewhere)
+        ? "Click one to find its sign-in button on the page."
+        : "Click an account to fill it.";
   vaultEl.replaceChildren(list, caption);
 }
 
-async function copyPassword(button, item, origin) {
+/** Pages with this many kinds of personal field get the profile card. */
+const PERSONAL_MIN = 2;
+
+/**
+ * One button that fills the page from the profile in the app: name, email,
+ * phone, address and the rest, each into its own box. Values the page has no
+ * box for go nowhere.
+ */
+function personalCard(tabId, origin) {
+  // Drawn as an ID card, not an account row: it fills who you are, not a
+  // login, and should never be mistaken for one. It shows no profile values
+  // until clicked -- those come from the app only then.
+  const button = document.createElement("button");
+  button.className = "idcard";
+  button.type = "button";
+  const head = document.createElement("span");
+  head.className = "id-head";
+  head.append(Object.assign(document.createElement("span"), { textContent: "Identity" }));
+  head.append(Object.assign(document.createElement("span"), { className: "id-chip", textContent: "ID" }));
+  const body = document.createElement("span");
+  body.className = "id-body";
+  const photo = document.createElement("span");
+  photo.className = "id-photo";
+  photo.append(mark("person"));
+  const text = document.createElement("span");
+  text.className = "text";
+  text.append(Object.assign(document.createElement("span"), { className: "title", textContent: "Personal info" }));
+  text.append(Object.assign(document.createElement("span"), { className: "sub", textContent: "Name, email, phone, address" }));
+  body.append(photo, text);
+  const strip = Object.assign(document.createElement("span"), { className: "id-strip", textContent: "FILL‹‹FORM‹‹FROM‹‹PROFILE‹‹‹‹" });
+  button.append(head, body, strip);
+  button.addEventListener("click", () => fillPersonal(button, tabId, origin));
+  const li = document.createElement("li");
+  li.append(button);
+  return li;
+}
+
+async function fillPersonal(button, tabId, origin) {
   stopWatching();
   button.disabled = true;
-  const was = button.textContent;
   try {
-    const { seconds } = await whenAllowed(() => copy(item.id, origin, "password"), waitForApp);
-    button.textContent = `Copied · ${seconds}s`;
+    const data = await whenAllowed(() => personal(origin), waitForApp);
+    delete data.rekey;
+    if (Object.keys(data).length === 0) {
+      text(vaultEl, "Your profile is empty. Fill it in under Personal info in the app.");
+      return;
+    }
+    const out = await ext.tabs.sendMessage(tabId, { type: "fill", data, origin });
+    if (out && out.wrongOrigin) {
+      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
+      return;
+    }
+    if (!out || out.filled.length === 0) {
+      text(vaultEl, "Nothing on this page matched your profile.");
+      return;
+    }
+    window.close();
   } catch (e) {
-    text(vaultEl, `Could not copy: ${describe(e)}`);
+    text(vaultEl, `Could not fill: ${describe(e)}`);
+  }
+}
+
+/** The login last used on this site, if the extension saw it happen. */
+async function lastLogin(origin) {
+  try {
+    const key = lastLoginKey(origin);
+    const r = (await ext.storage.session.get(key))[key];
+    return r ? r.id : "";
+  } catch {
+    return "";
+  }
+}
+
+async function rememberLogin(origin, id) {
+  try {
+    await ext.storage.session.set({ [lastLoginKey(origin)]: { id, at: Date.now() } });
+  } catch {
+    // Only the ordering of a later 2FA step is lost.
+  }
+}
+
+/**
+ * A page asking for a 2FA code and nothing else: the logins that have a key,
+ * the one just used on this site first. Their passwords have nowhere to go.
+ */
+function renderCodes(result, tabId, origin, lastId, showAll = false) {
+  const all = result.items.filter((i) => i.totp);
+  if (all.length === 0) {
+    text(vaultEl, `No login for ${origin} has a 2FA key saved.`);
     return;
   }
-  button.disabled = false;
-  setTimeout(() => {
-    button.textContent = was;
-  }, 1500);
+  // The account just signed in with is the one this code step is for; the
+  // rest wait behind a link, so two codes are never side by side to mix up.
+  const last = all.find((i) => i.id === lastId);
+  const items = last && !showAll ? [last] : all.sort((a, b) => (b.id === lastId) - (a.id === lastId));
+  const list = document.createElement("ul");
+  for (const item of items) {
+    const button = document.createElement("button");
+    button.className = "item";
+    button.type = "button";
+    accountFace(button, item, (item.username || item.phone || "no username saved") + (item.id === lastId ? " · just signed in" : ""));
+    button.addEventListener("click", () => fillCode(button, item, tabId, origin));
+    const li = document.createElement("li");
+    li.append(button);
+    list.append(li);
+  }
+  const caption = document.createElement("div");
+  caption.className = "caption";
+  caption.textContent = "Click an account to type its current 2FA code into the page.";
+  const others = all.length - items.length;
+  if (others > 0) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "more";
+    more.textContent = others === 1 ? "Another account…" : `${others} other accounts…`;
+    more.addEventListener("click", () => {
+      stopWatching();
+      renderCodes(result, tabId, origin, lastId, true);
+    });
+    vaultEl.replaceChildren(list, more, caption);
+    return;
+  }
+  vaultEl.replaceChildren(list, caption);
 }
 
 /** "Confirm every fill" is on: the answer is in the app, not here. */
 function waitForApp() {
   text(vaultEl, "Allow it in Password Manager. This fills as soon as you do.", "muted");
-}
-
-function codeButton(item, tabId, origin) {
-  const b = document.createElement("button");
-  b.className = "copy";
-  b.type = "button";
-  b.textContent = "2FA code";
-  b.title = "Type the current 2FA code into the page, or copy it if the page has no code box";
-  b.addEventListener("click", () => fillCode(b, item, tabId, origin));
-  return b;
 }
 
 /**
@@ -381,6 +522,7 @@ async function fillCode(button, item, tabId, origin) {
       return;
     }
     if (out && out.filled) {
+      await rememberLogin(origin, item.id);
       window.close();
       return;
     }
@@ -440,6 +582,7 @@ async function fill(button, item, tabId, origin) {
     // here anyway: a controlled input re-renders from its old value before
     // its handler runs, so an immediate read says "empty" on a field that
     // is about to settle correctly.
+    await rememberLogin(origin, item.id);
     window.close();
   } catch (e) {
     text(vaultEl, `Could not fill: ${describe(e)}`);
@@ -497,13 +640,28 @@ async function tick(tab) {
       if (result.needsApproval) {
         key = "approve:" + state.origin;
         draw = () => renderApproval(result, state.origin);
+      } else if (!state.login && state.codeBox) {
+        const lastId = await lastLogin(state.origin);
+        key = "codes:" + state.origin + ":" + lastId + ":" + result.items.filter((i) => i.totp).map((i) => i.id).join(",");
+        draw = () => renderCodes(result, tab.id, state.origin, lastId);
+      } else if (!state.login && state.personal >= PERSONAL_MIN && result.personal) {
+        // A sign-up or any other form asking who you are: the profile card.
+        key = "personal:" + state.origin;
+        draw = () => renderItems({ items: [] }, tab.id, state.origin, true);
+      } else if (!state.login && result.items.some(signsInElsewhere)) {
+        // A page of "Sign in with ..." buttons and no form: the logins that
+        // sign in through one, so the popup can point at its button.
+        const providers = result.items.filter(signsInElsewhere);
+        key = "providers:" + state.origin + ":" + providers.map((i) => i.id).join(",");
+        draw = () => renderItems({ ...result, items: providers }, tab.id, state.origin, false);
       } else if (!state.login) {
         // No form, or already logged in: a list of accounts has nowhere to go.
         key = "noform:" + state.origin;
         draw = () => text(vaultEl, "Vault connected. Accounts show here when the page has a login form.", "muted");
       } else {
-        key = "items:" + state.origin + ":" + result.items.map((i) => i.id + (i.fillable ? "+" : "")).join(",");
-        draw = () => renderItems(result, tab.id, state.origin);
+        const withCard = state.personal >= PERSONAL_MIN && result.personal;
+        key = "items:" + state.origin + ":" + withCard + ":" + result.items.map((i) => i.id + (i.fillable ? "+" : "")).join(",");
+        draw = () => renderItems(result, tab.id, state.origin, withCard);
       }
     }
   } catch (e) {

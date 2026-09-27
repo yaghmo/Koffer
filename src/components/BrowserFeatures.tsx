@@ -20,13 +20,20 @@ const FEATURES: { pref: BrowserPref; key: keyof Config; label: string; detail: s
     pref: "totp",
     key: "browser_totp",
     label: "2FA codes in the browser",
-    detail: "The popup and right-click menu can type a login's 2FA code into the page.",
+    detail:
+      "The popup and right-click menu can type a login's 2FA code into the page, and turning 2FA on at a site offers to save its key.",
   },
   {
     pref: "site_prompt",
     key: "browser_site_prompt",
     label: "Ask to approve a site on the page",
     detail: "A bar on sites this browser is not approved for yet. The popup can still ask.",
+  },
+  {
+    pref: "personal",
+    key: "browser_personal",
+    label: "Personal info in forms",
+    detail: "The popup's ID card fills name, email, phone and address from your profile into sign-up and checkout forms.",
   },
   {
     pref: "confirm_fills",

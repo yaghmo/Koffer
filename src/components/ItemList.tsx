@@ -9,7 +9,7 @@ import {
   CardBrandIcon,
   PinIcon,
 } from "./Icon";
-import { MethodChip, providerForAccount } from "../lib/methods";
+import { MethodChip, methodLabel, providerForAccount } from "../lib/methods";
 import ConfirmDialog from "./ConfirmDialog";
 
 interface Props {
@@ -40,19 +40,39 @@ export function providerOf(it: ItemMeta) {
   return it.host ? null : providerForAccount(it.username ?? "");
 }
 
-// Item icon: site favicon wins, else provider chip — from the chosen OAuth app
-// for site items, or inferred from the account domain for credential items
-// with no URL (e.g. "me@gmail.com" renders a Google chip) — else the item's
-// initial.
+// Item icon: site favicon wins, else the site's initial. A site login that
+// signs in through Google, GitHub... wears that provider's mark as a small
+// badge on the corner -- never in the site's place, where it read as the
+// provider's own account. The provider chip is the whole icon only for an
+// account item with no site (e.g. "me@gmail.com" is the Google account).
 // Tailwind only ships classes it can see, so the two sizes are spelled out
 // rather than interpolated.
 export function itemIcon(it: ItemMeta, big = false) {
   const box = big ? "h-12 w-12" : "h-10 w-10";
   const size = big ? 12 : 10;
+  const provider = providerOf(it);
+  if (it.kind === "login" && it.host && provider) {
+    return (
+      <span className={`${box} relative flex-shrink-0`}>
+        {it.favicon ? (
+          <img className={`${box} rounded-control object-contain`} src={it.favicon} alt="" />
+        ) : (
+          <span className={`${box} flex items-center justify-center rounded-control bg-surface-container-high text-body-md font-semibold text-on-surface-variant`}>
+            {(it.title || "?").charAt(0).toUpperCase()}
+          </span>
+        )}
+        <span
+          className="absolute -bottom-1 -right-1 flex items-center justify-center rounded-full bg-surface p-[3px] ring-1 ring-outline-variant"
+          title={`Signs in with ${methodLabel(provider)}`}
+        >
+          <MethodChip method={provider} size={big ? 16 : 13} />
+        </span>
+      </span>
+    );
+  }
   if (it.favicon) {
     return <img className={`${box} flex-shrink-0 rounded-control object-contain`} src={it.favicon} alt="" />;
   }
-  const provider = providerOf(it);
   if (provider) {
     return (
       <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high`}>
