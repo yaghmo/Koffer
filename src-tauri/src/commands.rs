@@ -61,25 +61,25 @@ impl AppState {
         Some((cfg, path, account))
     }
 
+    /// Poisoned locks are taken anyway: a panic somewhere else must never be
+    /// the reason the key and the decrypted vault stay in memory.
     fn lock_and_clear(&self) {
-        if let Ok(mut k) = self.key.lock() {
-            if let Some(keys) = k.as_mut() {
-                // Covers the recovery KEK too, which also unwraps the data
-                // key. `KeySet` wipes itself on drop as well; this stays
-                // explicit so locking does not depend on when the drop runs.
-                keys.wipe();
-            }
-            *k = None;
+        let mut k = self.key.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(keys) = k.as_mut() {
+            // Covers the recovery KEK too, which also unwraps the data key.
+            // `KeySet` wipes itself on drop as well; this stays explicit so
+            // locking does not depend on when the drop runs.
+            keys.wipe();
         }
-        if let Ok(mut v) = self.vault.lock() {
-            if let Some(vault) = v.as_mut() {
-                vault::zeroize_secrets(vault);
-            }
-            *v = None;
+        *k = None;
+        drop(k);
+        let mut v = self.vault.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(vault) = v.as_mut() {
+            vault::zeroize_secrets(vault);
         }
-        if let Ok(mut a) = self.current_account.lock() {
-            *a = None;
-        }
+        *v = None;
+        drop(v);
+        *self.current_account.lock().unwrap_or_else(|p| p.into_inner()) = None;
     }
 
     /// Lock at the end of a session, backing up first if the vault changed.

@@ -8,6 +8,13 @@
 use serde::Serialize;
 use totp_rs::{Algorithm, Secret, TOTP};
 
+/// Longest code period accepted, in seconds.
+const MAX_STEP_SECS: u64 = 300;
+
+/// A picture with more candidate QR codes than this is noise, or built to
+/// make the decoder work; a setup page shows one.
+const MAX_GRIDS: usize = 4;
+
 /// Shortest key accepted, in bytes. 80 bits is what the oldest services
 /// still issue; anything shorter is a typo or the wrong thing pasted.
 const MIN_KEY_BYTES: usize = 10;
@@ -29,6 +36,14 @@ pub fn parse(input: &str) -> Result<TOTP, String> {
             TOTP::from_url_unchecked(s).map_err(|_| "Not a valid 2FA setup link.".to_string())?;
         if totp.secret.len() < MIN_KEY_BYTES {
             return Err("That 2FA key is too short.".into());
+        }
+        // The link sets its own period and length, and totp-rs trusts both:
+        // a period of 0 divides by zero and ten or more digits overflow, and
+        // either panics wherever a code is made -- with the vault locked
+        // around it. A web page can hand one over as a QR code. Real sites
+        // use 30 or 60 seconds and 6 to 8 digits.
+        if !(1..=MAX_STEP_SECS).contains(&totp.step) || !(6..=8).contains(&totp.digits) {
+            return Err("That 2FA setup link has settings no authenticator uses.".into());
         }
         return Ok(totp);
     }
@@ -98,14 +113,25 @@ pub fn qr_from_bits(width: usize, height: usize, bits: &[u8]) -> Option<String> 
 fn link_in(width: usize, height: usize, luma: impl Fn(usize, usize) -> u8) -> Result<String, String> {
     // Light-on-dark first fails, then reads: a dark-themed page draws its QR
     // code inverted, and the decoder only looks for dark modules.
+    //
+    // The pixels can come from a web page, and rqrr has `assert!`s a crafted
+    // picture trips; a panic here must cost one missed QR code, not the app.
     let text = [false, true]
         .into_iter()
         .find_map(|invert| {
-            let mut img = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
-                let l = luma(x, y);
-                if invert { 255 - l } else { l }
-            });
-            img.detect_grids().iter().find_map(|g| g.decode().ok().map(|(_, text)| text))
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut img = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
+                    let l = luma(x, y);
+                    if invert { 255 - l } else { l }
+                });
+                let grids = img.detect_grids();
+                if grids.len() > MAX_GRIDS {
+                    return None;
+                }
+                grids.iter().find_map(|g| g.decode().ok().map(|(_, text)| text))
+            }))
+            .ok()
+            .flatten()
         })
         .ok_or_else(|| "No QR code found in the copied image.".to_string())?;
     if !text.to_ascii_lowercase().starts_with("otpauth://totp/") {
@@ -173,6 +199,19 @@ mod tests {
     fn reads_a_key_the_way_sites_print_it() {
         let grouped = "gezd gnbv gy3t qojq gezd gnbv gy3t qojq";
         assert_eq!(code_at(&parse(grouped).unwrap(), 59).code, "287082");
+    }
+
+    #[test]
+    fn a_link_with_settings_no_authenticator_uses_is_refused() {
+        // Each of these used to panic the moment a code was made.
+        for bad in ["period=0", "digits=10", "digits=4", "period=100000"] {
+            let link = format!("otpauth://totp/S:me?secret={RFC_KEY}&{bad}");
+            assert!(parse(&link).is_err(), "{bad}");
+        }
+        for fine in ["period=60", "digits=8", "algorithm=SHA256"] {
+            let link = format!("otpauth://totp/S:me?secret={RFC_KEY}&{fine}");
+            assert!(parse(&link).is_ok(), "{fine}");
+        }
     }
 
     #[test]

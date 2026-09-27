@@ -8,7 +8,7 @@ import "../../extension/autofill.js";
 interface AutofillApi {
   detect: (scope: Document) => { passwords: number; identifier: boolean; declared: boolean };
   isLogin: (result: { passwords: number; identifier: boolean; declared?: boolean }, href: string) => boolean;
-  fill: (scope: Document, data: Record<string, string>) => { filled: { field: string }[] };
+  fill: (scope: Document, data: Record<string, string>, opts?: { strict?: boolean }) => { filled: { field: string }[] };
   newPasswordBoxes: (scope: Document) => HTMLInputElement[];
   generatePassword: () => string;
   fillNewPassword: (scope: Document, password: string) => number;
@@ -165,5 +165,33 @@ describe("profile username", () => {
     document.body.innerHTML = '<input id="e" name="email" type="email"><input id="p" type="password">';
     Autofill.fill(document, { username: "me@site.test", password: "pw" });
     expect(value("#e")).toBe("me@site.test");
+  });
+});
+
+describe("profile fill only writes boxes on show", () => {
+  beforeAll(() => {
+    // jsdom lays nothing out: size and place each box from its inline style.
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const st = (this as HTMLElement).style;
+      const w = st.width ? parseFloat(st.width) : 200;
+      const h = st.height ? parseFloat(st.height) : 30;
+      const left = st.left ? parseFloat(st.left) : 10;
+      return { width: w, height: h, left, top: 10, right: left + w, bottom: 10 + h } as DOMRect;
+    };
+  });
+
+  it("leaves off-page, tiny and faded boxes empty", () => {
+    document.body.innerHTML =
+      '<label for="n">Full name</label><input id="n" name="name">' +
+      '<label for="a">Address</label><input id="a" name="address" style="position:absolute;left:-9999px">' +
+      '<label for="c">City</label><input id="c" name="city" style="width:1px;height:1px">' +
+      '<label for="z">Postal code</label><input id="z" name="zip" style="opacity:0.01">' +
+      '<div style="overflow:hidden;width:2px;height:2px"><label for="d">Date of birth</label><input id="d" name="dob"></div>';
+    const profile = { name: "Ada Lovelace", address: "12 rue", city: "Paris", zip: "75001", date_of_birth: "1815-12-10" };
+    Autofill.fill(document, profile, { strict: true });
+    expect(["#n", "#a", "#c", "#z", "#d"].map(value)).toEqual(["Ada Lovelace", "", "", "", ""]);
+    // A login fill is not held to it: its password is the site's own.
+    Autofill.fill(document, profile);
+    expect(value("#a")).toBe("12 rue");
   });
 });

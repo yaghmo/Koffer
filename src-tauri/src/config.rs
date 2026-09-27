@@ -52,7 +52,10 @@ pub struct Config {
     #[serde(default = "on")]
     pub browser_site_prompt: bool,
     /// The popup's personal-info card: name, email, address into a form.
-    #[serde(default = "on")]
+    /// On for a new vault, but off for a config written before it existed:
+    /// an upgrade must not quietly start handing the profile to a browser
+    /// key that was only ever trusted with passwords.
+    #[serde(default)]
     pub browser_personal: bool,
     /// Every handout (fill, copy, 2FA code) waits for a click in the app.
     /// Off by default. It is the one defence against the browser's signing
@@ -140,6 +143,13 @@ mod tests {
     fn a_config_from_before_the_browser_switches_leaves_them_on() {
         let c: Config = serde_json::from_str(r#"{"autolock_mins":20}"#).unwrap();
         assert!(c.browser_totp && c.browser_offer_save && c.browser_offer_update && c.browser_site_prompt);
+    }
+
+    #[test]
+    fn personal_info_in_the_browser_is_on_for_new_vaults_only() {
+        let old: Config = serde_json::from_str(r#"{"autolock_mins":20}"#).unwrap();
+        assert!(!old.browser_personal);
+        assert!(Config::default().browser_personal);
     }
 
     #[test]

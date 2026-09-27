@@ -644,8 +644,9 @@
    * the boxes the first pass wrote that kept their value: those are not
    * the retry's to take.
    */
-  function fillOnce(scope, wanted, all, held) {
+  function fillOnce(scope, wanted, all, held, strict) {
     var inputs = collectInputs(scope);
+    if (strict) inputs = inputs.filter(prominent);
     var claimed = (held || []).slice();
     var writes = [];
     var filled = [];
@@ -784,8 +785,49 @@
    * One extra pass, never a loop. If a page is actively clearing the field,
    * retrying harder does not beat it.
    */
-  function fill(scope, data) {
-    var out = fillOnce(scope, data);
+  /**
+   * A box someone can see and would notice being filled: at least 8 by 8,
+   * not pushed off the page, not faded to nearly nothing, not inside a
+   * container clipped to a sliver, and -- when it is on screen -- not
+   * covered by something else.
+   *
+   * Only the profile fill asks this (`strict`). A login's password already
+   * belongs to the site; a profile holds a date of birth, an address, a
+   * salary the user never meant to give it, and a row of hidden boxes named
+   * for each is how a page would take them all with one click.
+   */
+  function prominent(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) return false;
+    var x = window.scrollX || 0;
+    var y = window.scrollY || 0;
+    if (r.right + x <= 0 || r.bottom + y <= 0) return false;
+    var opacity = 1;
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      var cs = window.getComputedStyle(n);
+      opacity *= Number(cs.opacity === "" ? 1 : cs.opacity);
+      if (opacity < 0.1) return false;
+      if (n !== el && (cs.overflowX !== "visible" || cs.overflowY !== "visible")) {
+        var box = n.getBoundingClientRect();
+        if (box.width < 8 || box.height < 8) return false;
+      }
+    }
+    var cx = r.left + r.width / 2;
+    var cy = r.top + r.height / 2;
+    var doc = el.ownerDocument;
+    if (doc.elementFromPoint && cx >= 0 && cy >= 0 && cx < window.innerWidth && cy < window.innerHeight) {
+      var hit = doc.elementFromPoint(cx, cy);
+      var label = hit && hit.closest ? hit.closest("label") : null;
+      // A floating label drawn over its own box is the box, not a cover.
+      if (hit && hit !== el && !el.contains(hit) && !(label && label.control === el)) return false;
+    }
+    return true;
+  }
+
+  /** `opts.strict`: only boxes a person can see (`prominent`). */
+  function fill(scope, data, opts) {
+    var strict = !!(opts && opts.strict);
+    var out = fillOnce(scope, data, null, null, strict);
     var left = pending(scope, data);
     if (Object.keys(left).length > 0) {
       // A box that took its value stays that value's. Without this, an email
@@ -798,7 +840,7 @@
         .map(function (w) {
           return w.el;
         });
-      var again = fillOnce(scope, left, data, held);
+      var again = fillOnce(scope, left, data, held, strict);
       out.retried = true;
       if (!out.mismatch) out.mismatch = again.mismatch;
       again.filled.forEach(function (f) {

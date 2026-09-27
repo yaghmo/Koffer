@@ -1556,11 +1556,14 @@ fn page_keys(body: &serde_json::Value) -> Vec<String> {
 fn key_offer(app: &AppHandle, inc: &Incoming) -> Reply {
     let totp_on = prefs(app).browser_totp;
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
-        Ok(s) => s,
+    // Signed first, so nothing without the key reaches the QR decoder. Then
+    // the vault lock goes while the page's pictures are decoded: that is the
+    // slow part, it needs nothing from the vault, and a page could otherwise
+    // hold the whole app still with pictures built to be slow.
+    let due = match authed(&state, inc) {
+        Ok(s) => rekey_due(&s),
         Err(r) => return r,
     };
-    let due = rekey_due(&session);
     if !totp_on {
         return reply(serde_json::json!({ "offer": "off" }), due);
     }
@@ -1568,12 +1571,17 @@ fn key_offer(app: &AppHandle, inc: &Incoming) -> Reply {
     let Some(host) = host_of(&origin) else {
         return fail(400, "not a web origin");
     };
+    let keys = page_keys(&inc.body);
+    let session = match authed(&state, inc) {
+        Ok(s) => s,
+        Err(r) => return r,
+    };
     let offer = crate::capture::key_offer_for(
         session.vault(),
         approved(session.client(), &host),
         &origin,
         &field(&inc.body, "code"),
-        &page_keys(&inc.body),
+        &keys,
         Uuid::parse_str(&field(&inc.body, "last")).ok(),
         unix_now(),
     );

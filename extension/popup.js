@@ -423,7 +423,9 @@ async function fillPersonal(button, tabId, origin) {
       text(vaultEl, "Your profile is empty. Fill it in under Personal info in the app.");
       return;
     }
-    const out = await ext.tabs.sendMessage(tabId, { type: "fill", data, origin });
+    // `strict`: only boxes on show. Hidden ones are how a page would collect
+    // every profile field from one click.
+    const out = await ext.tabs.sendMessage(tabId, { type: "fill", data, origin, strict: true });
     if (out && out.wrongOrigin) {
       text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
       return;

@@ -340,7 +340,8 @@
         respond({ formFound: false, filled: [], missing: [], wrongOrigin: location.origin });
         return false;
       }
-      var out = window.Autofill.fill(document, msg.data);
+      // A profile fill writes only boxes a person can see (autofill.js).
+      var out = window.Autofill.fill(document, msg.data, { strict: !!msg.strict });
       // Whatever was asked for and is not in the page now. `missing` uses
       // the same names as the data keys, so this is the leftover fill.
       var leftover = {};

@@ -240,18 +240,20 @@ pub fn key_offer_for(
         return KeyOffer::NeedsApproval;
     }
     let logins: Vec<_> = logins_for(vault, origin).collect();
-    let named = logins
-        .iter()
-        .find(|(_, f)| !totp.account_name.trim().is_empty() && same_account(&f.username, &totp.account_name));
+    // The account the QR code is for. A label that is only the issuer names
+    // nobody; one that names an account no saved login has is for an
+    // account this vault does not hold, and goes nowhere -- not onto
+    // whichever login happens to be the only one here.
+    let account = totp.account_name.trim();
+    let issuer = totp.issuer.as_deref().unwrap_or("").trim();
+    let names_one = !account.is_empty() && !account.eq_ignore_ascii_case(issuer);
+    let named = logins.iter().find(|(_, f)| names_one && same_account(&f.username, account));
+    if names_one && named.is_none() {
+        return KeyOffer::Nothing;
+    }
     let used = logins.iter().find(|(b, _)| Some(b.id) == last);
     let pick = named.or(used).or(if logins.len() == 1 { logins.first() } else { None });
-    // A site issues one key per account. One a saved login already holds is
-    // that login's, shown again -- a sign-in page's hint, say -- and putting
-    // it on a second login gives two accounts the same codes.
-    let held = vault.items.iter().any(|i| match i {
-        Item::Login { fields, .. } => crate::totp::parse(&fields.totp).is_ok_and(|t| t.secret == totp.secret),
-        _ => false,
-    });
+    let held = key_is_held(vault, &totp);
     match pick {
         Some((b, f)) if !f.totp.trim().is_empty() => KeyOffer::HasKey { id: b.id },
         Some(_) if held => KeyOffer::Nothing,
@@ -260,11 +262,25 @@ pub fn key_offer_for(
     }
 }
 
+/// A site issues one key per account. One a saved login already holds is
+/// that login's, shown again -- a sign-in page's hint, say -- and putting it
+/// on a second login gives two accounts the same codes.
+fn key_is_held(vault: &Vault, totp: &totp_rs::TOTP) -> bool {
+    vault.items.iter().any(|i| match i {
+        Item::Login { fields, .. } => crate::totp::parse(&fields.totp).is_ok_and(|t| t.secret == totp.secret),
+        _ => false,
+    })
+}
+
 /// "Save" on a 2FA offer: onto a login this origin would be offered, and
-/// only one that has no key yet (see `key_offer_for`).
+/// only one that has no key yet, with a key no other login holds (see
+/// `key_offer_for`). Checked again here: this route is callable directly.
 pub fn add_key(vault: &mut Vault, id: Uuid, origin: &str, key: &str, now: i64) -> Result<(), &'static str> {
-    if crate::totp::parse(key).is_err() {
+    let Ok(totp) = crate::totp::parse(key) else {
         return Err("not a 2FA key");
+    };
+    if key_is_held(vault, &totp) {
+        return Err("another login already has that 2FA key");
     }
     match vault.items.iter_mut().find(|i| i.id() == id) {
         Some(Item::Login { base, fields })
@@ -364,6 +380,27 @@ mod tests {
             key_offer_for(&v, true, SITE, "287082", &[KEY.to_string()], Some(elsewhere), 59),
             KeyOffer::Nothing
         );
+    }
+
+    #[test]
+    fn a_qr_code_for_an_account_the_vault_does_not_hold_goes_nowhere() {
+        let (v, only) = vault_with("alice@site.test", "pw");
+        let bob = format!("otpauth://totp/Site:bob@site.test?secret={KEY}&issuer=Site");
+        assert_eq!(key_offer_for(&v, true, SITE, "287082", &[bob], Some(only), 59), KeyOffer::Nothing);
+        // A label that is only the issuer names nobody.
+        let unnamed = format!("otpauth://totp/Site?secret={KEY}&issuer=Site");
+        assert_eq!(
+            key_offer_for(&v, true, SITE, "287082", std::slice::from_ref(&unnamed), None, 59),
+            KeyOffer::Add { id: only, key: unnamed }
+        );
+    }
+
+    #[test]
+    fn a_saved_key_cannot_be_written_onto_a_second_login() {
+        let (mut v, a) = vault_with("someone", "pw");
+        add_key(&mut v, a, SITE, KEY, 1).unwrap();
+        let b = save_new(&mut v, SITE, "other", "pw2", 1);
+        assert_eq!(add_key(&mut v, b, SITE, KEY, 2), Err("another login already has that 2FA key"));
     }
 
     #[test]
