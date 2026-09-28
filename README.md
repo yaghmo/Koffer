@@ -1,6 +1,6 @@
 # Koffer
 
-![Koffer password manager](design/banner.jpg)
+[![Koffer: watch the 24-second launch video](design/koffer-launch.jpg)](design/koffer-launch.mp4)
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-4edea3)](LICENSE)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-4cd7f6)

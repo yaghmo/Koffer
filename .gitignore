@@ -17,3 +17,6 @@ extension/.amo-upload-uuid
 
 # Personal task list; kept out of the repo and its history.
 TODO.md
+
+# /brag launch-video output; never tracked.
+brag-output*/
