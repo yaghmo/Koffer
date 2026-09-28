@@ -2,6 +2,13 @@
 
 ![Koffer password manager](design/banner.jpg)
 
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-4edea3)](LICENSE)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-4cd7f6)
+![Tauri 2](https://img.shields.io/badge/Tauri-2-4cd7f6)
+![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-4cd7f6)
+![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-4cd7f6)
+[![Extension: Chrome | Firefox](https://img.shields.io/badge/extension-Chrome%20%7C%20Firefox-c0c1ff)](extension/README.md)
+
 Local-only encrypted password manager for Windows. Tauri + React.
 
 ## Features
