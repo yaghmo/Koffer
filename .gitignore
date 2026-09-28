@@ -14,3 +14,6 @@ design/out/
 
 # web-ext sign remembers its last AMO upload here; local only.
 extension/.amo-upload-uuid
+
+# Personal task list; kept out of the repo and its history.
+TODO.md
