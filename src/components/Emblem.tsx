@@ -3,8 +3,8 @@ interface Props {
   glow?: boolean;
 }
 
-const CASE = "#a5eef9";
-const KEY = "#3ee39e";
+const CASE = "#acedff"; // tertiary-fixed, Obsidian Cipher
+const KEY = "#4edea3"; // --color-secondary
 const KEYHOLE = "M437 309a24 24 0 0 1 15 43l9 37h-48l9-37a24 24 0 0 1 15-43z";
 
 /** The Koffer logo, traced from design/logo.png (see design/icons.cjs).
@@ -21,7 +21,7 @@ export function Emblem({ size = 48, glow = false }: Props) {
         <span
           aria-hidden
           className="absolute inset-[-30%] -z-10 rounded-full blur-xl"
-          style={{ background: "rgba(62,227,158,.2)" }}
+          style={{ background: "rgba(78,222,163,.2)" }}
         />
       )}
       <svg

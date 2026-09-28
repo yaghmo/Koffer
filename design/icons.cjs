@@ -26,8 +26,8 @@ const OUT = path.join(__dirname, "out");
 // Where the art sits in logo.png's 1024 grid.
 const CROP = { left: 233, top: 195, width: 560, height: 560 };
 
-const CASE = "#a5eef9";
-const KEY = "#3ee39e";
+const CASE = "#acedff"; // tertiary-fixed, Obsidian Cipher
+const KEY = "#4edea3"; // --color-secondary
 const HANDLE = "M428 262 V252 Q428 234 446 234 H582 Q600 234 600 252 V296";
 const KEYHOLE = "M437 309 a24 24 0 0 1 15 43 l9 37 h-48 l9 -37 a24 24 0 0 1 15 -43 z";
 
