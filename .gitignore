@@ -11,3 +11,6 @@ docs/superpowers/
 dist-ext/
 .superpowers/
 design/out/
+
+# web-ext sign remembers its last AMO upload here; local only.
+extension/.amo-upload-uuid
