@@ -1,6 +1,6 @@
 # Koffer
 
-[![Koffer: watch the 25-second launch video](design/koffer-launch.jpg)](design/koffer-launch.mp4)
+https://github.com/user-attachments/assets/6ffcfdec-c14f-4248-9db0-28fb95eaa419
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-4edea3)](LICENSE)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-4cd7f6)
