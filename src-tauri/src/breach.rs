@@ -45,7 +45,7 @@ pub async fn check(passwords: Vec<(String, Zeroizing<String>)>) -> Result<Vec<(S
     }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .user_agent("password-manager-leak-check")
+        .user_agent("koffer-leak-check")
         .build()
         .map_err(|e| e.to_string())?;
     let mut leaked = Vec::new();

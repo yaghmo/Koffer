@@ -2,7 +2,7 @@
 
 *Last updated: 28 September 2026.*
 
-Password Manager collects nothing. There is no account, no server of ours,
+Koffer collects nothing. There is no account, no server of ours,
 no analytics, no telemetry and no crash reporting. What you store stays in
 one encrypted file on your computer, readable only with your master
 password.
@@ -33,7 +33,7 @@ Only in three cases, each started by you:
 
 ## The browser extension
 
-- It talks only to the Password Manager app on your own computer, over
+- It talks only to the Koffer app on your own computer, over
   `127.0.0.1`. It sends nothing to us or to any third party.
 - It reads the page you are on to find login, code and form fields, and
   writes into them when you ask it to. What you type into a login form, and
@@ -57,5 +57,5 @@ the repository.
 
 ## Contact
 
-Questions: open an issue at <https://github.com/yaghmo/password_manager>.
+Questions: open an issue at <https://github.com/yaghmo/koffer>.
 Security problems: see `SECURITY.md` and report them privately.

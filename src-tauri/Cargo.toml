@@ -1,12 +1,12 @@
 [package]
-name = "password_manager"
+name = "koffer"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "password_manager_lib"
+name = "koffer_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

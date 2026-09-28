@@ -165,7 +165,7 @@ script still runs there and still detects the form — the *UI* is what is
 missing, in exactly the window that needs it.
 
 So the accounts for that page are also on the **right-click menu** of any
-text field, under "Password Manager". Same rules as the popup: only
+text field, under "Koffer". Same rules as the popup: only
 fillable accounts are clickable, and a provider login appears greyed out
 naming the account you used.
 

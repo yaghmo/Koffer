@@ -35,7 +35,7 @@ The product is the inverse of a synced, multi-device password manager. Its mecha
 ## Operating Context
 
 - One user, one Windows 11 machine, one encrypted vault.
-- The vault file lives at `%APPDATA%/password_manager/vault.enc` and the config at `%APPDATA%/password_manager/config.json`.
+- The vault file lives at `%APPDATA%/koffer/vault.enc` and the config at `%APPDATA%/koffer/config.json`.
 - Workflow: open app -> unlock -> search/browse/copy -> lock (or auto-lock fires).
 - Auto-lock default 15 min (range 15-30). Clipboard TTL default 30 s.
 - The "forgot password" flow is destructive by design: there is no recovery path, by design.

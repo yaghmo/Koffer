@@ -505,7 +505,7 @@ function renderCodes(result, tabId, origin, lastId, showAll = false) {
 
 /** "Confirm every fill" is on: the answer is in the app, not here. */
 function waitForApp() {
-  text(vaultEl, "Allow it in Password Manager. This fills as soon as you do.", "muted");
+  text(vaultEl, "Allow it in Koffer. This fills as soon as you do.", "muted");
 }
 
 /**

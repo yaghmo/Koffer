@@ -2139,6 +2139,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "koffer"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "arboard",
+ "argon2",
+ "base64 0.22.1",
+ "chrono",
+ "dirs 5.0.1",
+ "getrandom 0.2.17",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "once_cell",
+ "p256",
+ "psl",
+ "qrcode",
+ "regex",
+ "reqwest 0.12.28",
+ "rqrr",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-shell",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "totp-rs",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "libappindicator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2704,43 +2741,6 @@ dependencies = [
  "base64ct",
  "rand_core 0.6.4",
  "subtle",
-]
-
-[[package]]
-name = "password_manager"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "arboard",
- "argon2",
- "base64 0.22.1",
- "chrono",
- "dirs 5.0.1",
- "getrandom 0.2.17",
- "http-body-util",
- "hyper",
- "hyper-util",
- "once_cell",
- "p256",
- "psl",
- "qrcode",
- "regex",
- "reqwest 0.12.28",
- "rqrr",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-shell",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "totp-rs",
- "uuid",
- "zeroize",
 ]
 
 [[package]]

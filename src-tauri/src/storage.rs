@@ -86,11 +86,11 @@ pub enum StorageError {
 
 pub fn data_dir() -> PathBuf {
     if let Some(p) = std::env::var_os("APPDATA") {
-        return PathBuf::from(p).join("password_manager");
+        return PathBuf::from(p).join("koffer");
     }
     dirs::data_dir()
         .expect("platform data dir must exist")
-        .join("password_manager")
+        .join("koffer")
 }
 
 pub fn vault_path(account: &Account) -> PathBuf {

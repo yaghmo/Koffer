@@ -137,7 +137,7 @@ export default function Sidebar({
         <Emblem size={28} />
         <div className="min-w-0">
           <p className="truncate text-body-md font-semibold text-on-surface">
-            {accountName || "Password Manager"}
+            {accountName || "Koffer"}
           </p>
           <p className="label-md">Local vault</p>
         </div>

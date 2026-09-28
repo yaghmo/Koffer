@@ -265,7 +265,7 @@
       var view = {
         kind: "generate",
         host: location.hostname,
-        detail: "Password Manager makes one and fills it in, confirmation too.",
+        detail: "Koffer makes one and fills it in, confirmation too.",
         never: false,
       };
       window.PMBar.show(view, function (choice) {

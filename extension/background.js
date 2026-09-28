@@ -119,7 +119,7 @@ async function renderMenu(state) {
   if (state.needsApproval) {
     ext.contextMenus.create({
       id: ASK_ID,
-      title: `Approve ${state.host} in Password Manager…`,
+      title: `Approve ${state.host} in Koffer…`,
       contexts: ["editable"],
     });
     return;
@@ -135,7 +135,7 @@ async function renderMenu(state) {
     const lastItem = all.find((i) => i.id === last);
     const withCode = lastItem ? [lastItem] : all;
     if (withCode.length === 0) return;
-    ext.contextMenus.create({ id: ROOT_ID, title: "Password Manager", contexts: ["editable"] });
+    ext.contextMenus.create({ id: ROOT_ID, title: "Koffer", contexts: ["editable"] });
     for (const item of withCode) {
       ext.contextMenus.create({
         id: `pmcode:${item.id}`,
@@ -150,7 +150,7 @@ async function renderMenu(state) {
     return;
   }
 
-  ext.contextMenus.create({ id: ROOT_ID, title: "Password Manager", contexts: ["editable"] });
+  ext.contextMenus.create({ id: ROOT_ID, title: "Koffer", contexts: ["editable"] });
   for (const item of state.items) {
     ext.contextMenus.create({
       id: `pm:${item.id}`,
@@ -346,7 +346,7 @@ function showBar(tabId, kind, capture) {
  * the bar says where to look while `whenAllowed` retries.
  */
 function waitForApp(tabId) {
-  return () => say(tabId, "Allow it in the Password Manager window.");
+  return () => say(tabId, "Allow it in the Koffer window.");
 }
 
 function say(tabId, text, done) {
@@ -380,7 +380,7 @@ async function onChoice(tabId, choice) {
     } else if (kind === "new") {
       const saved = await whenAllowed(() => saveLogin(capture.origin, capture.username, capture.password), waitForApp(tabId));
       await rememberLogin(capture.origin, saved && saved.id);
-      await say(tabId, "Saved to Password Manager.", true);
+      await say(tabId, "Saved to Koffer.", true);
     } else if (kind === "update") {
       await whenAllowed(() => updateLogin(id, capture.origin, capture.password), waitForApp(tabId));
       await rememberLogin(capture.origin, id);
@@ -399,7 +399,7 @@ async function onChoice(tabId, choice) {
     return say(
       tabId,
       e.message === NOT_PAIRED
-        ? "Unlock Password Manager, then click Save again."
+        ? "Unlock Koffer, then click Save again."
         : "That did not work. Try again from the app."
     );
   }
@@ -482,12 +482,12 @@ async function onKeyChoice(tabId, open, choice) {
         ({ id, key: secret } = res);
       }
       await whenAllowed(() => saveKey(id, open.origin, secret), waitForApp(tabId));
-      await say(tabId, "2FA key saved. Password Manager has this site's codes now.", true);
+      await say(tabId, "2FA key saved. Koffer has this site's codes now.", true);
     }
   } catch (e) {
     return say(
       tabId,
-      e.message === NOT_PAIRED ? "Unlock Password Manager, then click Save again." : "That did not work. Add the key from the app."
+      e.message === NOT_PAIRED ? "Unlock Koffer, then click Save again." : "That did not work. Add the key from the app."
     );
   }
   await sessionSet(OFFER_KEY + tabId, null);
@@ -508,13 +508,13 @@ async function onSiteChoice(tabId, origin, choice) {
   try {
     answer = await ask(origin);
   } catch {
-    return say(tabId, "Unlock Password Manager, then try again from the toolbar icon.", true);
+    return say(tabId, "Unlock Koffer, then try again from the toolbar icon.", true);
   }
   if (answer && answer.approved) {
     await refresh(tabId, origin);
     return say(tabId, "Already approved.", true);
   }
-  await say(tabId, "Say yes in the Password Manager window.", true);
+  await say(tabId, "Say yes in the Koffer window.", true);
   await waitForApproval(tabId, origin);
 }
 

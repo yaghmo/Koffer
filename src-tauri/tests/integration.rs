@@ -1,4 +1,4 @@
-use password_manager_lib::{
+use koffer_lib::{
     add_item, derive_key, deserialize_vault, encrypt, generate, new_vault, random_bytes,
     serialize_vault, Item, ItemBase, LoginFields,
 };
@@ -39,13 +39,13 @@ fn full_vault_lifecycle() {
 
     // Crypto roundtrip on the JSON bytes
     let (nonce, ct) = encrypt(&key, &bytes);
-    let back = password_manager_lib::decrypt(&key, &nonce, &ct).unwrap();
+    let back = koffer_lib::decrypt(&key, &nonce, &ct).unwrap();
     let v3 = deserialize_vault(&back).unwrap();
     assert_eq!(v3.items[0].id(), item.id());
 }
 
 #[test]
 fn password_generator_works() {
-    let p = generate(&password_manager_lib::GenOpts::default()).unwrap();
+    let p = generate(&koffer_lib::GenOpts::default()).unwrap();
     assert_eq!(p.len(), 20);
 }

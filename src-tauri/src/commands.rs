@@ -1108,7 +1108,7 @@ pub fn save_recovery_code(dest: String, code: String) -> Result<(), String> {
     }
     crate::recovery::decode(&code).map_err(|e| e.to_string())?;
     let text = format!(
-        "Password Manager recovery code\r\n\r\n{code}\r\n\r\n\
+        "Koffer recovery code\r\n\r\n{code}\r\n\r\n\
          This code opens your vault if you forget the master password.\r\n\
          Anyone with this code and a copy of your vault file can open it.\r\n\
          Move this file off this computer (print it, or keep it on a USB stick),\r\n\

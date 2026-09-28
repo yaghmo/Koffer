@@ -84,8 +84,8 @@ describe("save bar", () => {
   it("replaces its message and closes when done", () => {
     vi.useFakeTimers();
     const root = Bar.show({ kind: "new", host: "site.test", username: "me" }, vi.fn());
-    Bar.say("Saved to Password Manager.", true);
-    expect(root.textContent).toContain("Saved to Password Manager.");
+    Bar.say("Saved to Koffer.", true);
+    expect(root.textContent).toContain("Saved to Koffer.");
     expect(buttons(root)).toHaveLength(0);
     vi.advanceTimersByTime(3000);
     expect(document.querySelector("[data-pm-bar]")).toBeNull();

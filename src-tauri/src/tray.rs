@@ -23,8 +23,8 @@ struct TrayMenu {
     lock: MenuItem<Wry>,
 }
 
-const UNLOCKED_TIP: &str = "Password Manager — unlocked";
-const LOCKED_TIP: &str = "Password Manager — locked";
+const UNLOCKED_TIP: &str = "Koffer — unlocked";
+const LOCKED_TIP: &str = "Koffer — locked";
 
 /// Grey out and fade an icon to mark the locked state.
 ///

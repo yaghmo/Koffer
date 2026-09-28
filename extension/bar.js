@@ -12,12 +12,12 @@
   "use strict";
 
   var TITLES = {
-    new: "Save this login to Password Manager?",
+    new: "Save this login to Koffer?",
     update: "Update the saved password?",
-    approve: "Save this login to Password Manager?",
-    locked: "Unlock Password Manager to save this login.",
-    site: "Use Password Manager on this site?",
-    key: "Save this 2FA key to Password Manager?",
+    approve: "Save this login to Koffer?",
+    locked: "Unlock Koffer to save this login.",
+    site: "Use Koffer on this site?",
+    key: "Save this 2FA key to Koffer?",
     generate: "Use a strong password?",
     keyHas: "This login already has a 2FA key",
   };
@@ -87,7 +87,7 @@
     var style = document.createElement("style");
     style.textContent = STYLE;
     var bar = el("form", "bar");
-    bar.setAttribute("aria-label", "Password Manager");
+    bar.setAttribute("aria-label", "Koffer");
     bar.addEventListener("submit", function (e) {
       e.preventDefault();
       if (!e.isTrusted || !e.submitter) return;
