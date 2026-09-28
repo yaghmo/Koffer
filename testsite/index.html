@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PM test site</title>
+<meta name="description" content="A fake website for trying the Password Manager browser extension. Not a real service.">
+<!-- Published so anyone can try the extension; a page of sign-in forms has
+     no business in search results, where it would pass for a real one. -->
+<meta name="robots" content="noindex, nofollow">
 <style>
   :root { color-scheme: light; --ink: #1d2230; --muted: #5b6275; --line: #d9dce4; --accent: #2f5bd3; --ok: #1d7a46; --bad: #b3261e; }
   * { box-sizing: border-box; }
@@ -40,10 +44,12 @@
   .icons button { margin-top: 0; background: #fff; color: var(--ink); border: 1px solid var(--line); }
   footer.site { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; display: flex; gap: 16px; }
   .hint code { background: #eef0f5; padding: 1px 5px; border-radius: 4px; }
+  .demo { margin: 0; padding: 8px 24px; background: #fff4d6; color: #6b4e00; font-size: 13px; text-align: center; border-bottom: 1px solid #f0dc9a; }
   #log { max-width: 440px; margin: 0 auto 40px; padding: 0 16px; font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--muted); }
 </style>
 </head>
 <body>
+<p class="demo" role="note"><strong>Demo site.</strong> Nothing here is real and nothing leaves your browser: accounts live in this page's local storage. Do not type real passwords. It exists to try the <a href="https://github.com/yaghmo/password_manager">Password Manager</a> extension.</p>
 <header>
   <strong>PM test site</strong>
   <nav id="nav"></nav>

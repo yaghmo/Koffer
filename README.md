@@ -71,6 +71,11 @@ cd src-tauri && cargo test  # backend
 Fills, saves and offers 2FA codes in Chrome and Firefox, talking only to the
 app on `127.0.0.1`. See [`extension/README.md`](extension/README.md).
 
+**Try it without touching real accounts:** the
+[test site](https://yaghmo.github.io/password_manager/) has sign-in, sign-up,
+two-step, phone, 2FA and "Sign in with…" pages. Everything on it is fake and
+stays in your browser. `npm run testsite` serves the same pages locally.
+
 ## Contributing, security and privacy
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to build, test and send a change.
