@@ -40,9 +40,10 @@ pub struct Config {
     /// logos" button stays available either way.
     #[serde(default)]
     pub auto_refresh_icons: bool,
-    /// What the browser extension may do, each on by default. Every switch
-    /// only takes something away, so a hand-edited file can at most restore
-    /// the defaults; the bridge enforces them, not just the extension.
+    /// What the browser extension may do. Legacy: these now live in the
+    /// vault (`vault::BrowserPrefs`) and are read from here once, when a
+    /// vault from before the move is unlocked; the bridge never reads them
+    /// here, so editing this file changes nothing.
     #[serde(default = "on")]
     pub browser_totp: bool,
     #[serde(default = "on")]

@@ -56,7 +56,10 @@ export interface FillRequest {
   host: string;
   title: string;
   username: string;
-  /** "password", "username", "phone", "totp" or "2FA code". */
+  /**
+   * A read: "password", "username", "phone", "totp", "2FA code" or
+   * "personal info". A write: "save", "update" or "2FA key".
+   */
   what: string;
 }
 

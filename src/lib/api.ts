@@ -51,8 +51,10 @@ export const api = {
   setAutolockMins: (mins: number) => invoke<void>("set_autolock_mins", { mins }),
   setAutoRefreshIcons: (on: boolean) => invoke<void>("set_auto_refresh_icons", { on }),
   setBrowserPref: (name: BrowserPref, on: boolean) => invoke<void>("set_browser_pref", { name, on }),
-  bridgeConfirmFill: (origin: string, id: string, host: string) =>
-    invoke<void>("bridge_confirm_fill", { origin, id, host }),
+  // `what` comes back as the request named it: an Allow covers that one
+  // action, so allowing a fill cannot be spent on a write.
+  bridgeConfirmFill: (origin: string, id: string, host: string, what: string) =>
+    invoke<void>("bridge_confirm_fill", { origin, id, host, what }),
   checkLeakedPasswords: () => invoke<LeakedLogin[]>("check_leaked_passwords"),
 
   vaultStorage: () => invoke<VaultStorage>("vault_storage"),
@@ -71,7 +73,8 @@ export const api = {
   recoverVault: (code: string, newPassword: string, accountId: string) =>
     invoke<void>("recover_vault", { code, newPassword, accountId }),
   changeMasterPassword: (current: string, newPassword: string) =>
-    invoke<void>("change_master_password", { current, newPassword }),
+    // A new recovery code when the vault had one: the old one stops working.
+    invoke<string | null>("change_master_password", { current, newPassword }),
 
   exportVault: (dest: string) => invoke<void>("export_vault", { dest }),
   saveRecoveryCode: (dest: string, code: string) => invoke<void>("save_recovery_code", { dest, code }),

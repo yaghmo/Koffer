@@ -50,17 +50,23 @@ async function fetchLogos(due: ItemMeta[], onProgress?: (done: number, total: nu
   let done = 0;
   onProgress?.(0, due.length);
   for (const meta of due) {
+    // The list's own URL: fetching the whole item for it would bring the
+    // password into the webview for nothing.
+    if (!meta.url) {
+      onProgress?.(++done, due.length);
+      continue;
+    }
     try {
-      const full = await api.getItem(meta.id);
-      if (full.type === "login" && full.url) {
-        const fetched = await api.fetchUrlMetadata(full.url);
-        const changed = fetched.favicon_data_url && fetched.favicon_data_url !== full.favicon;
-        // Stamped either way, so a site with no icon isn't retried tomorrow.
-        await api.setItemFavicon(full.id, changed ? fetched.favicon_data_url : null);
-        if (changed) updated++;
-      }
+      const fetched = await api.fetchUrlMetadata(meta.url);
+      const changed = fetched.favicon_data_url && fetched.favicon_data_url !== meta.favicon;
+      // Stamped either way, so a site with no icon isn't retried tomorrow.
+      await api.setItemFavicon(meta.id, changed ? fetched.favicon_data_url : null);
+      if (changed) updated++;
     } catch {
-      // one site failing (offline, no favicon) shouldn't stop the rest
+      // One site failing shouldn't stop the rest. Stamped too, or an
+      // unreachable site is fetched again on every browser save; Settings
+      // can still force a refresh.
+      await api.setItemFavicon(meta.id, null).catch(() => {});
     }
     onProgress?.(++done, due.length);
   }

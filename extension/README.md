@@ -142,11 +142,17 @@ asks whether to stay unlocked — only an answer there extends it.
   but a determined local attacker gets there. It also needs the vault
   unlocked, and unpairing kills it. This is a deliberate trade for one-click
   autofill, and the trade can be refused: with *Confirm every fill in the
-  app* on (Settings → Browser extension), every password, copy and 2FA code
-  waits for an Allow in the app, good for that one request and 30 seconds.
-  The popup and the menu wait for it and fill the moment it comes. A key
-  copied out of the profile then gets a dialog you did not expect, not a
-  password.
+  app* on (Settings → Browser extension), every password, copy, 2FA code
+  and profile fill -- and every save, password update and 2FA key written
+  from the browser -- waits for an Allow in the app, good for that one
+  request, that one action and 30 seconds. The popup, the menu and the bar
+  wait for it and carry on the moment it comes. A key copied out of the
+  profile then gets a dialog you did not expect, not a password. Two more
+  things hold with it on: the offer to save no longer says whether a
+  password is the stored one unless the extension just filled it (so a
+  copied key cannot test guesses; a login typed by hand is offered as an
+  update), and the switch itself lives in the encrypted vault, where
+  editing a file cannot turn it off.
 - **A forged `Origin` header.** Browsers will not let a page forge it, so
   pages really are shut out — but any local process can set it to anything.
   The pairing code and the token are what actually hold the door.

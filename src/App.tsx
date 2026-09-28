@@ -33,6 +33,29 @@ type EditingTarget =
   | { kind: "new"; itemKind: ItemKind }
   | null;
 
+/** Who the request is about: "GitHub (me@site)". */
+function fillAskWho(req: FillRequest): string {
+  return `${req.title || "a login"}${req.username ? ` (${req.username})` : ""}`;
+}
+
+/** What the browser asked to do, as the sentence after its name. */
+function fillAskAction(req: FillRequest): string {
+  switch (req.what) {
+    case "save":
+      return `wants to save a new login${req.username ? ` for ${req.username}` : ""}`;
+    case "update":
+      return `wants to change the saved password of ${fillAskWho(req)}`;
+    case "2FA key":
+      return `wants to add a 2FA key to ${fillAskWho(req)}`;
+    default:
+      return `wants the ${req.what === "totp" ? "2FA code" : req.what} for ${fillAskWho(req)}`;
+  }
+}
+
+function fillAskTitle(req: FillRequest): string {
+  return ["save", "update", "2FA key"].includes(req.what) ? `Save to the vault from ${req.host}?` : `Fill ${req.host}?`;
+}
+
 export default function App() {
   const [status, setStatus] = useState<Status>("loading");
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -400,15 +423,13 @@ export default function App() {
         )}
         {fillAsk !== null && approveAsk === null && status === "unlocked" && (
           <ConfirmDialog
-            title={`Fill ${fillAsk.host}?`}
-            message={`${fillAsk.label} wants the ${fillAsk.what === "totp" ? "2FA code" : fillAsk.what} for ${
-              fillAsk.title || "a login"
-            }${fillAsk.username ? ` (${fillAsk.username})` : ""} on ${fillAsk.host}. Allow covers this one request. If you did not just ask for it in your browser, say no.`}
+            title={fillAskTitle(fillAsk)}
+            message={`${fillAsk.label} ${fillAskAction(fillAsk)} on ${fillAsk.host}. Allow covers this one request. If you did not just ask for it in your browser, say no.`}
             confirmLabel="Allow"
             tone="primary"
             onConfirm={() => {
-              const { origin, id, host } = fillAsk;
-              api.bridgeConfirmFill(origin, id, host).catch((e) => setNotice(`Could not allow it: ${String(e)}`));
+              const { origin, id, host, what } = fillAsk;
+              api.bridgeConfirmFill(origin, id, host, what).catch((e) => setNotice(`Could not allow it: ${String(e)}`));
               setFillAsk(null);
             }}
             onCancel={() => setFillAsk(null)}

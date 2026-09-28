@@ -376,7 +376,10 @@ export default function Settings({ accountId, onLock }: Props) {
     }
     setPwBusy(true);
     try {
-      await api.changeMasterPassword(pwCurrent, pwNext);
+      // A fresh vault key means the old recovery code no longer opens it;
+      // the new one comes back here and goes straight on screen.
+      const code = await api.changeMasterPassword(pwCurrent, pwNext);
+      if (code) setRecoveryCode(code);
       setPwCurrent("");
       setPwNext("");
       setPwConfirm("");

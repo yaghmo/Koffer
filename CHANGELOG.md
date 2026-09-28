@@ -32,3 +32,11 @@ First public release, in preparation.
 - Points at a site's "Sign in with Google / GitHub ..." button for logins
   that use one, without clicking it.
 - Optional: confirm every fill in the app.
+
+### Security
+
+- Three security reviews, the last of the whole repository; everything they
+  found is fixed and recorded in `TODO.md`. Among them: a fresh vault key on
+  every password or recovery change, the browser switches kept inside the
+  encrypted vault, "confirm every fill" covering writes, one-time request
+  signatures, and no site names in the log.

@@ -23,7 +23,10 @@ account. Nothing here talks to us, and we operate no server.
 - **A strong master password matters more once backup is on.** A downloaded
   copy can be attacked offline, at the attacker's own pace, without your
   machine.
-- **History is kept 30 days. The latest copy never expires.**
+- **History is kept 30 days, one copy per ten minutes at most. The latest
+  copy never expires.** The cap is there so a leaked upload token cannot
+  fill your bucket (and your bill); the Worker also refuses anything that is
+  not a vault file.
 
 ## Setup
 

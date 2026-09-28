@@ -341,6 +341,14 @@ function showBar(tabId, kind, capture) {
   return ext.tabs.sendMessage(tabId, { type: "offer", view }).catch(() => {});
 }
 
+/**
+ * With "confirm every fill" on, a save waits for a click in the app too;
+ * the bar says where to look while `whenAllowed` retries.
+ */
+function waitForApp(tabId) {
+  return () => say(tabId, "Allow it in the Password Manager window.");
+}
+
 function say(tabId, text, done) {
   return ext.tabs.sendMessage(tabId, { type: "offer-say", text, done }).catch(() => {});
 }
@@ -370,11 +378,11 @@ async function onChoice(tabId, choice) {
       // On an update the app remembers the password that worked.
       await seen(capture.origin, capture.username, capture.password);
     } else if (kind === "new") {
-      const saved = await saveLogin(capture.origin, capture.username, capture.password);
+      const saved = await whenAllowed(() => saveLogin(capture.origin, capture.username, capture.password), waitForApp(tabId));
       await rememberLogin(capture.origin, saved && saved.id);
       await say(tabId, "Saved to Password Manager.", true);
     } else if (kind === "update") {
-      await updateLogin(id, capture.origin, capture.password);
+      await whenAllowed(() => updateLogin(id, capture.origin, capture.password), waitForApp(tabId));
       await rememberLogin(capture.origin, id);
       await say(tabId, "Password updated.", true);
     } else if (kind === "approve") {
@@ -473,7 +481,7 @@ async function onKeyChoice(tabId, open, choice) {
         }
         ({ id, key: secret } = res);
       }
-      await saveKey(id, open.origin, secret);
+      await whenAllowed(() => saveKey(id, open.origin, secret), waitForApp(tabId));
       await say(tabId, "2FA key saved. Password Manager has this site's codes now.", true);
     }
   } catch (e) {

@@ -217,6 +217,63 @@ pub struct Vault {
     /// plaintext.
     #[serde(default)]
     pub never_save: Vec<String>,
+    /// What the browser extension may do. In the vault rather than
+    /// `config.json`: "confirm every fill" is the one defence against a
+    /// browser key copied out of its profile, and a plaintext file anything
+    /// running as the user can edit would switch it off more easily than the
+    /// key could be copied. `None` in a vault from before this moved here;
+    /// unlocking fills it once from the config (`seed_browser_prefs`).
+    #[serde(default)]
+    pub browser: Option<BrowserPrefs>,
+}
+
+/// The browser extension's switches. Field names match the old config
+/// entries, which the Settings screen still reads them as.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BrowserPrefs {
+    pub browser_totp: bool,
+    pub browser_offer_save: bool,
+    pub browser_offer_update: bool,
+    pub browser_site_prompt: bool,
+    pub browser_personal: bool,
+    pub browser_confirm_fills: bool,
+}
+
+impl Default for BrowserPrefs {
+    fn default() -> Self {
+        Self {
+            browser_totp: true,
+            browser_offer_save: true,
+            browser_offer_update: true,
+            browser_site_prompt: true,
+            browser_personal: true,
+            browser_confirm_fills: false,
+        }
+    }
+}
+
+impl Vault {
+    pub fn browser_prefs(&self) -> BrowserPrefs {
+        self.browser.clone().unwrap_or_default()
+    }
+}
+
+/// A vault from before the browser switches moved in takes them from the
+/// config it was used with, once; from then on the vault's copy is the only
+/// one read. Returns whether it changed anything, so the caller can save.
+pub fn seed_browser_prefs(vault: &mut Vault, cfg: &crate::config::Config) -> bool {
+    if vault.browser.is_some() {
+        return false;
+    }
+    vault.browser = Some(BrowserPrefs {
+        browser_totp: cfg.browser_totp,
+        browser_offer_save: cfg.browser_offer_save,
+        browser_offer_update: cfg.browser_offer_update,
+        browser_site_prompt: cfg.browser_site_prompt,
+        browser_personal: cfg.browser_personal,
+        browser_confirm_fills: cfg.browser_confirm_fills,
+    });
+    true
 }
 
 /// A browser extension that has been paired with this vault.
@@ -306,6 +363,15 @@ pub fn zeroize_secrets(vault: &mut Vault) {
                 fields.username.zeroize();
                 // A phone number identifies a person, not just an account.
                 fields.phone.zeroize();
+                // A 2FA key is a second factor; old passwords are often
+                // still somebody's current one somewhere else.
+                fields.totp.zeroize();
+                for old in fields.previous_passwords.iter_mut() {
+                    old.password.zeroize();
+                }
+                if let Some(seen) = fields.last_seen.as_mut() {
+                    seen.password.zeroize();
+                }
                 base.notes.zeroize();
             }
             Item::Note { base, fields } => {
@@ -342,6 +408,7 @@ pub fn zeroize_secrets(vault: &mut Vault) {
         &mut p.date_of_birth,
         &mut p.current_title,
         &mut p.current_company,
+        &mut p.years_experience,
         &mut p.school,
         &mut p.degree,
         &mut p.desired_salary,
@@ -398,6 +465,7 @@ pub fn new_vault(salt: Vec<u8>) -> Vault {
         backup: None,
         paired: Vec::new(),
         never_save: Vec::new(),
+        browser: Some(BrowserPrefs::default()),
     }
 }
 
@@ -918,6 +986,22 @@ mod tests {
         let v = new_vault(vec![]);
         let stats = compute_stats(&v, 1_700_000_000);
         assert_eq!(stats.health_score, 100);
+    }
+
+    #[test]
+    fn browser_switches_come_from_the_old_config_once_then_stay_in_the_vault() {
+        let mut v: Vault = serde_json::from_value(serde_json::json!({
+            "version": 1, "kdf_salt": [1, 2], "items": []
+        }))
+        .unwrap();
+        assert_eq!(v.browser, None);
+        let mut cfg = crate::config::Config { browser_confirm_fills: true, ..Default::default() };
+        assert!(seed_browser_prefs(&mut v, &cfg));
+        assert!(v.browser_prefs().browser_confirm_fills);
+        // A config edited afterwards changes nothing.
+        cfg.browser_confirm_fills = false;
+        assert!(!seed_browser_prefs(&mut v, &cfg));
+        assert!(v.browser_prefs().browser_confirm_fills);
     }
 
     #[test]

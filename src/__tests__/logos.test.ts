@@ -14,7 +14,9 @@ const NOW = Math.floor(Date.now() / 1000);
 const DAY = 24 * 60 * 60;
 
 function meta(id: string, checkedDaysAgo: number) {
-  return { id, kind: "login", title: id, icon_checked_at: NOW - checkedDaysAgo * DAY };
+  // The list carries the URL: the refresh never fetches a whole item (and
+  // its password) just to read it.
+  return { id, kind: "login", title: id, url: `https://${id}.com`, favicon: "", icon_checked_at: NOW - checkedDaysAgo * DAY };
 }
 
 beforeEach(async () => {
@@ -27,6 +29,15 @@ beforeEach(async () => {
   // Most cases here are about the age check, so they opt in explicitly; the
   // real default is false and has its own test below.
   (api.getConfig as any).mockResolvedValue({ autolock_mins: 15, auto_refresh_icons: true });
+});
+
+it("never loads a whole item to find its URL", async () => {
+  const { api } = await import("../lib/api");
+  const { refreshSiteLogos } = await import("../lib/logos");
+  (api.listItems as any).mockResolvedValue([meta("stale", 45)]);
+  await refreshSiteLogos(true);
+  expect(api.fetchUrlMetadata).toHaveBeenCalledWith("https://stale.com");
+  expect(api.getItem).not.toHaveBeenCalled();
 });
 
 describe("refreshSiteLogos", () => {
@@ -112,8 +123,8 @@ describe("progress and new logins", () => {
       { ...meta("has", 0), host: "has.com", favicon: "data:x", icon_checked_at: 0 },
     ]);
     expect(await fetchMissingLogos()).toBe(1);
-    expect(api.getItem).toHaveBeenCalledTimes(1);
-    expect(api.getItem).toHaveBeenCalledWith("new");
+    expect(api.fetchUrlMetadata).toHaveBeenCalledTimes(1);
+    expect(api.fetchUrlMetadata).toHaveBeenCalledWith("https://new.com");
   });
 });
 

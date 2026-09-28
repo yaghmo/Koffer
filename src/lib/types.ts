@@ -69,6 +69,8 @@ export interface ItemMeta {
   card_bin: string | null;
   /** Bare domain of a login's URL, e.g. "twitch.tv". Null for notes/cards. */
   host: string | null;
+  /** A login's full URL; null for notes and cards. */
+  url?: string | null;
   pinned: boolean;
   /** Unix seconds of the last favicon check; 0 when never checked. */
   icon_checked_at: number;

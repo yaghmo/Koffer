@@ -63,6 +63,16 @@ impl AppState {
 
     /// Poisoned locks are taken anyway: a panic somewhere else must never be
     /// the reason the key and the decrypted vault stay in memory.
+    /// Open a vault, wiping whichever one was open: replacing it would drop
+    /// its plaintext into freed memory.
+    pub(crate) fn replace_vault(&self, vault: Vault) {
+        let mut v = self.vault.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(old) = v.as_mut() {
+            vault::zeroize_secrets(old);
+        }
+        *v = Some(vault);
+    }
+
     fn lock_and_clear(&self) {
         let mut k = self.key.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(keys) = k.as_mut() {
@@ -146,6 +156,9 @@ pub struct ItemMeta {
     /// Bare domain of a login's URL ("twitch.tv"), used by the UI to group
     /// several accounts on the same platform under one card.
     pub host: Option<String>,
+    /// A login's full URL, for the logo refresh: without it, reading the URL
+    /// meant `get_item`, which brings the password into the webview too.
+    pub url: Option<String>,
     pub pinned: bool,
     /// Unix seconds of the last favicon check; 0 when never checked.
     pub icon_checked_at: i64,
@@ -202,6 +215,10 @@ fn to_meta(item: &Item) -> ItemMeta {
             Item::Login { fields, .. } => host_of(&fields.url),
             _ => None,
         },
+        url: match item {
+            Item::Login { fields, .. } if !fields.url.is_empty() => Some(fields.url.clone()),
+            _ => None,
+        },
         pinned: false,
         icon_checked_at: 0,
         card_bin: match item {
@@ -245,7 +262,7 @@ pub fn setup_vault(
     storage::save_vault(&account, &vault, &keys).map_err(|e| e.to_string())?;
     state.start_autolock(&account);
     *state.key.lock().unwrap() = Some(keys);
-    *state.vault.lock().unwrap() = Some(vault);
+    state.replace_vault(vault);
     *state.current_account.lock().unwrap() = Some(account.clone());
     crate::log_info!("setup_vault", "created account={}", account.id);
     Ok((&account).into())
@@ -261,13 +278,20 @@ pub fn unlock_vault(
     crate::log_info!("unlock_vault", "attempt account={account_id}");
     let id = Uuid::parse_str(&account_id).map_err(|e| e.to_string())?;
     let account = accounts::get_account_legacy_fallback(id).map_err(|e| e.to_string())?;
-    let (vault, keys) = storage::load_vault(&account, &password).map_err(|_| {
+    let (mut vault, keys) = storage::load_vault(&account, &password).map_err(|_| {
         crate::log_warn!("unlock_vault", "failed account={account_id} (bad password)");
         "invalid password".to_string()
     })?;
+    // Written at once, so the plaintext config stops mattering at the first
+    // unlock rather than the first edit.
+    if vault::seed_browser_prefs(&mut vault, &config::load(&account)) {
+        if let Err(e) = storage::save_vault(&account, &vault, &keys) {
+            crate::log_warn!("unlock_vault", "browser settings not moved yet: {e}");
+        }
+    }
     state.start_autolock(&account);
     *state.key.lock().unwrap() = Some(keys);
-    *state.vault.lock().unwrap() = Some(vault);
+    state.replace_vault(vault);
     *state.current_account.lock().unwrap() = Some(account);
     crate::log_info!("unlock_vault", "unlocked account={account_id}");
     crate::tray::sync(&app);
@@ -774,7 +798,18 @@ pub fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
         .unwrap()
         .clone()
         .ok_or_else(|| "no active account".to_string())?;
-    Ok(config::load(&account))
+    let mut c = config::load(&account);
+    // The browser switches shown are the vault's, which are the ones obeyed.
+    if let Some(v) = state.vault.lock().unwrap().as_ref() {
+        let b = v.browser_prefs();
+        c.browser_totp = b.browser_totp;
+        c.browser_offer_save = b.browser_offer_save;
+        c.browser_offer_update = b.browser_offer_update;
+        c.browser_site_prompt = b.browser_site_prompt;
+        c.browser_personal = b.browser_personal;
+        c.browser_confirm_fills = b.browser_confirm_fills;
+    }
+    Ok(c)
 }
 
 #[tauri::command]
@@ -810,20 +845,27 @@ pub fn set_auto_refresh_icons(on: bool, state: State<'_, AppState>) -> Result<()
 /// Turn one of the browser extension's features on or off.
 #[tauri::command]
 pub fn set_browser_pref(name: String, on: bool, state: State<'_, AppState>) -> Result<(), String> {
-    let account = current_account(&state)?;
-    let mut c = config::load(&account);
+    let mut guard = state.vault.lock().unwrap();
+    let vault = guard.as_mut().ok_or_else(|| "locked".to_string())?;
+    let mut prefs = vault.browser_prefs();
     let field = match name.as_str() {
-        "totp" => &mut c.browser_totp,
-        "offer_save" => &mut c.browser_offer_save,
-        "offer_update" => &mut c.browser_offer_update,
-        "site_prompt" => &mut c.browser_site_prompt,
-        "personal" => &mut c.browser_personal,
-        "confirm_fills" => &mut c.browser_confirm_fills,
+        "totp" => &mut prefs.browser_totp,
+        "offer_save" => &mut prefs.browser_offer_save,
+        "offer_update" => &mut prefs.browser_offer_update,
+        "site_prompt" => &mut prefs.browser_site_prompt,
+        "personal" => &mut prefs.browser_personal,
+        "confirm_fills" => &mut prefs.browser_confirm_fills,
         _ => return Err(format!("no browser setting called {name}")),
     };
     *field = on;
+    // In the vault, not the plaintext config (see `vault::BrowserPrefs`).
+    let before = vault.browser.replace(prefs);
+    if let Err(e) = save_unlocked(&state, vault) {
+        vault.browser = before;
+        return Err(e);
+    }
     crate::log_info!("set_browser_pref", "{name}={on}");
-    config::save(&account, &c).map_err(|e| e.to_string())
+    Ok(())
 }
 
 /// On-disk footprint of the active vault, for the Settings storage card.
@@ -901,6 +943,9 @@ pub fn create_recovery_code(
         .map_err(|_| "invalid password".to_string())?;
 
     let (secret, code) = crate::recovery::generate();
+    // A fresh data key as well, so the old code plus an old copy of the file
+    // (cloud history, an export) opens that copy and nothing saved after.
+    keys.rotate_data_key();
     keys.set_recovery_secret(&secret);
     let saved = storage::save_vault(&account, &vault, &keys);
     // The local copies are wrapped under the old code: with it, any of them
@@ -940,27 +985,37 @@ pub fn recover_vault(
         }
     })?;
 
-    // The code stays valid; only the master half is rewrapped.
+    // A fresh data key, so the forgotten (maybe stolen) password plus an old
+    // copy opens nothing saved from now on. The code just typed stays valid:
+    // its slot is derived again and wraps the new key.
+    keys.rotate_data_key();
+    keys.set_recovery_secret(&secret);
     keys.set_master_password(&new_password);
+    let mut vault = vault;
+    vault::seed_browser_prefs(&mut vault, &config::load(&account));
     storage::save_vault(&account, &vault, &keys).map_err(|e| e.to_string())?;
 
     state.start_autolock(&account);
     *state.key.lock().unwrap() = Some(keys);
-    *state.vault.lock().unwrap() = Some(vault);
+    state.replace_vault(vault);
     *state.current_account.lock().unwrap() = Some(account);
     crate::log_warn!("recover_vault", "vault recovered account={account_id}");
     Ok(())
 }
 
-/// Change the master password. With key wrapping this only rewraps the data
-/// key, so the vault itself is not re-encrypted and the recovery code keeps
-/// working.
+/// Change the master password, under a fresh data key.
+///
+/// Re-wrapping alone would leave the old password able to open every file
+/// saved from now on, given any old copy (cloud history, an export) to take
+/// the data key from -- and a leaked password is the usual reason to change
+/// it. The recovery code wraps the old data key and the app never holds the
+/// code, so a vault that had one gets a new one, returned to be shown.
 #[tauri::command]
 pub fn change_master_password(
     current: String,
     new_password: String,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     if new_password.len() < 8 {
         return Err("password must be at least 8 characters".to_string());
     }
@@ -970,9 +1025,12 @@ pub fn change_master_password(
         "current password is not correct".to_string()
     })?;
 
-    // The recovery slot rides along sealed, so an existing recovery code
-    // keeps opening the vault after the password changes.
     keys.set_master_password(&new_password);
+    let new_code = keys.rotate_data_key().then(|| {
+        let (secret, code) = crate::recovery::generate();
+        keys.set_recovery_secret(&secret);
+        crate::recovery::format_for_display(&code)
+    });
     let saved = storage::save_vault(&account, &vault, &keys);
     // Second decrypted copy, dropped here; the AppState one is untouched.
     vault::zeroize_secrets(&mut vault);
@@ -983,7 +1041,7 @@ pub fn change_master_password(
     storage::delete_backups(&account);
     *state.key.lock().unwrap() = Some(keys);
     crate::log_warn!("change_master_password", "master password changed");
-    Ok(())
+    Ok(new_code)
 }
 
 #[tauri::command]
@@ -1311,9 +1369,9 @@ pub fn bridge_approve(
 /// Good for one handout of that item on that site, for a few seconds: the
 /// extension is retrying and picks it up on its next call.
 #[tauri::command]
-pub fn bridge_confirm_fill(origin: String, id: String, host: String, app: AppHandle) -> Result<(), String> {
+pub fn bridge_confirm_fill(origin: String, id: String, host: String, what: String, app: AppHandle) -> Result<(), String> {
     let id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
-    app.state::<crate::bridge::Bridge>().grant(&origin, id, &host.trim().to_lowercase());
+    app.state::<crate::bridge::Bridge>().grant(&origin, id, &host.trim().to_lowercase(), &what);
     crate::log_info!("bridge_confirm_fill", "allowed one handout");
     Ok(())
 }
@@ -1334,6 +1392,9 @@ pub fn bridge_revoke_host(
         .ok_or_else(|| "that extension is not paired".to_string())?;
     client.allowed_hosts.retain(|h| *h != host);
     save_unlocked(&state, vault)?;
+    // A backup from before this still holds the approval: copied back over
+    // the vault file, it would restore it. Same for unpairing below.
+    storage::delete_backups(&current_account(&state)?);
     crate::log_info!("bridge_revoke_host", "revoked a host");
     Ok(())
 }
@@ -1397,6 +1458,7 @@ pub fn bridge_unpair(origin: String, state: State<'_, AppState>) -> Result<(), S
         return Err("that extension is not paired".to_string());
     }
     save_unlocked(&state, vault)?;
+    storage::delete_backups(&current_account(&state)?);
     crate::log_info!("bridge_unpair", "unpaired origin={origin}");
     Ok(())
 }

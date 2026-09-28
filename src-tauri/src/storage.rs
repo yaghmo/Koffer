@@ -4,7 +4,7 @@
 
 use crate::accounts::Account;
 use crate::crypto::{decrypt_with_aad, encrypt_with_aad};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 use crate::vault::{deserialize_vault, serialize_vault, PersonalInfo, Vault, VaultError};
 use std::fs;
 use std::io::Write;
@@ -184,6 +184,27 @@ impl KeySet {
     pub fn set_master_password(&mut self, password: &str) {
         self.master_salt = crate::crypto::random_bytes(16);
         self.master_kek = Some(crate::crypto::derive_key(password, &self.master_salt));
+    }
+
+    /// Replace the data key with a fresh one.
+    ///
+    /// Re-wrapping alone (a new password, a new code) leaves every earlier
+    /// copy of the file -- cloud history, an export, a stray backup --
+    /// encrypted under the same data key, so the *old* secret plus any old
+    /// copy yields the key to every vault saved afterwards. With a fresh key
+    /// an old secret opens old copies and nothing newer.
+    ///
+    /// A sealed recovery slot wraps the old key and cannot be re-wrapped
+    /// without its code, so it is dropped: the caller issues a new code or
+    /// re-derives the slot from one it holds. Returns whether it was.
+    pub fn rotate_data_key(&mut self) -> bool {
+        self.data_key.zeroize();
+        self.data_key.copy_from_slice(&crate::crypto::random_bytes(32));
+        let sealed = matches!(self.recovery, Some(RecoverySlot::Sealed { .. }));
+        if sealed {
+            self.recovery = None;
+        }
+        sealed
     }
 
     /// Point the recovery slot at a new code.
@@ -381,6 +402,7 @@ pub fn load_vault_unverified(account: &Account) -> Result<Vault, StorageError> {
         backup: None,
         paired: Vec::new(),
         never_save: Vec::new(),
+        browser: None,
     })
 }
 
@@ -401,7 +423,9 @@ pub fn load_vault(account: &Account, password: &str) -> Result<(Vault, KeySet), 
         let nonce = &bytes[HEADER_LEN..HEADER_LEN + 12];
         let ct = &bytes[HEADER_LEN + 12..];
         let aad: &[u8] = if version == VERSION_DIRECT_KEY { &bytes[..HEADER_LEN] } else { b"" };
-        let plaintext = decrypt_with_aad(&key, nonce, ct, aad)?;
+        // The whole vault in one buffer: wiped when it goes, not left in
+        // freed memory.
+        let plaintext = Zeroizing::new(decrypt_with_aad(&key, nonce, ct, aad)?);
         let vault = deserialize_vault(&plaintext)?;
         if vault.kdf_salt != salt {
             return Err(StorageError::Invalid);
@@ -472,7 +496,7 @@ fn open_v3(bytes: &[u8], kek: [u8; 32], slot: WrapSlot) -> Result<(Vault, KeySet
             wrap_aad(&recovery_salt, SLOT_RECOVERY),
         ),
     };
-    let unwrapped = decrypt_with_aad(&kek, nonce, wrap, &aad)?;
+    let unwrapped = Zeroizing::new(decrypt_with_aad(&kek, nonce, wrap, &aad)?);
     let mut data_key = [0u8; 32];
     if unwrapped.len() != 32 {
         return Err(StorageError::Invalid);
@@ -482,7 +506,7 @@ fn open_v3(bytes: &[u8], kek: [u8; 32], slot: WrapSlot) -> Result<(Vault, KeySet
     let full_header = &bytes[..V3_VAULT_NONCE];
     let vault_nonce = &bytes[V3_VAULT_NONCE..V3_VAULT_CT];
     let ct = &bytes[V3_VAULT_CT..];
-    let plaintext = decrypt_with_aad(&data_key, vault_nonce, ct, full_header)?;
+    let plaintext = Zeroizing::new(decrypt_with_aad(&data_key, vault_nonce, ct, full_header)?);
     let vault = deserialize_vault(&plaintext)?;
 
     // The slot we did not open with is carried through sealed, so saving
@@ -874,26 +898,38 @@ mod tests {
     }
 
     #[test]
-    fn changing_the_password_keeps_the_recovery_code_working() {
+    fn a_password_change_leaves_old_copies_on_the_old_key() {
         let _g = lock_env();
         fresh_tmp();
         let acct = fixture_account();
         let mut keys = KeySet::new("old-master");
         let v = note_vault(keys.master_salt.clone(), "keep me");
-        let secret = crate::recovery::generate().0;
-        keys.set_recovery_secret(&secret);
+        let old_code = crate::recovery::generate().0;
+        keys.set_recovery_secret(&old_code);
         save_vault(&acct, &v, &keys).unwrap();
+        // A copy taken before the change: a cloud history entry, an export.
+        let old_copy = fs::read(vault_path(&acct)).unwrap();
 
-        // Reopen the way the command does, then rotate the password.
+        // What the command does.
         let (v, mut keys) = load_vault(&acct, "old-master").unwrap();
+        let old_key = keys.data_key;
         keys.set_master_password("new-master");
+        assert!(keys.rotate_data_key(), "the sealed code slot cannot follow the new key");
+        let new_code = crate::recovery::generate().0;
+        keys.set_recovery_secret(&new_code);
         save_vault(&acct, &v, &keys).unwrap();
 
-        assert!(load_vault(&acct, "old-master").is_err());
-        let (by_new, _) = load_vault(&acct, "new-master").unwrap();
+        let (by_new, now) = load_vault(&acct, "new-master").unwrap();
         assert_eq!(by_new.items.len(), 1);
-        let (by_code, _) = load_vault_with_recovery(&acct, &secret).unwrap();
-        assert_eq!(by_code.items.len(), 1);
+        assert_ne!(now.data_key, old_key, "the old password's key must not open newer files");
+        assert!(load_vault(&acct, "old-master").is_err());
+        assert!(load_vault_with_recovery(&acct, &old_code).is_err());
+        assert!(load_vault_with_recovery(&acct, &new_code).is_ok());
+
+        // The old copy still opens with the old password -- but only itself.
+        fs::write(vault_path(&acct), &old_copy).unwrap();
+        let (_, then) = load_vault(&acct, "old-master").unwrap();
+        assert_eq!(then.data_key, old_key);
     }
 
     #[test]

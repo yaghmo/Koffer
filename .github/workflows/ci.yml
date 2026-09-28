@@ -15,6 +15,14 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Read the code, nothing more: no job here writes to the repository.
+permissions:
+  contents: read
+
+# Actions are pinned to a commit, not a tag: a tag can be moved to other code
+# after it was reviewed, and the bundle job hands them signing secrets. The
+# comment names the version to look for when updating.
+
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -24,20 +32,21 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
+          toolchain: stable
           components: clippy
 
       # Cargo's registry and this crate's build artifacts, keyed per OS so the
       # three legs never hand each other a target dir built for another host.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri
 
@@ -83,16 +92,18 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: src-tauri
 
@@ -111,6 +122,12 @@ jobs:
 
       - run: npm ci
 
+      # The web part is built here, before any signing secret is in the job:
+      # this runs every npm dev dependency's code, and none of it should be
+      # able to read a certificate. `tauri build` below skips its own
+      # frontend build for the same reason.
+      - run: npm run build
+
       # Signing switches on by itself once its secrets exist, and not before:
       # a secret that was never set reads as "", and handing the bundler an
       # empty certificate fails the build instead of skipping the signature.
@@ -123,18 +140,10 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           [ -n "$APPLE_CERTIFICATE" ] || { echo "No Apple certificate: unsigned."; exit 0; }
-          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-            value="${!name}"
-            [ -n "$value" ] || continue
-            echo "::add-mask::$value"
-            { echo "$name<<EOF_$name"; echo "$value"; echo "EOF_$name"; } >> "$GITHUB_ENV"
-          done
+          # Nothing goes into $GITHUB_ENV: every later step would see it.
+          # The build step below is handed the notarization secrets itself.
           # A throwaway keychain holding only this certificate, as Tauri's
           # signing guide does it; the runner is discarded after the job.
           KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
@@ -168,9 +177,22 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        run: npx tauri build ${SIGN_CONFIG:+--config "$SIGN_CONFIG"}
+          # macOS: the identity the keychain step imported and the Apple ID
+          # trio for notarization; empty on the other systems.
+          APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos-latest' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+        # The frontend was built above, without secrets; the empty hook stops
+        # tauri building it again in here. An unset secret reads as "", which
+        # the bundler would take as a value, so empty ones are dropped.
+        run: |
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || unset "$name"
+          done
+          npx tauri build --config '{"build":{"beforeBuildCommand":""}}' ${SIGN_CONFIG:+--config "$SIGN_CONFIG"}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: installers-${{ matrix.os }}
           if-no-files-found: error

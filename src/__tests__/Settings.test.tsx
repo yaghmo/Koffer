@@ -10,8 +10,8 @@ vi.mock("../lib/api", () => ({
     getConfig: vi.fn().mockResolvedValue({ autolock_mins: 15, auto_refresh_icons: false , browser_totp: true, browser_offer_save: true, browser_offer_update: true, browser_site_prompt: true }),
     setAutoRefreshIcons: vi.fn().mockResolvedValue(undefined),
     listItems: vi.fn().mockResolvedValue([
-      { id: "1", kind: "login", title: "GitHub", icon_checked_at: 0 },
-      { id: "2", kind: "login", title: "No favicon site", icon_checked_at: 0 },
+      { id: "1", kind: "login", title: "GitHub", url: "https://example1.com", favicon: "", icon_checked_at: 0 },
+      { id: "2", kind: "login", title: "No favicon site", url: "https://example2.com", favicon: "", icon_checked_at: 0 },
     ]),
     getItem: vi.fn((id: string) =>
       Promise.resolve({

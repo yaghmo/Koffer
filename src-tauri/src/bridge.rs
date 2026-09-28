@@ -210,15 +210,32 @@ pub struct Bridge {
     /// only: they last seconds, and a restart owes nobody a fill.
     grants: Mutex<Vec<Grant>>,
     last_confirm: Mutex<Option<Instant>>,
+    /// Passwords handed out recently, by browser and item: with "confirm
+    /// every fill" on, `/offer` says "same" only for one of these (see
+    /// `offer`).
+    handed: Mutex<Vec<(String, Uuid, Instant)>>,
+    /// Signatures already accepted, until they are too old to verify anyway:
+    /// a captured request must not work twice.
+    seen: Mutex<Vec<(Vec<u8>, i64)>>,
 }
 
-/// One handout the user allowed: this browser, this item, this site.
+/// One request the user allowed: this browser, this item, this site, this
+/// action. The action is part of it so an Allow for filling a password
+/// cannot be spent on overwriting it.
 struct Grant {
     client: String,
     item: Uuid,
     host: String,
+    what: String,
     until: Instant,
 }
+
+/// Stand-ins for grants that are not about one item.
+pub const PERSONAL_GRANT: Uuid = Uuid::nil();
+pub const NEW_LOGIN_GRANT: Uuid = Uuid::from_u128(1);
+
+/// How long after a fill a matching login counts as that fill's.
+const HANDED_TTL: Duration = Duration::from_secs(10 * 60);
 
 impl Bridge {
     /// The port the bridge is listening on, if it came up.
@@ -226,25 +243,65 @@ impl Bridge {
         *self.port.lock().unwrap()
     }
 
-    /// The user clicked Allow on one handout.
-    pub fn grant(&self, client: &str, item: Uuid, host: &str) {
+    /// The user clicked Allow on one request.
+    pub fn grant(&self, client: &str, item: Uuid, host: &str, what: &str) {
         let now = Instant::now();
         let mut grants = self.grants.lock().unwrap();
         grants.retain(|g| g.until > now);
-        grants.push(Grant { client: client.to_string(), item, host: host.to_string(), until: now + GRANT_TTL });
+        grants.push(Grant {
+            client: client.to_string(),
+            item,
+            host: host.to_string(),
+            what: what.to_string(),
+            until: now + GRANT_TTL,
+        });
     }
 
-    /// Use up an Allow for this handout, if there is a live one.
-    fn take_grant(&self, client: &str, item: Uuid, host: &str, now: Instant) -> bool {
+    /// Use up an Allow for this request, if there is a live one.
+    fn take_grant(&self, client: &str, item: Uuid, host: &str, what: &str, now: Instant) -> bool {
         let mut grants = self.grants.lock().unwrap();
         grants.retain(|g| g.until > now);
-        match grants.iter().position(|g| g.client == client && g.item == item && g.host == host) {
+        match grants
+            .iter()
+            .position(|g| g.client == client && g.item == item && g.host == host && g.what == what)
+        {
             Some(i) => {
                 grants.remove(i);
                 true
             }
             None => false,
         }
+    }
+
+    /// A password went to this browser.
+    fn handed_out(&self, client: &str, item: Uuid) {
+        let now = Instant::now();
+        let mut handed = self.handed.lock().unwrap();
+        handed.retain(|(_, _, at)| now.duration_since(*at) < HANDED_TTL);
+        handed.push((client.to_string(), item, now));
+    }
+
+    fn recently_handed(&self, client: &str, item: Uuid) -> bool {
+        let now = Instant::now();
+        self.handed
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(c, i, at)| c == client && *i == item && now.duration_since(*at) < HANDED_TTL)
+    }
+
+    /// First sight of this signature? A replayed request is refused: the
+    /// clock check alone left a captured request good for a minute.
+    fn first_use(&self, signature: &[u8], now: i64) -> bool {
+        let mut seen = self.seen.lock().unwrap();
+        // Older than the skew window, a signature fails the clock check
+        // anyway, so it no longer needs remembering.
+        seen.retain(|(_, at)| now.abs_diff(*at) <= 2 * SIGNATURE_SKEW_SECS as u64);
+        if seen.iter().any(|(s, _)| s.as_slice() == signature) {
+            return false;
+        }
+        seen.push((signature.to_vec(), now));
+        true
     }
 
     fn may_confirm(&self) -> bool {
@@ -1092,6 +1149,9 @@ fn rekey(app: &AppHandle, inc: &Incoming) -> Reply {
     let Some(idx) = client_index(vault, inc, now) else {
         return fail(401, "not paired");
     };
+    if !app.state::<Bridge>().first_use(&inc.signature, now) {
+        return fail(401, "not paired");
+    }
     let (was_key, was_issued, was_prev, was_until) = {
         let c = &mut vault.paired[idx];
         let was_key = std::mem::replace(&mut c.public_key, fresh);
@@ -1131,7 +1191,7 @@ fn rekey(app: &AppHandle, inc: &Incoming) -> Reply {
 /// reads 401 as "locked, or not paired any more", keeps its key, and says so.
 fn status(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
+    let session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1171,7 +1231,18 @@ impl Session<'_> {
 // clippy calls 144 bytes large; on a loopback endpoint answering one browser
 // it is not worth a Box and an extra deref at every route.
 #[allow(clippy::result_large_err)]
-fn authed<'a>(state: &'a tauri::State<'_, AppState>, inc: &Incoming) -> Result<Session<'a>, Reply> {
+fn authed<'a>(state: &'a tauri::State<'_, AppState>, bridge: &Bridge, inc: &Incoming) -> Result<Session<'a>, Reply> {
+    let session = reauthed(state, inc)?;
+    if !bridge.first_use(&inc.signature, session.now) {
+        return Err(fail(401, "not paired"));
+    }
+    Ok(session)
+}
+
+/// `authed` again for a request already accepted once: the same signature,
+/// so no replay check. Only for a route that let the lock go midway.
+#[allow(clippy::result_large_err)]
+fn reauthed<'a>(state: &'a tauri::State<'_, AppState>, inc: &Incoming) -> Result<Session<'a>, Reply> {
     let now = chrono::Utc::now().timestamp();
     let guard = state.vault.lock().unwrap();
     let client = guard
@@ -1200,7 +1271,7 @@ fn reply(mut body: serde_json::Value, rekey_due: bool) -> Reply {
 fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
     let cfg = prefs(app);
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
+    let session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1252,7 +1323,7 @@ fn matches(app: &AppHandle, inc: &Incoming) -> Reply {
 /// information at all.
 fn ask(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
+    let session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1289,7 +1360,7 @@ fn persist(app: &AppHandle, session: Session) -> Result<(), String> {
 fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
     let cfg = prefs(app);
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, inc) {
+    let mut session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1303,7 +1374,7 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
         return fail(400, "no password");
     }
     let is_approved = approved(session.client(), &host);
-    let offer = crate::capture::offer_for(
+    let mut offer = crate::capture::offer_for(
         session.vault(),
         is_approved,
         &origin,
@@ -1311,6 +1382,19 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
         &password,
         &field(&inc.body, "current"),
     );
+    // "Same" says the password sent is the stored one: an oracle for a
+    // copied key, which could send guesses. With "confirm every fill" on it
+    // is answered only for a password this browser was handed -- an
+    // allowed fill -- and anything else reads as a change, so a guess
+    // learns nothing. The cost: a login typed by hand is offered as an
+    // update.
+    if cfg.browser_confirm_fills {
+        if let crate::capture::Offer::Same { id } = offer {
+            if !app.state::<Bridge>().recently_handed(&session.client().origin, id) {
+                offer = crate::capture::Offer::Update { id };
+            }
+        }
+    }
     if !offer_allowed(&offer, &cfg) {
         crate::log_info!("bridge", "offer turned off in settings");
         return reply(serde_json::json!({ "offer": "off" }), due);
@@ -1338,15 +1422,17 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
     reply(body, due)
 }
 
-/// The open vault's settings. Read before `authed` takes the vault lock, so
-/// the bridge never holds the vault while waiting on the account.
-fn prefs(app: &AppHandle) -> crate::config::Config {
-    let account = app.state::<AppState>().current_account.lock().unwrap().clone();
-    account.map(|a| crate::config::load(&a)).unwrap_or_default()
+/// The open vault's browser switches -- from the vault, never the plaintext
+/// config (see `vault::BrowserPrefs`). Taken and released before `authed`
+/// takes the lock for the request itself.
+fn prefs(app: &AppHandle) -> crate::vault::BrowserPrefs {
+    let state = app.state::<AppState>();
+    let guard = state.vault.lock().unwrap_or_else(|p| p.into_inner());
+    guard.as_ref().map(|v| v.browser_prefs()).unwrap_or_default()
 }
 
 /// Whether the user's settings let this offer be made at all.
-pub(crate) fn offer_allowed(offer: &crate::capture::Offer, cfg: &crate::config::Config) -> bool {
+pub(crate) fn offer_allowed(offer: &crate::capture::Offer, cfg: &crate::vault::BrowserPrefs) -> bool {
     use crate::capture::Offer;
     match offer {
         Offer::New => cfg.browser_offer_save,
@@ -1365,7 +1451,7 @@ const TOTP_OFF: &str = "2FA codes in the browser are turned off in Settings";
 fn unconfirmed(app: &AppHandle, session: &Session, id: Uuid, page: &str, what: &str) -> Option<serde_json::Value> {
     let host = host_of(page).unwrap_or_default();
     let client = &session.client().origin;
-    if app.state::<Bridge>().take_grant(client, id, &host, Instant::now()) {
+    if app.state::<Bridge>().take_grant(client, id, &host, what, Instant::now()) {
         return None;
     }
     let (title, username) = match session.vault().items.iter().find(|i| i.id() == id) {
@@ -1407,9 +1493,10 @@ fn needs_approval(host: &str) -> Reply {
 
 /// "Save" on the bar: a new login item.
 fn save(app: &AppHandle, inc: &Incoming) -> Reply {
-    let save_on = prefs(app).browser_offer_save;
+    let cfg = prefs(app);
+    let (save_on, confirm) = (cfg.browser_offer_save, cfg.browser_confirm_fills);
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, inc) {
+    let mut session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1427,6 +1514,15 @@ fn save(app: &AppHandle, inc: &Incoming) -> Reply {
     }
     if !approved(session.client(), &host) {
         return needs_approval(&host);
+    }
+    // A write, and with "confirm every fill" on a copied key must not make
+    // one without a click here either.
+    if confirm {
+        if let Some(mut request) = unconfirmed(app, &session, NEW_LOGIN_GRANT, &origin, "save") {
+            request["username"] = field(&inc.body, "username").into();
+            drop(session);
+            return ask_confirm(app, request);
+        }
     }
     let now = chrono::Utc::now().timestamp();
     let written = crate::capture::save_new_or_undo(
@@ -1452,9 +1548,10 @@ fn save(app: &AppHandle, inc: &Incoming) -> Reply {
 
 /// "Update" on the bar. The replaced password goes to the item's history.
 fn update(app: &AppHandle, inc: &Incoming) -> Reply {
-    let update_on = prefs(app).browser_offer_update;
+    let cfg = prefs(app);
+    let (update_on, confirm) = (cfg.browser_offer_update, cfg.browser_confirm_fills);
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, inc) {
+    let mut session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1476,6 +1573,12 @@ fn update(app: &AppHandle, inc: &Incoming) -> Reply {
     if !approved(session.client(), &host) {
         return needs_approval(&host);
     }
+    if confirm {
+        if let Some(request) = unconfirmed(app, &session, id, &origin, "update") {
+            drop(session);
+            return ask_confirm(app, request);
+        }
+    }
     let now = chrono::Utc::now().timestamp();
     if let Err(e) =
         crate::capture::update_password(session.vault_mut(), id, &origin, &password, now)
@@ -1494,7 +1597,7 @@ fn update(app: &AppHandle, inc: &Incoming) -> Reply {
 /// answer whatever happened, so a key holder learns nothing from it.
 fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, inc) {
+    let mut session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1521,7 +1624,7 @@ fn seen(app: &AppHandle, inc: &Incoming) -> Reply {
 /// "Never for this site". The same answer whatever happened.
 fn never(app: &AppHandle, inc: &Incoming) -> Reply {
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, inc) {
+    let mut session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1566,7 +1669,7 @@ fn key_offer(app: &AppHandle, inc: &Incoming) -> Reply {
     // the vault lock goes while the page's pictures are decoded: that is the
     // slow part, it needs nothing from the vault, and a page could otherwise
     // hold the whole app still with pictures built to be slow.
-    let due = match authed(&state, inc) {
+    let due = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => rekey_due(&s),
         Err(r) => return r,
     };
@@ -1578,7 +1681,7 @@ fn key_offer(app: &AppHandle, inc: &Incoming) -> Reply {
         return fail(400, "not a web origin");
     };
     let keys = page_keys(&inc.body);
-    let session = match authed(&state, inc) {
+    let session = match reauthed(&state, inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1614,9 +1717,10 @@ fn key_offer(app: &AppHandle, inc: &Incoming) -> Reply {
 
 /// "Save" on a 2FA offer.
 fn key_save(app: &AppHandle, inc: &Incoming) -> Reply {
-    let totp_on = prefs(app).browser_totp;
+    let cfg = prefs(app);
+    let (totp_on, confirm) = (cfg.browser_totp, cfg.browser_confirm_fills);
     let state = app.state::<AppState>();
-    let mut session = match authed(&state, inc) {
+    let mut session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1633,6 +1737,12 @@ fn key_save(app: &AppHandle, inc: &Incoming) -> Reply {
     };
     if !approved(session.client(), &host) {
         return needs_approval(&host);
+    }
+    if confirm {
+        if let Some(request) = unconfirmed(app, &session, id, &origin, "2FA key") {
+            drop(session);
+            return ask_confirm(app, request);
+        }
     }
     let now = chrono::Utc::now().timestamp();
     if let Err(e) = crate::capture::add_key(session.vault_mut(), id, &origin, &field(&inc.body, "key"), now) {
@@ -1696,7 +1806,7 @@ fn gate(session: &Session, inc: &Incoming) -> Gate {
 fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
     let confirm = prefs(app).browser_confirm_fills;
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
+    let session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1718,7 +1828,9 @@ fn credentials(app: &AppHandle, inc: &Incoming) -> Reply {
     }
     match credentials_for(session.vault(), id, &page) {
         Ok(out) => {
+            let client = session.client().origin.clone();
             drop(session);
+            app.state::<Bridge>().handed_out(&client, id);
             after_handout(app, &state);
             crate::log_info!("bridge", "filled one login");
             let mut body = serde_json::json!({
@@ -1751,7 +1863,7 @@ fn personal(app: &AppHandle, inc: &Incoming) -> Reply {
     let cfg = prefs(app);
     let confirm = cfg.browser_confirm_fills;
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
+    let session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1772,7 +1884,7 @@ fn personal(app: &AppHandle, inc: &Incoming) -> Reply {
     }
     // The profile is not an item; the nil id stands for it in a grant.
     if confirm {
-        if let Some(mut request) = unconfirmed(app, &session, Uuid::nil(), &page, "personal info") {
+        if let Some(mut request) = unconfirmed(app, &session, PERSONAL_GRANT, &page, "personal info") {
             request["title"] = "your profile".into();
             drop(session);
             return ask_confirm(app, request);
@@ -1807,7 +1919,7 @@ fn copy(app: &AppHandle, inc: &Incoming) -> Reply {
     let cfg = prefs(app);
     let (totp_on, confirm) = (cfg.browser_totp, cfg.browser_confirm_fills);
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
+    let session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -1873,7 +1985,7 @@ fn totp(app: &AppHandle, inc: &Incoming) -> Reply {
     let cfg = prefs(app);
     let (totp_on, confirm) = (cfg.browser_totp, cfg.browser_confirm_fills);
     let state = app.state::<AppState>();
-    let session = match authed(&state, inc) {
+    let session = match authed(&state, &app.state::<Bridge>(), inc) {
         Ok(s) => s,
         Err(r) => return r,
     };
@@ -2681,7 +2793,7 @@ mod tests {
     fn offers_the_user_turned_off_are_not_made() {
         use crate::capture::Offer;
         let id = Uuid::new_v4();
-        let mut cfg = crate::config::Config::default();
+        let mut cfg = crate::vault::BrowserPrefs::default();
         assert!(offer_allowed(&Offer::New, &cfg));
         cfg.browser_offer_save = false;
         assert!(!offer_allowed(&Offer::New, &cfg));
@@ -2720,20 +2832,41 @@ mod tests {
         let b = Bridge::default();
         let (item, other) = (Uuid::new_v4(), Uuid::new_v4());
         let now = Instant::now();
-        b.grant(EXT, item, "bank.test");
-        assert!(!b.take_grant(EXT, other, "bank.test", now));
-        assert!(!b.take_grant(EXT, item, "evil.test", now));
-        assert!(!b.take_grant("chrome-extension://someone-else", item, "bank.test", now));
-        assert!(b.take_grant(EXT, item, "bank.test", now));
+        b.grant(EXT, item, "bank.test", "password");
+        assert!(!b.take_grant(EXT, other, "bank.test", "password", now));
+        assert!(!b.take_grant(EXT, item, "evil.test", "password", now));
+        assert!(!b.take_grant("chrome-extension://someone-else", item, "bank.test", "password", now));
+        // An Allow for filling it is not an Allow for overwriting it.
+        assert!(!b.take_grant(EXT, item, "bank.test", "update", now));
+        assert!(b.take_grant(EXT, item, "bank.test", "password", now));
         // Used up.
-        assert!(!b.take_grant(EXT, item, "bank.test", now));
+        assert!(!b.take_grant(EXT, item, "bank.test", "password", now));
+    }
+
+    #[test]
+    fn a_signature_works_once() {
+        let b = Bridge::default();
+        let now = 1_000_000;
+        assert!(b.first_use(&[1; 64], now));
+        assert!(!b.first_use(&[1; 64], now + 5));
+        assert!(b.first_use(&[2; 64], now + 5));
+    }
+
+    #[test]
+    fn same_is_said_only_for_a_password_just_handed_out() {
+        let b = Bridge::default();
+        let item = Uuid::new_v4();
+        assert!(!b.recently_handed(EXT, item));
+        b.handed_out(EXT, item);
+        assert!(b.recently_handed(EXT, item));
+        assert!(!b.recently_handed("chrome-extension://someone-else", item));
     }
 
     #[test]
     fn an_allow_does_not_outlive_its_few_seconds() {
         let b = Bridge::default();
         let item = Uuid::new_v4();
-        b.grant(EXT, item, "bank.test");
-        assert!(!b.take_grant(EXT, item, "bank.test", Instant::now() + GRANT_TTL + Duration::from_secs(1)));
+        b.grant(EXT, item, "bank.test", "password");
+        assert!(!b.take_grant(EXT, item, "bank.test", "password", Instant::now() + GRANT_TTL + Duration::from_secs(1)));
     }
 }
