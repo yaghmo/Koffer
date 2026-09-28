@@ -36,7 +36,7 @@ First public release, in preparation.
 ### Security
 
 - Three security reviews, the last of the whole repository; everything they
-  found is fixed and recorded in `TODO.md`. Among them: a fresh vault key on
+  found is fixed. Among them: a fresh vault key on
   every password or recovery change, the browser switches kept inside the
   encrypted vault, "confirm every fill" covering writes, one-time request
   signatures, and no site names in the log.

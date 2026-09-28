@@ -13,12 +13,13 @@ Local-only encrypted password manager for Windows. Tauri + React.
 
 ## Features
 
-- Logins, secure notes, and cards in one encrypted vault
-- AES-256-GCM encryption with Argon2id key derivation
-- Cryptographically secure password generator
-- Auto-lock after 15-30 minutes of inactivity (configurable)
-- Clipboard auto-clear (30s default)
-- Vault file at rest is encrypted; safe to back up
+- Logins, cards, notes and a personal-info profile in one encrypted file (AES-256-GCM, Argon2id key from the master password)
+- Recovery code at setup; no other way back in, by design
+- Two-factor codes: paste a key or a screenshot of the QR code
+- Password generator, opt-in leaked-password check, password history, and vault health on the Stats page
+- Auto-lock after 15-30 minutes of inactivity, clipboard auto-clear (30s default)
+- Encrypted export and import, and an optional backup of the encrypted file to your own Cloudflare account
+- Browser extension for Chrome and Firefox: fills logins and 2FA codes, saves new logins, fills sign-up forms from your profile
 
 ## Requirements
 
@@ -54,7 +55,7 @@ cd src-tauri && cargo test  # backend
 1. First run → setup wizard → create master password
 2. Vault view appears
 3. Add a login (title, URL, username, password) → save
-4. Lock button (top right) → returns to lock screen
+4. Lock vault (bottom of the sidebar) → returns to lock screen
 5. Unlock with same password → login still there
 6. Wrong password → "Wrong password. Try again."
 7. Generate password → length slider, class checkboxes → Copy
