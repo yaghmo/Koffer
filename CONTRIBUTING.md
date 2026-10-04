@@ -20,7 +20,7 @@ not take. A few things are settled on purpose:
 
 ## Set up
 
-Requirements: Rust 1.75+, Node.js 20+, and the
+Requirements: Rust 1.75+, Node.js 22.12+, and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```bash

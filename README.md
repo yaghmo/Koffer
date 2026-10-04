@@ -6,7 +6,7 @@ https://github.com/user-attachments/assets/6ffcfdec-c14f-4248-9db0-28fb95eaa419
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-4cd7f6)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-4cd7f6)
 ![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-4cd7f6)
-![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-4cd7f6)
+![Node.js 22.12+](https://img.shields.io/badge/Node.js-22.12%2B-4cd7f6)
 [![Extension: Chrome | Firefox](https://img.shields.io/badge/extension-Chrome%20%7C%20Firefox-c0c1ff)](extension/README.md)
 
 Local-only encrypted password manager for Windows. Tauri + React.
@@ -25,7 +25,7 @@ Local-only encrypted password manager for Windows. Tauri + React.
 
 - Windows 10/11
 - Rust 1.75+ ([rustup](https://rustup.rs))
-- Node.js 20+
+- Node.js 22.12+
 - Tauri prerequisites: <https://tauri.app/start/prerequisites/>
 
 ## Develop
