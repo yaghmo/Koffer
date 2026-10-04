@@ -279,7 +279,7 @@ export default function App() {
   if (status === "no-accounts") {
     return (
       <div className="h-screen bg-surface-container-lowest">
-        <main className="h-full">
+        <main className="h-full overflow-y-auto">
           <Setup
             onCreated={async (acct) => {
               setCurrentAccount(acct);
@@ -299,7 +299,7 @@ export default function App() {
   if (status === "locked") {
     return (
       <div className="h-screen bg-surface-container-lowest">
-        <main className="h-full">
+        <main className="h-full overflow-y-auto">
           <AccountLock
             accounts={accounts}
             onUnlocked={(acct) => {

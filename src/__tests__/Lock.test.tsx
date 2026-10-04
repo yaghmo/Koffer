@@ -361,6 +361,7 @@ describe("AccountLock — restore from cloud", () => {
     fireEvent.click(screen.getByRole("button", { name: /^restore$/i }));
 
     expect(await screen.findByText(/token rejected by the worker/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
     expect(screen.getByText("user1")).toBeTruthy();
   });
 

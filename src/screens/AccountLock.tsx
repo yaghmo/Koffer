@@ -202,7 +202,76 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           ))}
         </div>
 
-        {!selected ? (
+        {restoring ? (
+          <form onSubmit={confirmRestore} className="flex w-full flex-col gap-4">
+            <div>
+              <h2 className="text-headline-sm text-on-surface">Restore from cloud</h2>
+              <p className="mt-1 text-body-sm text-on-surface-variant">
+                Downloads the newest backup from your Worker and{" "}
+                <strong className="text-on-surface">adds it as a new vault</strong>. Nothing on
+                this device is overwritten.
+              </p>
+              <p className="mt-2 text-body-sm text-on-surface-variant">
+                It will back up to that <strong className="text-on-surface">same bucket</strong>{" "}
+                once unlocked. If you keep both vaults, turn cloud backup off in one.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Worker URL</p>
+              <input
+                type="url"
+                value={restoreUrl}
+                onChange={(e) => setRestoreUrl(e.target.value)}
+                aria-label="Worker URL"
+                autoFocus
+                spellCheck={false}
+                autoComplete="off"
+                className="field"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Download token</p>
+              <input
+                type="password"
+                value={restoreToken}
+                onChange={(e) => setRestoreToken(e.target.value)}
+                aria-label="Download token"
+                spellCheck={false}
+                autoComplete="off"
+                className="field font-mono"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="label-md">Name</p>
+              <input
+                type="text"
+                value={restoreName}
+                onChange={(e) => setRestoreName(e.target.value)}
+                aria-label="Name"
+                className="field"
+              />
+              {restoreError && (
+                <p role="alert" className="text-body-sm text-error">
+                  {restoreError}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button type="button" className="btn-secondary flex-1" onClick={() => setRestoring(false)}>
+                Back
+              </button>
+              <button
+                type="submit"
+                className="btn-primary flex-1"
+                disabled={
+                  restoreBusy || !restoreUrl.trim() || !restoreToken.trim() || !restoreName.trim()
+                }
+              >
+                {restoreBusy ? "Restoring…" : "Restore"}
+              </button>
+            </div>
+          </form>
+        ) : !selected ? (
           <div className="flex w-full flex-col items-center gap-4 text-center">
             <p className="text-body-md text-on-surface-variant">No vaults exist on this device.</p>
             <button type="button" className="btn-primary w-full" onClick={onAddNew}>
@@ -355,22 +424,27 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           </form>
         )}
 
-        <div className="flex items-center justify-center gap-4">
-          <button
-            type="button"
-            onClick={pickImportFile}
-            className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
-          >
-            Import vault
-          </button>
-          <button
-            type="button"
-            onClick={() => setRestoring(true)}
-            className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
-          >
-            Restore from cloud
-          </button>
-        </div>
+        {!restoring && (
+          <div className="flex items-center justify-center gap-4">
+            <button
+              type="button"
+              onClick={pickImportFile}
+              className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
+            >
+              Import vault
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRestoring(true);
+                setImportPath(null);
+              }}
+              className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
+            >
+              Restore from cloud
+            </button>
+          </div>
+        )}
 
         {!importPath && importError && (
           <p role="alert" className="text-body-sm text-error">
@@ -407,75 +481,6 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           </form>
         )}
 
-        {restoring && (
-          <form onSubmit={confirmRestore} className="flex w-full flex-col gap-3 border-t border-white/6 pt-4">
-            <p className="text-body-sm text-on-surface-variant">
-              Downloads the newest backup from your Worker and{" "}
-              <strong className="text-on-surface">adds it as a new vault</strong> beside the
-              ones you already have — nothing on this device is overwritten. Unlock it with
-              its master password once it appears.
-            </p>
-            <p className="text-body-sm text-on-surface-variant">
-              The restored vault keeps the cloud-backup settings it was copied with, and will
-              back up to that <strong className="text-on-surface">same bucket</strong> once
-              unlocked. If you're keeping both vaults, turn cloud backup off in one of them.
-            </p>
-            <div className="flex flex-col gap-1.5">
-              <p className="label-md">Worker URL</p>
-              <input
-                type="url"
-                value={restoreUrl}
-                onChange={(e) => setRestoreUrl(e.target.value)}
-                aria-label="Worker URL"
-                autoFocus
-                spellCheck={false}
-                autoComplete="off"
-                className="field"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <p className="label-md">Download token</p>
-              <input
-                type="password"
-                value={restoreToken}
-                onChange={(e) => setRestoreToken(e.target.value)}
-                aria-label="Download token"
-                spellCheck={false}
-                autoComplete="off"
-                className="field font-mono"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <p className="label-md">Name</p>
-              <input
-                type="text"
-                value={restoreName}
-                onChange={(e) => setRestoreName(e.target.value)}
-                aria-label="Name"
-                className="field"
-              />
-              {restoreError && (
-                <p role="alert" className="text-body-sm text-error">
-                  {restoreError}
-                </p>
-              )}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn-secondary" onClick={() => setRestoring(false)}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={
-                  restoreBusy || !restoreUrl.trim() || !restoreToken.trim() || !restoreName.trim()
-                }
-              >
-                {restoreBusy ? "Restoring…" : "Restore"}
-              </button>
-            </div>
-          </form>
-        )}
       </div>
 
       {switcherOpen && accounts.length > 1 && (
