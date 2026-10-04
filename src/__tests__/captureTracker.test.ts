@@ -246,3 +246,22 @@ describe("isFresh", () => {
     expect(isFresh(null, 0)).toBe(false);
   });
 });
+
+describe("fromItsOwnPage", () => {
+  it("takes a message whose origin is the tab's own", async () => {
+    // @ts-expect-error untyped extension source
+    const { fromItsOwnPage } = await import("../../extension/capture.js");
+    expect(fromItsOwnPage("https://bank.test", { origin: "https://bank.test" })).toBe(true);
+    // Firefox before 126 has no `origin`, only the frame's URL.
+    expect(fromItsOwnPage("https://bank.test", { url: "https://bank.test/login?x=1" })).toBe(true);
+  });
+
+  it("refuses a page naming another site's origin", async () => {
+    // @ts-expect-error untyped extension source
+    const { fromItsOwnPage } = await import("../../extension/capture.js");
+    expect(fromItsOwnPage("https://bank.test", { origin: "https://evil.test" })).toBe(false);
+    expect(fromItsOwnPage("https://bank.test", { url: "https://evil.test/" })).toBe(false);
+    expect(fromItsOwnPage("https://bank.test", {})).toBe(false);
+    expect(fromItsOwnPage("", { origin: "https://bank.test" })).toBe(false);
+  });
+});

@@ -10,7 +10,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use thiserror::Error;
 use uuid::Uuid;
@@ -97,15 +96,11 @@ fn read_registry() -> Result<Vec<Account>, AccountError> {
 
 fn write_registry(accounts: &[Account]) -> Result<(), AccountError> {
     if let Some(parent) = accounts_path().parent() {
-        fs::create_dir_all(parent)?;
+        crate::storage::private_dir(parent)?;
     }
     let s = serde_json::to_string_pretty(accounts)?;
     let tmp = accounts_path().with_extension("tmp");
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(s.as_bytes())?;
-        f.sync_all()?;
-    }
+    crate::storage::write_private(&tmp, s.as_bytes())?;
     fs::rename(&tmp, accounts_path())?;
     Ok(())
 }
@@ -211,7 +206,7 @@ pub fn import_account(src: &std::path::Path, name: &str) -> Result<Account, Acco
     let id = Uuid::new_v4();
     let vault_filename = format!("vault-{}.enc", id);
     let config_filename = format!("config-{}.json", id);
-    fs::create_dir_all(data_dir())?;
+    crate::storage::private_dir(&data_dir())?;
     fs::copy(src, data_dir().join(&vault_filename))?;
 
     let account = Account {

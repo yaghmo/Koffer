@@ -93,6 +93,38 @@ pub fn data_dir() -> PathBuf {
         .join("koffer")
 }
 
+/// Owner-only on Unix, where a new file is otherwise readable by every
+/// account on the machine. Windows needs nothing: `%APPDATA%` is the user's.
+#[cfg(unix)]
+fn restrict(path: &std::path::Path, mode: u32) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+
+#[cfg(not(unix))]
+fn restrict(_path: &std::path::Path, _mode: u32) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// Create a directory under the data dir, closed to other accounts.
+pub fn private_dir(path: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(path)?;
+    restrict(path, 0o700)
+}
+
+/// Write a whole file, closed to other accounts before any byte goes in.
+pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut f = fs::File::create(path)?;
+    restrict(path, 0o600)?;
+    f.write_all(bytes)?;
+    f.sync_all()
+}
+
+/// Close a file this app appends to (the log) to other accounts.
+pub fn restrict_file(path: &std::path::Path) {
+    let _ = restrict(path, 0o600);
+}
+
 pub fn vault_path(account: &Account) -> PathBuf {
     data_dir().join(&account.vault_filename)
 }
@@ -254,7 +286,7 @@ impl Drop for KeySet {
 }
 
 pub fn save_vault(account: &Account, vault: &Vault, keys: &KeySet) -> Result<(), StorageError> {
-    fs::create_dir_all(data_dir())?;
+    private_dir(&data_dir())?;
 
     let master_kek = keys.master_kek.ok_or(StorageError::NoMasterKey)?;
 
@@ -298,11 +330,7 @@ pub fn save_vault(account: &Account, vault: &Vault, keys: &KeySet) -> Result<(),
 
     let path = vault_path(account);
     let tmp = path.with_extension("tmp");
-    {
-        let mut f = fs::File::create(&tmp)?;
-        f.write_all(&blob)?;
-        f.sync_all()?;
-    }
+    write_private(&tmp, &blob)?;
     fs::rename(&tmp, &path)?;
     // Best-effort: a rotating local copy protects against a corrupted write
     // or an accidental delete. Never fails the save.
@@ -365,10 +393,10 @@ pub fn delete_backups(account: &Account) {
 
 fn write_backup(account: &Account, blob: &[u8]) -> Result<(), StorageError> {
     let dir = backups_dir();
-    fs::create_dir_all(&dir)?;
+    private_dir(&dir)?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
     let stem = account.vault_filename.trim_end_matches(".enc");
-    fs::write(dir.join(format!("{stem}-{stamp}.enc")), blob)?;
+    write_private(&dir.join(format!("{stem}-{stamp}.enc")), blob)?;
 
     let mut mine = backup_copies(account);
     while mine.len() > BACKUP_COPIES {
@@ -930,6 +958,24 @@ mod tests {
         fs::write(vault_path(&acct), &old_copy).unwrap();
         let (_, then) = load_vault(&acct, "old-master").unwrap();
         assert_eq!(then.data_key, old_key);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_vault_and_its_copies_are_closed_to_other_accounts() {
+        use std::os::unix::fs::PermissionsExt;
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
+        let keys = KeySet::new("master");
+        save_vault(&acct, &new_vault(keys.master_salt.clone()), &keys).unwrap();
+        let mode = |p: &std::path::Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&vault_path(&acct)), 0o600);
+        assert_eq!(mode(&data_dir()), 0o700);
+        assert_eq!(mode(&backups_dir()), 0o700);
+        for copy in backup_copies(&acct) {
+            assert_eq!(mode(&copy), 0o600);
+        }
     }
 
     #[test]

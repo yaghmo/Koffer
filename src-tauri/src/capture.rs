@@ -47,7 +47,10 @@ fn logins_for<'a>(
 /// What to offer after a login that looks like it worked.
 ///
 /// `current` is the old password from a change-password form, which often
-/// carries no username; the account is then found by it.
+/// carries no username; the account is then found by it. A form that names
+/// no account any other way -- an expired password's "choose a new one" page
+/// has neither box -- is for `last`, the login the extension last saw used
+/// on this site.
 pub fn offer_for(
     vault: &Vault,
     approved: bool,
@@ -55,6 +58,7 @@ pub fn offer_for(
     username: &str,
     password: &str,
     current: &str,
+    last: Option<Uuid>,
 ) -> Offer {
     let host = host_of(origin).unwrap_or_default();
     // Answered before approval, so an unapproved site the user silenced
@@ -69,12 +73,14 @@ pub fn offer_for(
     }
     let found = if !username.trim().is_empty() {
         logins_for(vault, origin).find(|(_, f)| same_account(&f.username, username))
-    } else if !current.is_empty() {
-        logins_for(vault, origin).find(|(_, f)| f.password == current)
     } else {
-        // The password step of a two-step sign-in has no username box. A
-        // login whose password matches is this one; nothing else can be.
-        logins_for(vault, origin).find(|(_, f)| f.password == password)
+        // No username box: a change form's current password finds the login,
+        // and the password step of a two-step sign-in is the login whose
+        // password matches. Failing both, the one just used here.
+        let by = if current.is_empty() { password } else { current };
+        logins_for(vault, origin)
+            .find(|(_, f)| f.password == by)
+            .or_else(|| logins_for(vault, origin).find(|(b, _)| Some(b.id) == last))
     };
     match found {
         Some((b, f)) if f.password == password => Offer::Same { id: b.id },
@@ -432,41 +438,53 @@ mod tests {
     fn a_never_site_says_never_even_unapproved() {
         let (mut v, _) = vault_with("me", "pw");
         add_never(&mut v, "site.test");
-        assert_eq!(offer_for(&v, false, SITE, "me", "pw", ""), Offer::Never);
+        assert_eq!(offer_for(&v, false, SITE, "me", "pw", "", None), Offer::Never);
     }
 
     #[test]
     fn everything_else_needs_approval() {
         let (v, _) = vault_with("me", "pw");
-        assert_eq!(offer_for(&v, false, SITE, "me", "pw", ""), Offer::NeedsApproval);
-        assert_eq!(offer_for(&v, false, SITE, "other", "x", ""), Offer::NeedsApproval);
+        assert_eq!(offer_for(&v, false, SITE, "me", "pw", "", None), Offer::NeedsApproval);
+        assert_eq!(offer_for(&v, false, SITE, "other", "x", "", None), Offer::NeedsApproval);
     }
 
     #[test]
     fn same_update_and_new() {
         let (v, id) = vault_with("me@site.test", "pw");
-        assert_eq!(offer_for(&v, true, SITE, "me@site.test", "pw", ""), Offer::Same { id });
-        assert_eq!(offer_for(&v, true, SITE, "me@site.test", "changed", ""), Offer::Update { id });
-        assert_eq!(offer_for(&v, true, SITE, "someone-else", "pw", ""), Offer::New);
+        assert_eq!(offer_for(&v, true, SITE, "me@site.test", "pw", "", None), Offer::Same { id });
+        assert_eq!(offer_for(&v, true, SITE, "me@site.test", "changed", "", None), Offer::Update { id });
+        assert_eq!(offer_for(&v, true, SITE, "someone-else", "pw", "", None), Offer::New);
     }
 
     #[test]
     fn a_username_matches_whatever_its_case_and_spaces() {
         let (v, id) = vault_with("me@site.test", "pw");
-        assert_eq!(offer_for(&v, true, SITE, "  Me@Site.TEST ", "new", ""), Offer::Update { id });
+        assert_eq!(offer_for(&v, true, SITE, "  Me@Site.TEST ", "new", "", None), Offer::Update { id });
     }
 
     #[test]
     fn a_change_password_form_matches_on_the_current_password() {
         let (v, id) = vault_with("me", "old");
-        assert_eq!(offer_for(&v, true, SITE, "", "new", "old"), Offer::Update { id });
-        assert_eq!(offer_for(&v, true, SITE, "", "new", "wrong"), Offer::New);
+        assert_eq!(offer_for(&v, true, SITE, "", "new", "old", None), Offer::Update { id });
+        assert_eq!(offer_for(&v, true, SITE, "", "new", "wrong", None), Offer::New);
+    }
+
+    #[test]
+    fn a_form_naming_no_account_updates_the_login_just_used() {
+        // An expired password's "choose a new one" page: new and confirm only.
+        let (mut v, id) = vault_with("me", "old");
+        assert_eq!(offer_for(&v, true, SITE, "", "new", "", None), Offer::New);
+        assert_eq!(offer_for(&v, true, SITE, "", "new", "", Some(id)), Offer::Update { id });
+        // A username on the form still decides; and never another site's login.
+        assert_eq!(offer_for(&v, true, SITE, "someone-else", "new", "", Some(id)), Offer::New);
+        let elsewhere = save_new(&mut v, "https://other.test", "x", "y", 1);
+        assert_eq!(offer_for(&v, true, SITE, "", "new", "", Some(elsewhere)), Offer::New);
     }
 
     #[test]
     fn another_site_s_login_is_never_matched() {
         let (v, _) = vault_with("me", "pw");
-        assert_eq!(offer_for(&v, true, "https://other.test", "me", "pw", ""), Offer::New);
+        assert_eq!(offer_for(&v, true, "https://other.test", "me", "pw", "", None), Offer::New);
     }
 
     #[test]
@@ -506,7 +524,7 @@ mod tests {
     fn a_password_only_step_matches_its_login_by_password() {
         // Two-step sign-ins ask for the password on a page with no username.
         let (v, id) = vault_with("me", "pw");
-        assert_eq!(offer_for(&v, true, SITE, "", "pw", ""), Offer::Same { id });
+        assert_eq!(offer_for(&v, true, SITE, "", "pw", "", None), Offer::Same { id });
     }
 
     #[test]

@@ -65,6 +65,30 @@
     root = null;
   }
 
+  /**
+   * Is the bar really on show where its button is? The page cannot reach
+   * inside the closed root, but the element holding it is the page's to
+   * style: faded to nothing, or laid under something else, the bar still
+   * takes a real click meant for whatever the page drew there.
+   *
+   * ponytail: opacity, visibility and what is on top at the button's
+   * centre. A page can still dress the bar up with a filter or a clip;
+   * what a click here can do is bounded by the app (approval is a click
+   * there, and a browser write keeps the old password in history).
+   */
+  function plainlyShown(button) {
+    for (var n = host; n && n.nodeType === 1; n = n.parentElement) {
+      var style = getComputedStyle(n);
+      if (style.visibility === "hidden" || style.display === "none") return false;
+      if (style.opacity !== "" && parseFloat(style.opacity) < 0.9) return false;
+    }
+    var r = button.getBoundingClientRect();
+    // No layout (a test DOM): nothing to ask about what is on top.
+    if (r.width === 0 || typeof document.elementFromPoint !== "function") return true;
+    var top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return top === host;
+  }
+
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -91,6 +115,8 @@
     bar.addEventListener("submit", function (e) {
       e.preventDefault();
       if (!e.isTrusted || !e.submitter) return;
+      // A click on a bar the user could not see is the page's, not theirs.
+      if (!plainlyShown(e.submitter)) return;
       // One choice at a time: a double-click must not save twice. `say`
       // hands the buttons back when the answer wants another click.
       setBusy(true);

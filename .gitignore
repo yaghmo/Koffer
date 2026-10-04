@@ -21,3 +21,10 @@ TODO.md
 
 # /brag launch-video output; never tracked.
 brag-output*/
+
+# Strix pentest setup and runs, and the skills `npx skills add` installs.
+strix.env
+strix.ps1
+strix_runs/
+.agents/
+skills-lock.json

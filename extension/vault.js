@@ -28,6 +28,15 @@
  * worth. Keys are also replaced hourly and expire after a week unused, so
  * material recovered the hard way goes stale on its own.
  *
+ * # Nothing is sent in the clear
+ *
+ * Signing tells the app who is asking. It told this file nothing about who
+ * was listening: with the app closed, any program can take its port, and it
+ * would have been posted every login page's address and every password
+ * typed. So pairing also agrees an AES-GCM key over ECDH (`channelKey`),
+ * every request after it is sealed under that key, and an answer counts only
+ * if it opens under it. `channel.rs` is the other half.
+ *
  * This file never decides what may be filled. It passes the origin it is
  * acting for and the app does the filtering, so a bug up here cannot turn
  * into one site's password being handed to another.
@@ -117,7 +126,10 @@ function tx(db, mode, run) {
 async function storedKey() {
   try {
     const db = await openDb();
-    return (await tx(db, "readonly", (s) => s.get(KEY_ID))) || null;
+    const key = (await tx(db, "readonly", (s) => s.get(KEY_ID))) || null;
+    // Paired before there was a channel: the app answers nothing sent in
+    // the clear any more, so this browser pairs again.
+    return key && key.channel ? key : null;
   } catch {
     // A profile with IndexedDB blocked cannot hold a key at all, which reads
     // the same as never having paired.
@@ -168,7 +180,72 @@ function hex(buffer) {
     .join("");
 }
 
+function unhex(text) {
+  const pairs = String(text).match(/../g) || [];
+  return Uint8Array.from(pairs.map((b) => parseInt(b, 16)));
+}
+
 const utf8 = new TextEncoder();
+
+// ---------------------------------------------------------------------------
+// The sealed channel
+// ---------------------------------------------------------------------------
+
+/** Names the protocol in the key derivation; `INFO` in channel.rs. */
+const CHANNEL_INFO = "koffer-bridge-v1";
+
+/** This browser's half of the key agreement, for one pairing. */
+async function newChannelPair() {
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, false, ["deriveBits"]);
+  return { privateKey: pair.privateKey, publicKeyHex: hex(await crypto.subtle.exportKey("raw", pair.publicKey)) };
+}
+
+/**
+ * The key both sides reach from each other's public points: ECDH, then
+ * HKDF-SHA-256, as `derive` in channel.rs. Not extractable, like the signing
+ * key, and for the same reason.
+ */
+export async function channelKey(privateKey, appPublicHex) {
+  const theirs = await crypto.subtle.importKey("raw", unhex(appPublicHex), { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const shared = await crypto.subtle.deriveBits({ name: "ECDH", public: theirs }, privateKey, 256);
+  const material = await crypto.subtle.importKey("raw", shared, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: utf8.encode(CHANNEL_INFO) },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+/** Seal one request body: `{"n": nonce hex, "c": ciphertext base64}`. */
+export async function seal(key, path, text) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: utf8.encode(`${path}\nrequest`) },
+    key,
+    utf8.encode(text)
+  );
+  let binary = "";
+  for (const b of new Uint8Array(sealed)) binary += String.fromCharCode(b);
+  return JSON.stringify({ n: hex(iv), c: btoa(binary) });
+}
+
+/**
+ * Open the app's answer to one call. Throws for anything the app did not
+ * seal as the answer on this path: sent in the clear, sealed for another
+ * route, or this browser's own request handed back.
+ */
+export async function open(key, path, body) {
+  if (!body || typeof body.n !== "string" || typeof body.c !== "string") throw new Error("not sealed");
+  const sealed = Uint8Array.from(atob(body.c), (ch) => ch.charCodeAt(0));
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: unhex(body.n), additionalData: utf8.encode(`${path}\nreply`) },
+    key,
+    sealed
+  );
+  return new TextDecoder().decode(plain);
+}
 
 /**
  * Sign one request. Must match `signed_payload` in `bridge.rs` exactly.
@@ -210,7 +287,7 @@ export async function ensureHostPermission() {
   }
 }
 
-async function send(port, path, headers, bodyText) {
+async function send(port, path, headers, bodyText, channel) {
   let res;
   try {
     res = await fetch(`http://127.0.0.1:${port}${path}`, { method: "POST", headers, body: bodyText });
@@ -219,7 +296,17 @@ async function send(port, path, headers, bodyText) {
     throw new Error(NO_APP);
   }
 
-  const data = await res.json().catch(() => ({}));
+  let data = await res.json().catch(() => ({}));
+  if (channel) {
+    try {
+      data = JSON.parse(await open(channel, path, data));
+    } catch {
+      // A locked app cannot read its own keys, so its 401 comes unsealed.
+      // Anything else unsealed is not the app: whatever holds the port did
+      // not pair with this browser, and nothing it says is acted on.
+      throw new Error(res.status === 401 ? NOT_PAIRED : NO_APP);
+    }
+  }
   if (res.ok) return data;
   if (res.status === 401) {
     // Locked or unpaired, and the app does not say which. The key stays:
@@ -236,16 +323,18 @@ async function send(port, path, headers, bodyText) {
   throw new Error(data.error || `request failed (${res.status})`);
 }
 
-/** One call to the app, signed when we have a key. */
+/** One call to the app, sealed and signed when we have a key. */
 async function post(path, body, key, port = (key && key.port) || PORT) {
-  const bodyText = JSON.stringify(body || {});
+  let bodyText = JSON.stringify(body || {});
   const headers = { "Content-Type": "application/json" };
   if (key) {
+    // Sealed first: the signature then covers what actually goes out.
+    bodyText = await seal(key.channel, path, bodyText);
     const timestamp = Math.floor(Date.now() / 1000);
     headers["X-PM-Timestamp"] = String(timestamp);
     headers["X-PM-Signature"] = await signature(key.privateKey, path, bodyText, timestamp);
   }
-  const data = await send(port, path, headers, bodyText);
+  const data = await send(port, path, headers, bodyText, key && key.channel);
   // The app keeps the clock on key age, so a browser whose storage was
   // cleared cannot quietly stop rotating. Never from inside a rekey: that
   // call already holds the lock the next one would wait on.
@@ -269,9 +358,19 @@ export async function pair(typed, label) {
   const parsed = parseCode(typed);
   if (!parsed) throw new Error("That is not a pairing code.");
   const key = await newKey();
-  await post("/pair", { code: parsed.code, label, publicKey: key.publicKeyHex }, null, parsed.port);
+  const half = await newChannelPair();
+  const answer = await post(
+    "/pair",
+    { code: parsed.code, label, publicKey: key.publicKeyHex, channelKey: half.publicKeyHex },
+    null,
+    parsed.port
+  );
+  // An app from before the channel sends no point back, and would answer
+  // nothing this file now sends.
+  if (!answer.channelKey) throw new Error("Update the Koffer app, then pair again.");
+  const channel = await channelKey(half.privateKey, answer.channelKey);
   // The app ties this browser to the port it paired on; so does the key.
-  await storeKey({ ...key, port: parsed.port });
+  await storeKey({ ...key, port: parsed.port, channel });
 }
 
 export async function unpair() {
@@ -297,7 +396,7 @@ async function rekey() {
     if (!current) return;
     const fresh = await newKey();
     await post("/rekey", { publicKey: fresh.publicKeyHex }, current);
-    await storeKey({ ...fresh, port: current.port });
+    await storeKey({ ...fresh, port: current.port, channel: current.channel });
   };
   try {
     if (globalThis.navigator && navigator.locks) {
@@ -379,8 +478,8 @@ export async function personal(origin) {
 }
 
 /** What to offer after a login that looks like it worked. */
-export async function offer(origin, username, password, current) {
-  return signedPost("/offer", { origin, username, password, current });
+export async function offer(origin, username, password, current, last) {
+  return signedPost("/offer", { origin, username, password, current, last: last || "" });
 }
 
 export async function saveLogin(origin, username, password) {

@@ -25,7 +25,8 @@ First public release, in preparation.
   the browser cannot export, and each site needs approval in the app.
 - Fills logins, including two-step sign-ins, phone logins and 2FA codes;
   offers the code of the account just signed in with.
-- Offers to save new logins and changed passwords, and to save a site's 2FA
+- Offers to save new logins and changed passwords -- a forced "choose a new
+  password" page updates the login just used -- and to save a site's 2FA
   key when you turn two-factor on there.
 - Fills sign-up and checkout forms from your profile, and offers a strong
   generated password for new-password boxes.

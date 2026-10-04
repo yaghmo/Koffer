@@ -173,7 +173,12 @@ pub(crate) fn host_of(url: &str) -> Option<String> {
         .or_else(|| url.trim().strip_prefix("http://"))?;
     let host = rest.split(['/', '?', '#']).next()?.split('@').next_back()?;
     let host = host.split(':').next()?.trim_end_matches('.').to_lowercase();
-    let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
+    // `www.` is dropped, except in front of a public suffix: `www.github.io`
+    // is one of that suffix's sites, not the suffix.
+    let host = match host.strip_prefix("www.") {
+        Some(rest) if psl::suffix_str(rest) != Some(rest) => rest.to_string(),
+        _ => host,
+    };
     if host.is_empty() || !host.contains('.') {
         None
     } else {

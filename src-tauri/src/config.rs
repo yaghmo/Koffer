@@ -115,10 +115,10 @@ pub fn save(account: &Account, c: &Config) -> Result<(), ConfigError> {
         return Err(ConfigError::OutOfRange(c.autolock_mins));
     }
     if let Some(parent) = config_path(account).parent() {
-        fs::create_dir_all(parent)?;
+        crate::storage::private_dir(parent)?;
     }
     let s = serde_json::to_string_pretty(c)?;
-    fs::write(config_path(account), s)?;
+    crate::storage::write_private(&config_path(account), s.as_bytes())?;
     Ok(())
 }
 

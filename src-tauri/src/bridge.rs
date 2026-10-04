@@ -25,6 +25,13 @@
 //! No response ever carries an `Access-Control-Allow-Origin` header, so even
 //! a page that guesses the port cannot read what comes back.
 //!
+//! Nothing after `/pair` crosses in the clear, either way. Signing tells the
+//! app who is asking; it told the extension nothing about who was listening,
+//! and with the app closed any program can take this port. Pairing agrees a
+//! key (`channel.rs`), every request is sealed under it and so is every
+//! answer, so a squatter reads ciphertext and cannot make a reply the
+//! extension accepts.
+//!
 //! # What this does not defend against
 //!
 //! **The `Origin` header is not a guarantee.** A browser will not let a
@@ -121,8 +128,9 @@ const CODE_TTL: Duration = Duration::from_secs(180);
 /// sit and guess. Three, because the user is typing it by hand.
 const CODE_TRIES: u8 = 3;
 /// Nothing this endpoint accepts is large. The largest is `/key-offer`: two
-/// QR codes read off a 2FA setup page, one bit a pixel (`qr_from_bits`).
-const MAX_BODY: usize = 32 * 1024;
+/// QR codes read off a 2FA setup page, one bit a pixel (`qr_from_bits`),
+/// about 22 KB, and a third more once sealed (`channel.rs`).
+const MAX_BODY: usize = 48 * 1024;
 /// Connections served at once. One browser needs one; the rest are slack.
 /// Past this the socket is closed rather than queued, because a queue is what
 /// an attacker would be trying to fill.
@@ -293,14 +301,21 @@ impl Bridge {
     /// First sight of this signature? A replayed request is refused: the
     /// clock check alone left a captured request good for a minute.
     fn first_use(&self, signature: &[u8], now: i64) -> bool {
+        // (r, s) and (r, n - s) are one signature written two ways, and both
+        // verify. Remembered in one form, or a captured request comes back
+        // once more as its twin.
+        let signature = match Signature::from_slice(signature) {
+            Ok(sig) => sig.normalize_s().unwrap_or(sig).to_bytes().to_vec(),
+            Err(_) => signature.to_vec(),
+        };
         let mut seen = self.seen.lock().unwrap();
         // Older than the skew window, a signature fails the clock check
         // anyway, so it no longer needs remembering.
         seen.retain(|(_, at)| now.abs_diff(*at) <= 2 * SIGNATURE_SKEW_SECS as u64);
-        if seen.iter().any(|(s, _)| s.as_slice() == signature) {
+        if seen.iter().any(|(s, _)| *s == signature) {
             return false;
         }
-        seen.push((signature.to_vec(), now));
+        seen.push((signature, now));
         true
     }
 
@@ -429,9 +444,15 @@ fn scheme_of(url: &str) -> Option<&'static str> {
     }
 }
 
+/// The port a URL names, or its scheme's own. None when it cannot be read.
+fn port_of(url: &str) -> Option<u16> {
+    reqwest::Url::parse(url.trim()).ok()?.port_or_known_default()
+}
+
 /// Does a login saved at `item_url` belong to a page served from `origin`?
 ///
-/// Host has to match by `host_covers`, and the scheme has to be identical.
+/// Host has to match by `host_covers`, and the scheme and port have to be
+/// identical.
 /// The scheme check is what stops a password saved for `https://bank.test`
 /// from being handed to a page at `http://bank.test`: same host, but anyone
 /// between the browser and the server can serve that page and read what is
@@ -441,6 +462,11 @@ pub(crate) fn url_covers(item_url: &str, origin: &str) -> bool {
     match (scheme_of(item_url), scheme_of(origin)) {
         (Some(a), Some(b)) if a == b => {}
         _ => return false,
+    }
+    // Another port is another service on that machine, and need not be the
+    // same owner's.
+    if port_of(item_url) != port_of(origin) {
+        return false;
     }
     match (host_of(item_url), host_of(origin)) {
         (Some(item_host), Some(origin_host)) => host_covers(&item_host, &origin_host),
@@ -767,12 +793,15 @@ fn from_hex(s: &str) -> Option<Vec<u8>> {
 ///
 /// Built while still async and then handed to the blocking router, so the
 /// runtime is never holding a lock or waiting on the disk.
+#[derive(Clone)]
 struct Incoming {
     path: String,
     origin: String,
     /// The body exactly as it arrived. The signature covers these bytes, so
     /// re-serialising the parsed JSON would break it.
     raw_body: String,
+    /// What the routes read. As it arrived for `/pair`; for every other
+    /// route, what `opened` found inside the sealed body.
     body: serde_json::Value,
     timestamp: i64,
     signature: Vec<u8>,
@@ -852,6 +881,27 @@ fn client_index(vault: &Vault, inc: &Incoming, now: i64) -> Option<usize> {
         }
         key_age(c, now) <= KEY_TTL_SECS && signed_by(&c.public_key, inc, now)
     })
+}
+
+/// The request with its sealed body opened, and the key to seal the answer
+/// under. None unless a paired browser signed it *and* sealed it with the
+/// key agreed at pairing.
+///
+/// A signed body sent in the clear is refused like any stranger's. That is
+/// what the extension sent before there was a channel, readable by whatever
+/// program held the port, and answering it would be the app saying that is
+/// still fine.
+fn opened(vault: &Vault, inc: &Incoming, now: i64) -> Option<(Incoming, [u8; 32])> {
+    let client = &vault.paired[client_index(vault, inc, now)?];
+    let key = crate::channel::key_from_hex(&client.channel_key)?;
+    let plain = Zeroizing::new(crate::channel::open(
+        &key,
+        &inc.path,
+        crate::channel::Dir::Request,
+        &inc.body,
+    )?);
+    let body = serde_json::from_str(&plain).ok()?;
+    Some((Incoming { body, ..inc.clone() }, key))
 }
 
 /// Has the user allowed this browser to be handed a password for this host?
@@ -1033,15 +1083,43 @@ async fn read_request(app: &AppHandle, req: Request<hyper::body::Incoming>) -> R
     // Everything past here locks the vault and may write the disk, so it runs
     // off the runtime rather than on it.
     let app = app.clone();
-    match tokio::task::spawn_blocking(move || route(&app, &inc)).await {
-        Ok(reply) => reply,
-        Err(_) => fail(500, "the request could not be handled"),
-    }
+    let path = inc.path.clone();
+    let (reply, key) = match tokio::task::spawn_blocking(move || route(&app, &inc)).await {
+        Ok(out) => out,
+        Err(_) => return fail(500, "the request could not be handled"),
+    };
+    // Sealed on the way out too, whatever the status: the extension takes a
+    // 200 only if it opens under the key agreed at pairing, which a program
+    // squatting this port cannot make.
+    let Some(key) = key else { return reply };
+    let status = reply.status();
+    let plain = match reply.into_body().collect().await {
+        Ok(b) => Zeroizing::new(String::from_utf8_lossy(&b.to_bytes()).into_owned()),
+        Err(_) => return fail(500, "the request could not be handled"),
+    };
+    let sealed = crate::channel::seal(&key, &path, crate::channel::Dir::Reply, &plain);
+    json_raw(status.as_u16(), &sealed)
 }
 
-fn route(app: &AppHandle, inc: &Incoming) -> Reply {
-    match inc.path.as_str() {
-        "/pair" => pair(app, inc),
+/// The answer, and the key to seal it under when the caller proved to be a
+/// paired browser.
+fn route(app: &AppHandle, inc: &Incoming) -> (Reply, Option<[u8; 32]>) {
+    // Pairing is what agrees the key, so it alone travels unsealed.
+    if inc.path == "/pair" {
+        return (pair(app, inc), None);
+    }
+    // Everything else is opened first. Locked, unpaired, unsigned or sent in
+    // the clear all get the one answer `authed` gives, for its reasons.
+    let found = {
+        let state = app.state::<AppState>();
+        let guard = state.vault.lock().unwrap_or_else(|p| p.into_inner());
+        guard.as_ref().and_then(|v| opened(v, inc, chrono::Utc::now().timestamp()))
+    };
+    let Some((inc, key)) = found else {
+        return (fail(401, "not paired"), None);
+    };
+    let inc = &inc;
+    let reply = match inc.path.as_str() {
         "/rekey" => rekey(app, inc),
         "/status" => status(app, inc),
         "/matches" => matches(app, inc),
@@ -1058,7 +1136,8 @@ fn route(app: &AppHandle, inc: &Incoming) -> Reply {
         "/key-save" => key_save(app, inc),
         "/personal" => personal(app, inc),
         _ => fail(404, "no such endpoint"),
-    }
+    };
+    (reply, Some(key))
 }
 
 // ---------------------------------------------------------------------------
@@ -1074,6 +1153,12 @@ fn pair(app: &AppHandle, inc: &Incoming) -> Reply {
     if !is_public_key(&public_key) {
         return fail(400, "that is not a P-256 public key");
     }
+    // The browser's half of the channel key (see `channel.rs`). Agreed here,
+    // before the lock state for the same reason, and kept only if the code
+    // is good.
+    let Some((app_public, channel_key)) = crate::channel::agree(&field(&inc.body, "channelKey")) else {
+        return fail(400, "that is not a P-256 public key");
+    };
     if !state.is_unlocked() {
         // The same answer a good code gets when no pairing is in progress. A
         // locked vault cannot have one anyway — the code is issued from
@@ -1109,11 +1194,13 @@ fn pair(app: &AppHandle, inc: &Incoming) -> Reply {
             // approved on screen, one at a time, from here on.
             allowed_hosts: Vec::new(),
             port: inc.port,
+            channel_key,
         },
     ) {
         Ok(()) => {
             crate::log_info!("bridge", "paired origin={}", inc.origin);
-            json(200, serde_json::json!({ "paired": true }))
+            // A public point: with it the browser reaches the same key.
+            json(200, serde_json::json!({ "paired": true, "channelKey": app_public }))
         }
         Err(e) => {
             // The code was good; only the write failed. Give it back rather
@@ -1381,6 +1468,7 @@ fn offer(app: &AppHandle, inc: &Incoming) -> Reply {
         &field(&inc.body, "username"),
         &password,
         &field(&inc.body, "current"),
+        Uuid::parse_str(&field(&inc.body, "last")).ok(),
     );
     // "Same" says the password sent is the stored one: an oracle for a
     // copied key, which could send guesses. With "confirm every fill" on it
@@ -2533,6 +2621,7 @@ mod tests {
             prev_until: 0,
             allowed_hosts: Vec::new(),
             port: PORT,
+            channel_key: to_hex(&CHANNEL),
         }
     }
 
@@ -2547,6 +2636,69 @@ mod tests {
             timestamp: ts,
             signature: sig.to_bytes().to_vec(),
             port: PORT,
+        }
+    }
+
+    const CHANNEL: [u8; 32] = [5; 32];
+
+    /// A request signed and sealed the way the extension sends one.
+    fn sealed(sk: &SigningKey, key: &[u8; 32], path: &str, body: &str, ts: i64) -> Incoming {
+        let raw = crate::channel::seal(key, path, crate::channel::Dir::Request, body);
+        signed(sk, path, &raw, ts)
+    }
+
+    #[test]
+    fn a_sealed_request_opens_for_the_browser_that_signed_it() {
+        let now = 1_700_000_000;
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now));
+        let inc = sealed(&sk, &CHANNEL, "/matches", r#"{"origin":"https://bank.test"}"#, now);
+        let (plain, key) = opened(&v, &inc, now).expect("its own sealed request");
+        assert_eq!(field(&plain.body, "origin"), "https://bank.test");
+        assert_eq!(key, CHANNEL);
+        // Still the signed request: the routes check the signature again.
+        assert_eq!(client_index(&v, &plain, now), Some(0));
+    }
+
+    #[test]
+    fn a_request_sent_in_the_clear_is_refused() {
+        // What the extension sent before the channel: signed, readable by
+        // whatever held the port. Answering it would keep that door open.
+        let now = 1_700_000_000;
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now));
+        let inc = signed(&sk, "/matches", r#"{"origin":"https://bank.test"}"#, now);
+        assert!(opened(&v, &inc, now).is_none());
+    }
+
+    #[test]
+    fn a_request_sealed_under_another_key_is_refused() {
+        let now = 1_700_000_000;
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now));
+        assert!(opened(&v, &sealed(&sk, &[6; 32], "/matches", "{}", now), now).is_none());
+    }
+
+    #[test]
+    fn a_pairing_from_before_the_channel_has_to_pair_again() {
+        let now = 1_700_000_000;
+        let (sk, pk) = keypair(7);
+        let mut old = client(EXT, &pk, now);
+        old.channel_key = String::new();
+        let v = vault_with(old);
+        assert!(opened(&v, &sealed(&sk, &CHANNEL, "/matches", "{}", now), now).is_none());
+    }
+
+    #[test]
+    fn nothing_but_pairing_is_answered_unsealed() {
+        // Every route but `/pair` is reached through `opened`.
+        let src = std::fs::read_to_string(file!()).unwrap();
+        let route = body_of(&src, "fn route(");
+        assert!(route.contains("opened("), "route must open the sealed body first");
+        let before = route.split("opened(").next().unwrap();
+        assert!(before.contains("\"/pair\""), "only /pair may come before it");
+        for path in ["/credentials", "/matches", "/offer", "/save", "/personal", "/totp"] {
+            assert!(!before.contains(path), "{path} must come after the body is opened");
         }
     }
 
@@ -2850,6 +3002,39 @@ mod tests {
         assert!(b.first_use(&[1; 64], now));
         assert!(!b.first_use(&[1; 64], now + 5));
         assert!(b.first_use(&[2; 64], now + 5));
+    }
+
+    #[test]
+    fn the_other_form_of_a_signature_does_not_work_a_second_time() {
+        // ECDSA: (r, s) and (r, n - s) both verify, and P-256 verification
+        // here accepts either. A captured request must not come back as its
+        // twin.
+        let (sk, _) = keypair(7);
+        let sig: Signature = sk.sign(b"one request");
+        let (r, s) = sig.split_scalars();
+        let twin = Signature::from_scalars(*r, -*s).unwrap();
+        assert_ne!(sig.to_bytes(), twin.to_bytes());
+        let b = Bridge::default();
+        assert!(b.first_use(&sig.to_bytes(), 1_000_000));
+        assert!(!b.first_use(&twin.to_bytes(), 1_000_001));
+    }
+
+    #[test]
+    fn a_login_is_not_offered_to_another_port_on_its_host() {
+        // Another port is another service, and often another owner: a NAS's
+        // admin page and whatever else runs beside it.
+        assert!(url_covers("https://bank.test", "https://bank.test"));
+        assert!(url_covers("https://bank.test", "https://bank.test:443"));
+        assert!(url_covers("https://bank.test:8443/login", "https://bank.test:8443"));
+        assert!(!url_covers("https://bank.test", "https://bank.test:8443"));
+        assert!(!url_covers("http://192.168.1.1", "http://192.168.1.1:8080"));
+    }
+
+    #[test]
+    fn www_under_a_public_suffix_is_its_own_site() {
+        // `www.github.io` is somebody's page, not `github.io` itself.
+        assert_eq!(host_of("https://www.github.io"), Some("www.github.io".to_string()));
+        assert_eq!(host_of("https://www.github.com"), Some("github.com".to_string()));
     }
 
     #[test]

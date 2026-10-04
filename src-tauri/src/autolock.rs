@@ -41,6 +41,17 @@ impl AutoLock {
     }
 }
 
+/// How late a watchdog tick may run before the gap counts as sleep.
+const SLEEP_GAP: Duration = Duration::from_secs(60);
+
+/// Was the machine asleep between two watchdog ticks, going by the wall
+/// clock? The idle timer cannot tell: on Linux and macOS its clock stops
+/// while the machine sleeps, so a laptop closed for hours wakes with the
+/// vault as open as it was left.
+pub fn woke_from_sleep(tick_gap: Duration) -> bool {
+    tick_gap > SLEEP_GAP
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,6 +71,14 @@ mod tests {
         assert!(al.tick()); // expired
         al.reset();
         assert!(!al.tick()); // not expired after reset
+    }
+
+    #[test]
+    fn a_long_gap_between_ticks_is_the_machine_having_slept() {
+        assert!(!woke_from_sleep(Duration::from_secs(10)));
+        // A busy machine runs the watchdog late, not minutes late.
+        assert!(!woke_from_sleep(Duration::from_secs(40)));
+        assert!(woke_from_sleep(Duration::from_secs(5 * 60)));
     }
 
     #[test]

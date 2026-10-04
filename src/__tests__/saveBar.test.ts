@@ -76,6 +76,25 @@ describe("save bar", () => {
     expect(onChoice).not.toHaveBeenCalled();
   });
 
+  it("ignores a click on a bar the page has made invisible", () => {
+    // The page cannot reach the buttons, but it styles the element that
+    // holds them: an invisible bar over a decoy takes a real click.
+    const onChoice = vi.fn();
+    const root = Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice);
+    (document.querySelector("[data-pm-bar]") as HTMLElement).style.opacity = "0";
+    press(root, /^save$/i);
+    expect(onChoice).not.toHaveBeenCalled();
+  });
+
+  it("ignores a click when the page has faded everything around the bar", () => {
+    const onChoice = vi.fn();
+    const root = Bar.show({ kind: "new", host: "site.test", username: "me" }, onChoice);
+    document.body.style.opacity = "0.01";
+    press(root, /^save$/i);
+    document.body.style.opacity = "";
+    expect(onChoice).not.toHaveBeenCalled();
+  });
+
   it("keeps the page out of the bar", () => {
     Bar.show({ kind: "new", host: "site.test", username: "me" }, vi.fn());
     expect(document.querySelector("[data-pm-bar]")!.shadowRoot).toBeNull();

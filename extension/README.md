@@ -92,6 +92,14 @@ requests. Four rules hold it up, and
   that format can recover it. What it removes is the string you could copy
   out of `chrome.storage.local` in one line, and everything a captured
   request used to be worth.
+- **Nothing is sent in the clear.** Signing tells the app who is asking; it
+  says nothing about who is listening, and with the app closed any program
+  can take its port. So pairing also agrees an AES-256-GCM key over ECDH
+  (P-256, then HKDF-SHA-256): each side sends a public point and the key
+  itself never crosses. Every request after pairing is sealed under it and
+  so is every answer, and the extension acts on an answer only if it opens
+  under that key. A program squatting the port reads ciphertext and cannot
+  make a reply that counts. A browser paired before this existed pairs again.
 - **Keys age out.** The app decides when one is stale and says so on the next
   reply; this browser answers with `/rekey`, sending a new public point
   signed by the old key — which is only possible because the key is
@@ -216,6 +224,11 @@ in a closed shadow root the page can neither read nor click.
   also counts as working. Boxes still holding what you typed mean the
   site refused it, and a new password that does not match its
   confirmation is never offered.
+- A form that names no account at all -- an expired password's "choose a
+  new one" page, with neither a username nor the old password -- offers
+  **Update** for the login you last used on that site in this browser
+  session. Only a login saved for that exact site (or a parent domain of
+  it); with none, it is offered as a new login.
 - On a site this browser is not approved for yet, **Save** first raises the
   app's approval dialog; click Save again once you have said yes.
 - **Not now** on an update still remembers the password that worked; the

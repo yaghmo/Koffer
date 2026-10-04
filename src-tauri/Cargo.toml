@@ -46,7 +46,9 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 # ECDSA P-256, to verify what the extension signs. The browser holds a key
 # WebCrypto will not export, so there is no bearer string to steal.
-p256 = { version = "0.13", features = ["ecdsa"] }
+# ECDH as well: pairing agrees a key that seals what the extension sends, so
+# a program squatting the bridge's port reads nothing (see channel.rs).
+p256 = { version = "0.13", features = ["ecdsa", "ecdh"] }
 sha2 = "0.10"
 # The real Public Suffix List, compiled in. The hand-written table it
 # replaces decided whether one site's saved login may be offered to another.

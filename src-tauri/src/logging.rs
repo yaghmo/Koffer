@@ -33,7 +33,7 @@ fn rotate_if_needed(path: &PathBuf) {
 pub fn write(level: &str, scope: &str, msg: &str) {
     let path = log_path();
     if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+        let _ = crate::storage::private_dir(parent);
     }
     rotate_if_needed(&path);
     let line = format!(
@@ -43,7 +43,12 @@ pub fn write(level: &str, scope: &str, msg: &str) {
         scope,
         msg
     );
+    let is_new = !path.exists();
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+        // The log names item ids and paired browsers; not for other accounts.
+        if is_new {
+            crate::storage::restrict_file(&path);
+        }
         let _ = f.write_all(line.as_bytes());
     }
 }

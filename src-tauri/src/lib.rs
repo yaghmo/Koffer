@@ -3,6 +3,7 @@ pub mod autolock;
 pub mod breach;
 pub mod bridge;
 pub mod capture;
+pub mod channel;
 pub mod clipboard;
 pub mod cloud;
 pub mod commands;
@@ -38,13 +39,29 @@ pub fn run() {
             bridge::start(app.handle());
             // Idle watchdog: AutoLock only measures idle time; this enforces it.
             let handle = app.handle().clone();
-            std::thread::spawn(move || loop {
-                std::thread::sleep(std::time::Duration::from_secs(10));
-                if handle.state::<AppState>().autolock_if_idle() {
-                    let _ = handle.emit("vault://locked", ());
-                    // The window may be hidden, so the tray icon is the only
-                    // place an auto-lock becomes visible.
-                    tray::sync(&handle);
+            std::thread::spawn(move || {
+                let mut last_tick = std::time::SystemTime::now();
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    // The wall clock, which keeps going while the machine
+                    // sleeps. A clock set backwards reads as no gap.
+                    let now = std::time::SystemTime::now();
+                    let gap = now.duration_since(last_tick).unwrap_or_default();
+                    last_tick = now;
+                    let state = handle.state::<AppState>();
+                    let locked = if autolock::woke_from_sleep(gap) && state.is_unlocked() {
+                        crate::log_info!("app", "locked after the machine slept");
+                        state.lock_and_backup();
+                        true
+                    } else {
+                        state.autolock_if_idle()
+                    };
+                    if locked {
+                        let _ = handle.emit("vault://locked", ());
+                        // The window may be hidden, so the tray icon is the
+                        // only place an auto-lock becomes visible.
+                        tray::sync(&handle);
+                    }
                 }
             });
             Ok(())

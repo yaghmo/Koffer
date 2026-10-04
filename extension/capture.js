@@ -75,6 +75,23 @@ export function sameSite(a, b) {
 }
 
 /**
+ * Does a content script's message name the origin of the page it came from?
+ * The browser fills in `sender`; `origin` in the message is only the page's
+ * word. They differ when a page's own process has been taken over and is
+ * naming another site, and the message is dropped. `sender.origin` is
+ * missing in Firefox before 126, which still gives the frame's URL.
+ */
+export function fromItsOwnPage(origin, sender) {
+  if (!origin || !sender) return false;
+  if (sender.origin) return sender.origin === origin;
+  try {
+    return new URL(sender.url).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Did the form go away, as far as this capture is concerned? A sign-in has
  * to vanish: sites empty the box after a wrong password too. A change of
  * password (it has a `current`) may instead stay up with every box emptied,

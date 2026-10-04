@@ -48,7 +48,7 @@ import {
   saveKey,
   NOT_PAIRED,
 } from "./vault.js";
-import { createTracker, isFresh, sameSite, lastLoginKey, CONFIRM_MS } from "./capture.js";
+import { createTracker, isFresh, sameSite, lastLoginKey, fromItsOwnPage, CONFIRM_MS } from "./capture.js";
 
 /** Firefox exposes the promise-based API as `browser`; Chrome as `chrome`. */
 const ext = globalThis.browser ?? globalThis.chrome;
@@ -316,7 +316,7 @@ function hostOf(origin) {
 async function offerFor(tabId, capture) {
   let res;
   try {
-    res = await offer(capture.origin, capture.username, capture.password, capture.current);
+    res = await offer(capture.origin, capture.username, capture.password, capture.current, await lastLogin(capture.origin));
   } catch (e) {
     if (e.message !== NOT_PAIRED) return; // app closed: say nothing
     // Locked, or not paired: keep the capture and let the user retry.
@@ -521,6 +521,9 @@ async function onSiteChoice(tabId, origin, choice) {
 ext.runtime.onMessage.addListener((msg, sender) => {
   const tabId = sender.tab && sender.tab.id;
   if (!msg || tabId === undefined) return false;
+  // Every message that names an origin is checked against the page the
+  // browser says sent it; `offer-choice` names none.
+  if (msg.origin !== undefined && !fromItsOwnPage(msg.origin, sender)) return false;
   if (msg.type === "captured") {
     tracker.captured(tabId, {
       origin: msg.origin,

@@ -325,6 +325,12 @@ pub struct PairedClient {
     /// Pairings from before there was a range were all on 38471.
     #[serde(default = "first_port")]
     pub port: u16,
+    /// The AES-256-GCM key this browser's requests and their answers are
+    /// sealed under, hex (see `channel.rs`). Agreed at pairing and never
+    /// sent. Empty on a pairing from before the channel: nothing opens under
+    /// it, so that browser pairs again.
+    #[serde(default)]
+    pub channel_key: String,
 }
 
 /// How many items of each kind may be pinned at once.
@@ -420,7 +426,11 @@ pub fn zeroize_secrets(vault: &mut Vault) {
     if let Some(b) = vault.backup.as_mut() {
         b.put_token.zeroize();
     }
-    // `paired` is left alone on purpose. It used to hold a bearer token, which
+    // The channel keys are secrets; the rest of `paired` is not.
+    for client in vault.paired.iter_mut() {
+        client.channel_key.zeroize();
+    }
+    // The rest of `paired` is left alone on purpose. It used to hold a bearer token, which
     // had to be wiped; it now holds a public key, which is not a secret and
     // cannot be turned into one. Nothing in that list is worth clearing, and
     // clearing the origin or the label would look like an unpairing.
