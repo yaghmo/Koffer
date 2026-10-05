@@ -21,7 +21,15 @@ Local-only encrypted password manager for Windows. Tauri + React.
 - Encrypted export and import, and an optional backup of the encrypted file to your own Cloudflare account
 - Browser extension for Chrome and Firefox: fills logins and 2FA codes, saves new logins, fills sign-up forms from your profile
 
+## Install
+
+Download the `.msi` from the [releases page](https://github.com/yaghmo/Koffer/releases) and double-click it.
+
+The installer is not code-signed yet, so Windows SmartScreen warns on first run: click **More info**, then **Run anyway**. Each release lists SHA-256 hashes to check the download against.
+
 ## Requirements
+
+Only for building from source.
 
 - Windows 10/11
 - Rust 1.75+ ([rustup](https://rustup.rs))
