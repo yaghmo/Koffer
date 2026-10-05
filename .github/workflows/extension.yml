@@ -1,0 +1,42 @@
+# Sends the browser extension to addons.mozilla.org as a listed version when
+# a tag like ext-v0.2.2 is pushed. The extension has its own version, apart
+# from the app's, hence its own tag. Mozilla reviews the upload; once it is
+# approved, Firefox updates everyone who installed from the listing.
+name: Extension
+
+on:
+  push:
+    tags: ["ext-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  firefox:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to commits, as in ci.yml; the comment names the version.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      # Mozilla signs a version number once, ever, and what it signs is the
+      # manifest's: a tag that disagrees would publish under another number
+      # than the one it names.
+      - name: Tag matches manifest
+        run: |
+          version="$(node -p 'require("./extension/manifest.json").version')"
+          [ "$GITHUB_REF_NAME" = "ext-v$version" ] || { echo "Tag is $GITHUB_REF_NAME, manifest says $version."; exit 1; }
+
+      - run: npm run ext:lint
+
+      # The only step that is handed the AMO credentials. It does not wait
+      # for the review, which can take days: the job ends once Mozilla has
+      # accepted the upload, and the verdict arrives by email.
+      - name: Submit to addons.mozilla.org
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: npm run ext:publish

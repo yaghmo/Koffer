@@ -1,0 +1,10 @@
+{
+  "summary": {
+    "en-US": "Fills logins and two-factor codes from Koffer, a password manager that keeps the vault on your own computer. Requires the Koffer desktop app."
+  },
+  "categories": ["privacy-security"],
+  "version": {
+    "license": "GPL-3.0-or-later",
+    "approval_notes": "The extension talks only to the Koffer desktop app on http://127.0.0.1 (see host_permissions); it has no server. Windows installer: https://github.com/yaghmo/Koffer/releases. To test: install and open the app, create a vault, then Settings > Browser extension > Pair a browser, and type the code the extension's popup shows. There is no build step: the package is the source as written."
+  }
+}

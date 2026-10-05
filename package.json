@@ -13,6 +13,7 @@
     "ext:lint": "npx web-ext@10.7.0 lint -s extension -i demo.html README.md",
     "ext:build": "npx web-ext@10.7.0 build -s extension -a dist-ext -i demo.html README.md --overwrite-dest",
     "ext:sign": "npx web-ext@10.7.0 sign -s extension -a dist-ext -i demo.html README.md --channel unlisted",
+    "ext:publish": "npx web-ext@10.7.0 sign -s extension -a dist-ext -i demo.html README.md --channel listed --amo-metadata .github/amo-metadata.json --approval-timeout 0",
     "testsite": "node testsite/serve.mjs"
   },
   "dependencies": {
