@@ -67,3 +67,26 @@ reputation. EV certificates no longer skip that step.
 
 Nothing to buy. `.deb` and AppImage are not signed by default. Users verify
 them by the checksum published next to the release.
+
+## Updates
+
+A different signature from the ones above, and free. The app checks at launch
+for a newer build and offers to install it. It refuses any download not
+signed by the updater key, whose public half is `plugins.updater.pubkey` in
+`src-tauri/tauri.conf.json`.
+
+| Secret | Value |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | the contents of the private key file |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password; leave unset for a key made without one |
+
+Once the key is a secret, every push to `main` that passes the tests is built
+for Windows, given the version `major.minor.<run number>` (major.minor from
+`tauri.conf.json`), and published as a release with the `latest.json` that
+installed apps read. Without the secret nothing is built or published on a
+push. The repository must be public for installed apps to reach the release.
+
+To make a new key: `npx tauri signer generate -w ~/.tauri/koffer.key`, then
+put the contents of `koffer.key.pub` in `pubkey`. Keep the private key and a
+backup of it. An installed app only accepts updates signed by the key it was
+built with, so a lost key strands every existing install on its version.

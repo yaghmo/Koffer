@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import UpdatePrompt from "./components/UpdatePrompt";
 import "@fontsource-variable/plus-jakarta-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
@@ -14,5 +15,6 @@ window.addEventListener("unhandledrejection", (e) => logUi("warn", "window", `un
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
+    <UpdatePrompt />
   </React.StrictMode>
 );

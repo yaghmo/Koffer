@@ -29,6 +29,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new())
         .manage(bridge::Bridge::default())
         .setup(|app| {
@@ -122,6 +123,8 @@ pub fn run() {
             commands::backup_now,
             commands::restore_from_cloud,
             commands::fetch_url_metadata,
+            commands::check_update,
+            commands::install_update,
             commands::open_login_url,
             commands::get_personal_info,
             commands::save_personal_info,

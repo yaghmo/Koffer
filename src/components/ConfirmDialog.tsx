@@ -5,6 +5,7 @@ interface Props {
   title: string;
   message: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   /** When set, the confirm button stays disabled until the user types this word exactly. */
   typeToConfirm?: string;
   /** "danger" (the default) for destructive answers; "primary" when saying
@@ -18,6 +19,7 @@ export default function ConfirmDialog({
   title,
   message,
   confirmLabel = "Delete",
+  cancelLabel = "Cancel",
   typeToConfirm,
   tone = "danger",
   onConfirm,
@@ -56,7 +58,7 @@ export default function ConfirmDialog({
         )}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-secondary" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </button>
           <button
             type="button"

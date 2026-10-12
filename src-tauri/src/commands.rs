@@ -14,6 +14,7 @@ use crate::vault::{self, Item, LoginFields, PersonalInfo, Vault};
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_updater::UpdaterExt;
 use uuid::Uuid;
 
 pub struct AppState {
@@ -1654,6 +1655,46 @@ pub async fn fetch_url_metadata(url: String) -> Result<UrlMetadata, String> {
         Err(e) => crate::log_warn!("fetch_url_metadata", "failed: {e}"),
     }
     out
+}
+
+/// The version of a newer build, when the release feed lists one.
+///
+/// The one request the app makes without being asked: a GET of a static file
+/// at launch, carrying nothing from the vault. A debug build never asks, or
+/// `tauri dev` would offer to replace itself with a release.
+#[tauri::command]
+pub async fn check_update(app: AppHandle) -> Result<Option<String>, String> {
+    if cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    Ok(update.map(|u| u.version))
+}
+
+/// Download the newer build and run its installer. Only the user's "Update"
+/// calls this. The download is refused unless it is signed by the key whose
+/// public half is compiled into this build (`plugins.updater.pubkey`), so
+/// neither the host nor the connection can swap in another installer.
+#[tauri::command]
+pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no update available".to_string())?;
+    crate::log_info!("update", "downloading version={}", update.version);
+    let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    // Wipe before handing over: on Windows the installer ends this process on
+    // the spot, and that must not be a slower way of leaving keys in memory
+    // than locking (the tray's exit follows the same rule).
+    state.lock_and_backup();
+    let _ = app.emit("vault://locked", ());
+    crate::tray::sync(&app);
+    update.install(bytes).map_err(|e| e.to_string())?;
+    // macOS and Linux replace the files and carry on running the old ones.
+    app.restart()
 }
 
 /// Open a login item's URL in the default browser.

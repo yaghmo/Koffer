@@ -17,7 +17,8 @@ password.
 
 ## When the app uses the network
 
-Only in three cases, each started by you:
+In four cases. The first three are started by you; the fourth runs each time
+the app starts:
 
 1. **Site logos.** When you enter a web address on a login, ask Settings to
    refresh logos, or turn on automatic logo refresh, the app fetches that
@@ -30,6 +31,12 @@ Only in three cases, each started by you:
 3. **Cloud backup** (opt-in). The already-encrypted vault file is uploaded to
    a storage bucket in **your own** Cloudflare account, which you set up. We
    operate no server and cannot see it. See `worker/README.md`.
+4. **The update check.** When the app starts it fetches one small public
+   file from GitHub (`github.com/yaghmo/Koffer/releases`) to see whether a
+   newer version exists. GitHub learns that someone at your IP address
+   asked. Nothing from the vault is sent. Nothing is downloaded or installed
+   until you click Update, and the download is refused unless it carries
+   Koffer's signature.
 
 ## The browser extension
 

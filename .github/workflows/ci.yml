@@ -15,7 +15,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-# Read the code, nothing more: no job here writes to the repository.
+# Read the code, nothing more. Only the publish job at the bottom writes to
+# the repository, and it asks for that itself.
 permissions:
   contents: read
 
@@ -80,17 +81,36 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+  # Whether the updater's signing key is a secret yet. A job's `if` cannot
+  # read secrets, so this one looks and reports; it runs no code but this.
+  updater:
+    name: updater key
+    runs-on: ubuntu-latest
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - id: key
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          [ -z "$KEY" ] || echo "key=true" >> "$GITHUB_OUTPUT"
+
   bundle:
     name: bundle (${{ matrix.os }})
     # Installers are the slow part, so they are built for a tag or on
-    # request, not on every push to a branch.
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: test
+    # request. A push to main builds one too once the updater key exists:
+    # that build is what installed apps are offered as an update.
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.updater.outputs.key == 'true')
+    needs: [test, updater]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        # Windows alone for a push to main: it is the system the app is
+        # released for, and the other two would triple every push's bill.
+        os: ${{ fromJSON(github.event_name == 'push' && github.ref == 'refs/heads/main' && '["windows-latest"]' || '["windows-latest", "macos-latest", "ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -169,6 +189,24 @@ jobs:
           [ -n "$WINDOWS_SIGN_COMMAND" ] || { echo "No Windows sign command: unsigned."; exit 0; }
           node -e 'console.log("SIGN_CONFIG=" + JSON.stringify({ bundle: { windows: { signCommand: process.env.WINDOWS_SIGN_COMMAND } } }))' >> "$GITHUB_ENV"
 
+      # The updater switches on the same way, once its key is a secret. A
+      # push to main is also given a version of its own, major.minor from
+      # tauri.conf.json with this run's number as the patch: an installed
+      # app only offers a build whose version is higher than its own.
+      - name: Updater artifacts
+        if: needs.updater.outputs.key == 'true'
+        shell: bash
+        run: |
+          node -e '
+            const config = { bundle: { createUpdaterArtifacts: true } };
+            if (process.env.GITHUB_EVENT_NAME === "push" && process.env.GITHUB_REF === "refs/heads/main") {
+              const [major, minor] = require("./src-tauri/tauri.conf.json").version.split(".");
+              config.version = [major, minor, process.env.GITHUB_RUN_NUMBER].join(".");
+              console.log("UPDATE_VERSION=" + config.version);
+            }
+            console.log("UPDATER_CONFIG=" + JSON.stringify(config));
+          ' >> "$GITHUB_ENV"
+
       - name: tauri build
         shell: bash
         # Whatever the provider's sign command needs to log in, e.g. Azure's
@@ -183,14 +221,44 @@ jobs:
           APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
+          # Signs the updater artifacts. The password stays in the
+          # environment even when empty: a key made without one needs "".
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         # The frontend was built above, without secrets; the empty hook stops
         # tauri building it again in here. An unset secret reads as "", which
         # the bundler would take as a value, so empty ones are dropped.
         run: |
-          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY; do
             [ -n "${!name}" ] || unset "$name"
           done
-          npx tauri build --config '{"build":{"beforeBuildCommand":""}}' ${SIGN_CONFIG:+--config "$SIGN_CONFIG"}
+          npx tauri build --config '{"build":{"beforeBuildCommand":""}}' ${SIGN_CONFIG:+--config "$SIGN_CONFIG"} ${UPDATER_CONFIG:+--config "$UPDATER_CONFIG"}
+
+      # What an installed app reads to learn there is something newer: the
+      # version, and for each installer its address in the release the
+      # publish job is about to create, with the signature the app checks
+      # the download against before running it.
+      - name: Update manifest
+        if: env.UPDATE_VERSION != ''
+        shell: bash
+        working-directory: src-tauri/target/release/bundle
+        run: |
+          node -e '
+            const fs = require("fs");
+            const [version, repo] = process.argv.slice(1);
+            const entry = (dir, suffix) => {
+              const file = fs.readdirSync(dir).find((f) => f.includes("_" + version + "_") && f.endsWith(suffix));
+              return {
+                signature: fs.readFileSync(dir + "/" + file + ".sig", "utf8").trim(),
+                url: "https://github.com/" + repo + "/releases/download/v" + version + "/" + file,
+              };
+            };
+            // An app asks for its own installer type first, then the bare
+            // platform: that one is the .msi, which the README hands out.
+            const msi = entry("msi", ".msi");
+            const platforms = { "windows-x86_64": msi, "windows-x86_64-msi": msi, "windows-x86_64-nsis": entry("nsis", "-setup.exe") };
+            fs.writeFileSync("latest.json", JSON.stringify({ version, pub_date: new Date().toISOString(), platforms }, null, 2));
+          ' "$UPDATE_VERSION" "$GITHUB_REPOSITORY"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -202,3 +270,36 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/latest.json
+
+  publish:
+    name: publish update
+    # A push to main that the bundle job built becomes a release, which is
+    # where installed apps look for a newer version. The one job that writes
+    # to the repository, and it runs nothing from it: it only moves the files
+    # the bundle job built and signed.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # this run's installers
+      contents: write # the release and its tag
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Release
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name installers-windows-latest --dir out
+          cd out
+          version="$(jq -r .version latest.json)"
+          {
+            echo "Automatic build of ${GITHUB_SHA::7}. Installed copies of Koffer offer it the next time they start."
+            echo
+            echo "SHA-256:"
+            echo '```'
+            sha256sum msi/*_"$version"_*.msi nsis/*_"$version"_*-setup.exe
+            echo '```'
+          } > notes.md
+          gh release create "v$version" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Koffer $version" --notes-file notes.md \
+            latest.json msi/*_"$version"_*.msi nsis/*_"$version"_*-setup.exe

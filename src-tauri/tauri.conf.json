@@ -36,5 +36,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVEQTk2OUFCMzIwNEEwODgKUldTSW9BUXlxMm1wN1dJeEVOdVllUXpiaXgreDJ5YjlWVHJiZ0E5UkZ3T0c1NXZGYUdZY2w3ZjUK",
+      "endpoints": ["https://github.com/yaghmo/Koffer/releases/latest/download/latest.json"]
+    }
   }
 }

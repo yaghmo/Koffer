@@ -4,6 +4,15 @@ Notable changes, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- In-app updates. The app checks at launch for a newer build and asks before
+  installing it; the download must be signed by Koffer's updater key. Once
+  that key is a CI secret, every push to `main` is published as an update
+  (see `SIGNING.md`).
+
 ## [0.1.0] - 2026-10-05
 
 First public release.

@@ -95,6 +95,11 @@ export const api = {
   fetchUrlMetadata: (url: string) =>
     invoke<UrlMetadata>("fetch_url_metadata", { url }),
 
+  /** The newer version's number, or null. A dev build never asks. */
+  checkUpdate: () => invoke<string | null>("check_update"),
+  /** Settles only when it fails: on success the app is replaced and restarts. */
+  installUpdate: () => invoke<void>("install_update"),
+
   openLoginItem: (id: string) => invoke<void>("open_login_url", { id }),
 
   bridgeState: () => invoke<BridgeState>("bridge_state"),
