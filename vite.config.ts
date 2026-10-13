@@ -15,6 +15,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // Vitest blanks CSS imports by default; designSystem.test.ts reads styles.css as text.
+    css: true,
     env: {
       NODE_ENV: "test",
     },

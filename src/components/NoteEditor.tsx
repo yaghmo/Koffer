@@ -14,7 +14,7 @@ type Action =
   | { kind: "prefix"; prefix: string };
 
 const TOOLS: { label: string; title: string; action: Action; className?: string }[] = [
-  { label: "B", title: "Bold  **text**", action: { kind: "wrap", token: "**" }, className: "font-bold" },
+  { label: "B", title: "Bold  **text**", action: { kind: "wrap", token: "**" }, className: "font-semibold" },
   { label: "I", title: "Italic  *text*", action: { kind: "wrap", token: "*" }, className: "italic" },
   { label: "S", title: "Strikethrough  ~~text~~", action: { kind: "wrap", token: "~~" }, className: "line-through" },
   { label: "</>", title: "Code  `text`", action: { kind: "wrap", token: "`" }, className: "font-mono" },

@@ -17,8 +17,8 @@
     "testsite": "node testsite/serve.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "react": "^18.3.0",

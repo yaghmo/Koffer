@@ -1,75 +1,80 @@
 @import "tailwindcss";
 
-/* The app is dark everywhere, so the parts the engine draws itself (date
-   pickers, dropdowns, scrollbars) should be too, on every platform. */
+/* The shirt is light, so the parts the engine draws itself (date pickers,
+   dropdowns, scrollbars) are too. The jacket turns them dark again. */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 @theme {
-  --color-surface: #10131a;
-  --color-surface-dim: #10131a;
-  --color-surface-bright: #363941;
-  --color-surface-container-lowest: #0b0e15;
-  --color-surface-container-low: #191b23;
-  --color-surface-container: #1d1f27;
-  --color-surface-container-high: #272a32;
-  --color-surface-container-highest: #32353d;
-  --color-on-surface: #e1e2ec;
-  --color-on-surface-variant: #c7c4d7;
-  --color-outline: #908fa0;
-  --color-outline-variant: #464554;
-  --color-primary: #c0c1ff;
-  --color-on-primary: #1000a9;
-  --color-primary-container: #8083ff;
-  --color-secondary: #4edea3;
-  --color-on-secondary: #003824;
-  --color-secondary-container: #00a572;
-  --color-tertiary: #4cd7f6;
-  --color-tertiary-container: #009eb9;
-  --color-error: #ffb4ab;
-  --color-on-error: #690005;
-  --color-error-container: #93000a;
-  --color-on-error-container: #ffdad6;
-  --color-warning: #f5c26b;
+  /* DESIGN.md "suit and shirt". The Material-style names stay because every
+     screen already uses them; the DESIGN.md name is in each comment. */
+  --color-surface: #ffffff; /* shirt */
+  --color-surface-dim: #f4f4f3; /* shirt-soft */
+  --color-surface-bright: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #ffffff;
+  --color-surface-container: #ffffff;
+  --color-surface-container-high: #f4f4f3; /* shirt-soft: selected or hovered row */
+  --color-surface-container-highest: #e4e4e2;
+  --color-on-surface: #141414; /* ink */
+  --color-on-surface-variant: #6b6b6b; /* muted */
+  --color-outline: #6b6b6b; /* placeholder text */
+  --color-outline-variant: #e4e4e2; /* hairline */
+  --color-primary: #c8102e; /* tie */
+  --color-on-primary: #ffffff;
+  --color-primary-container: #a90d27; /* tie-pressed */
+  --color-secondary: #141414; /* was the green "good"; removed in Task 5 */
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #141414;
+  --color-tertiary: #141414; /* removed in Task 5 */
+  --color-tertiary-container: #141414;
+  --color-error: #c8102e;
+  --color-on-error: #ffffff;
+  --color-error-container: #f4f4f3;
+  --color-on-error-container: #c8102e;
+  --color-warning: #ffd60a; /* removed in Task 5, once nothing uses it */
 
-  --font-sans: "Plus Jakarta Sans Variable", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, Consolas, monospace;
+  /* Fixed colours, the same on the shirt and inside the jacket. */
+  --color-shirt: #ffffff;
+  --color-ink: #141414;
+  --color-jacket: #121212;
+  --color-jacket-line: #2a2a2a;
+  --color-on-jacket: #f5f5f5;
+  --color-on-jacket-muted: #a3a3a3;
+  --color-tape: #ffd60a;
+  --color-on-tape: #141414;
 
-  --text-headline-lg: 2rem;
-  --text-headline-lg--line-height: 2.5rem;
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
+
+  --text-headline-lg: 1.375rem;
+  --text-headline-lg--line-height: 1.75rem;
   --text-headline-lg--font-weight: 600;
-  --text-headline-md: 1.375rem;
-  --text-headline-md--line-height: 1.75rem;
+  --text-headline-md: 1.1875rem;
+  --text-headline-md--line-height: 1.5rem;
   --text-headline-md--font-weight: 600;
-  --text-headline-sm: 1.125rem;
+  --text-headline-sm: 1.0625rem;
   --text-headline-sm--line-height: 1.5rem;
   --text-headline-sm--font-weight: 600;
-  --text-body-lg: 1rem;
-  --text-body-lg--line-height: 1.5rem;
-  --text-body-md: 0.875rem;
+  --text-body-lg: 0.875rem;
+  --text-body-lg--line-height: 1.375rem;
+  --text-body-md: 0.8125rem;
   --text-body-md--line-height: 1.25rem;
   --text-body-sm: 0.75rem;
-  --text-body-sm--line-height: 1rem;
+  --text-body-sm--line-height: 1.125rem;
   --text-label-md: 0.75rem;
   --text-label-md--line-height: 1rem;
-  --text-label-md--font-weight: 500;
-  --text-label-md--letter-spacing: 0.03em;
-  --text-label-sm: 0.625rem;
-  --text-label-sm--line-height: 0.875rem;
-  --text-label-sm--font-weight: 600;
-  --text-label-sm--letter-spacing: 0.05em;
+  --text-label-md--font-weight: 400;
+  --text-label-md--letter-spacing: 0;
+  --text-label-sm: 0.6875rem;
+  --text-label-sm--line-height: 1rem;
+  --text-label-sm--font-weight: 400;
+  --text-label-sm--letter-spacing: 0;
 
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2.5rem;
-  --spacing-gutter: 1.5rem;
-
-  --radius-chip: 6px;
-  --radius-control: 8px;
-  --radius-panel: 16px;
+  --radius-chip: 4px;
+  --radius-control: 6px;
+  --radius-panel: 10px;
 }
 
 @layer base {
@@ -84,17 +89,24 @@
     padding: 0;
   }
   body {
-    background-color: var(--color-surface-container-lowest);
+    background-color: var(--color-surface);
     color: var(--color-on-surface);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
+    caret-color: var(--color-on-surface);
+  }
+  ::selection {
+    background: var(--color-on-surface);
+    color: var(--color-surface);
   }
   *:focus {
     outline: none;
   }
+  /* Ink, never red: a focused field must not look like the primary action.
+     Inside the jacket the same variable is the light text colour. */
   *:focus-visible {
-    outline: 2px solid var(--color-primary-container);
+    outline: 2px solid var(--color-on-surface);
     outline-offset: 2px;
     border-radius: 2px;
   }
@@ -136,7 +148,7 @@
   }
   /* WebKit (macOS WKWebView, Linux WebKitGTK) draws the date as editable
      segments: keep them left-aligned like every other field, and give the
-     focused segment the app's accent instead of the system blue. */
+     focused segment a tint of the app's ink instead of the system blue. */
   input[type="date"]::-webkit-date-and-time-value {
     text-align: left;
   }
@@ -146,7 +158,7 @@
   input[type="date"]::-webkit-datetime-edit-month-field:focus,
   input[type="date"]::-webkit-datetime-edit-day-field:focus,
   input[type="date"]::-webkit-datetime-edit-year-field:focus {
-    background-color: color-mix(in srgb, var(--color-primary) 24%, transparent);
+    background-color: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
     color: var(--color-on-surface);
     border-radius: 4px;
     outline: none;
@@ -165,41 +177,74 @@
 }
 
 @layer components {
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-control bg-primary px-4 py-2.5 font-sans text-body-md font-medium text-on-primary transition-colors duration-150 ease-out hover:bg-primary-container disabled:pointer-events-none disabled:opacity-50;
-    box-shadow: 0 0 20px -2px rgba(99, 102, 241, 0.25);
+  /* The jacket: the same utilities, darker values. Anything inside reads the
+     surface tokens as usual and comes out light on black. */
+  .jacket {
+    --color-surface: #121212;
+    --color-surface-dim: #121212;
+    --color-surface-bright: #121212;
+    --color-surface-container-lowest: #121212;
+    --color-surface-container-low: #121212;
+    --color-surface-container: #121212;
+    --color-surface-container-high: #1f1f1f;
+    --color-surface-container-highest: #2a2a2a;
+    --color-on-surface: #f5f5f5;
+    --color-on-surface-variant: #a3a3a3;
+    --color-outline: #a3a3a3;
+    --color-outline-variant: #2a2a2a;
+    color-scheme: dark;
+    background-color: var(--color-jacket);
+    color: var(--color-on-jacket);
   }
-  .btn-primary:disabled {
-    box-shadow: none;
+
+  .btn-primary {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control bg-primary px-4 font-sans text-body-md font-medium whitespace-nowrap text-on-primary transition-colors duration-150 ease-out hover:bg-primary-container disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-control border border-white/8 bg-white/4 px-4 py-2.5 font-sans text-body-md font-medium text-on-surface transition-colors duration-150 ease-out hover:bg-white/8 disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control border border-outline-variant bg-surface px-4 font-sans text-body-md font-medium whitespace-nowrap text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-50;
   }
+  /* The way into something destructive. Never filled: a filled red button is
+     the primary action. */
   .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 rounded-control border border-error bg-transparent px-4 py-2.5 font-sans text-body-md font-medium text-error transition-colors duration-150 ease-out hover:bg-error/12 disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control border border-outline-variant bg-surface px-4 font-sans text-body-md font-medium whitespace-nowrap text-error transition-colors duration-150 ease-out hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-50;
+  }
+  /* The confirm button of a taped dialog. */
+  .btn-ink {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control bg-ink px-4 font-sans text-body-md font-medium whitespace-nowrap text-shirt transition-colors duration-150 ease-out hover:bg-ink/85 disabled:pointer-events-none disabled:opacity-50;
   }
   .field {
-    @apply h-11 w-full rounded-control border border-white/8 bg-surface-container-lowest px-3 font-sans text-body-md text-on-surface transition-colors duration-150 ease-out placeholder:text-outline focus:border-primary-container;
+    @apply h-9 w-full rounded-control border border-outline-variant bg-surface px-3 font-sans text-body-md text-on-surface transition-colors duration-150 ease-out placeholder:text-outline focus:border-on-surface;
   }
   .field:focus {
-    box-shadow: 0 0 0 1px var(--color-primary-container);
+    box-shadow: 0 0 0 1px var(--color-on-surface);
   }
   .card {
-    @apply rounded-panel border border-white/6 bg-surface-container-low/90 backdrop-blur;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    @apply rounded-panel border border-outline-variant bg-surface;
   }
+  /* The one raised thing in the app. */
   .dialog {
-    @apply rounded-panel border bg-surface-container/95;
-    border-color: rgba(128, 131, 255, 0.35);
-    box-shadow: 0 20px 48px -8px rgba(0, 0, 0, 0.8);
+    @apply rounded-panel border border-outline-variant bg-surface;
+    box-shadow: 0 16px 40px -8px rgb(18 18 18 / 0.3);
   }
-  .dialog-danger {
-    border-color: rgba(255, 180, 171, 0.35);
+  /* Tape across the top of a dialog that destroys something. It is the first
+     flex item, pulled out to the edges of the dialog's p-6 padding. */
+  .dialog-danger::before {
+    content: "";
+    display: block;
+    flex: none;
+    height: 12px;
+    margin: -1.5rem -1.5rem 0;
+    border-radius: 9px 9px 0 0;
+    background: repeating-linear-gradient(-45deg, var(--color-tape) 0 14px, var(--color-ink) 14px 28px);
+  }
+  /* A word on yellow: Leaked, Reused, Weak, No undo. */
+  .flag {
+    @apply inline-flex h-5 shrink-0 items-center rounded-chip bg-tape px-2 font-sans text-label-md font-medium whitespace-nowrap text-on-tape;
   }
   .label-sm {
-    @apply font-mono text-label-sm uppercase tracking-[0.05em] text-on-surface-variant;
+    @apply font-sans text-label-sm text-on-surface-variant;
   }
   .label-md {
-    @apply font-mono text-label-md tracking-[0.03em] text-on-surface-variant;
+    @apply font-sans text-label-md text-on-surface-variant;
   }
 }
