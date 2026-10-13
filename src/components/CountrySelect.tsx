@@ -104,9 +104,9 @@ export default function CountrySelect({
         aria-label="Country code"
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="field flex w-[104px] flex-shrink-0 items-center gap-1.5 text-left"
+        className="field flex w-[104px] flex-shrink-0 items-center gap-2 text-left"
       >
-        <span className="label-sm rounded bg-surface-container-high px-1 py-0.5 text-on-surface-variant">
+        <span className="label-sm rounded-chip bg-surface-container-high px-1 text-on-surface-variant">
           {current.iso2}
         </span>
         <span className="text-body-sm text-on-surface">{current.dial}</span>
@@ -141,7 +141,7 @@ export default function CountrySelect({
                   c.dial === dial ? "font-medium text-on-surface" : "text-on-surface"
                 } ${c.iso2 === activeIso ? "bg-surface-container-high" : ""}`}
               >
-                <span className="label-sm w-8 flex-shrink-0 rounded bg-surface-container-high px-1 py-0.5 text-center text-on-surface-variant">
+                <span className="label-sm w-8 flex-shrink-0 rounded-chip bg-surface-container-high px-1 text-center text-on-surface-variant">
                   {c.iso2}
                 </span>
                 <span className="flex-1 truncate">{c.name}</span>

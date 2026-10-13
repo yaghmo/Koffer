@@ -52,13 +52,13 @@ export default function Generator({ onClose, onUse }: Props) {
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
       onClick={onClose}
     >
       <div className="dialog flex w-full max-w-[420px] flex-col gap-4 p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="text-headline-sm text-on-surface">New password</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-control p-1.5 text-on-surface-variant hover:bg-surface-container-high">
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-control p-2 text-on-surface-variant hover:bg-surface-container-high">
             <XIcon size={14} />
           </button>
         </div>

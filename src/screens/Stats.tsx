@@ -87,14 +87,14 @@ function buildIssues(stats: VaultStats): Issue[] {
 function IssueList({ issues, onViewItem }: { issues: Issue[]; onViewItem: (id: string) => void }) {
   if (issues.length === 0) {
     return (
-      <div className="card flex flex-col gap-1 p-5">
+      <div className="card flex flex-col gap-1 p-6">
         <h2 className="text-body-md font-semibold text-on-surface">Needs attention</h2>
         <p className="text-body-sm text-on-surface-variant">No weak, reused, or stale passwords found.</p>
       </div>
     );
   }
   return (
-    <div className="card flex flex-col gap-2 p-5">
+    <div className="card flex flex-col gap-2 p-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-body-md font-semibold text-on-surface">Needs attention</h2>
         <span className="label-sm flex-shrink-0">{issues.length}</span>
@@ -107,10 +107,10 @@ function IssueList({ issues, onViewItem }: { issues: Issue[]; onViewItem: (id: s
             <button
               type="button"
               onClick={() => onViewItem(issue.id)}
-              className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-surface-container-high"
+              className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-2 text-left transition-colors duration-150 ease-out hover:bg-surface-container-high"
             >
               <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">{issue.title}</span>
-              <span className="flex flex-shrink-0 gap-1.5">
+              <span className="flex flex-shrink-0 gap-2">
                 {/* Weak and reused are the tape's job; stale is only a note. */}
                 {issue.tags.map((tag) => (
                   <span key={tag} className={tag === "old" ? "label-md self-center" : "flag"}>
@@ -155,11 +155,8 @@ export default function Stats({ onViewItem }: { onViewItem: (id: string) => void
   ];
 
   return (
-    <div className="mx-auto flex max-w-[720px] flex-col gap-6 px-8 py-8">
-      <div>
-        <p className="label-sm">Stats</p>
-        <h1 className="text-headline-lg text-on-surface">Vault health</h1>
-      </div>
+    <div className="mx-auto flex max-w-[720px] flex-col gap-8 px-8 py-8">
+      <h1 className="text-headline-lg text-on-surface">Vault health</h1>
 
       <div className="card flex items-center gap-6 p-6">
         <HealthRing score={stats.health_score} />

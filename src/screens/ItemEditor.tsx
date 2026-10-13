@@ -436,7 +436,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
         <div className="flex flex-col gap-4 px-6 pb-6">
           <Section title="Item" icon={SectionIcon}>
             {kindLocked ? (
-              <span className="self-start rounded-control bg-on-surface px-3 py-1.5 text-body-sm font-medium capitalize text-surface">
+              <span className="self-start rounded-control bg-on-surface px-3 py-2 text-body-sm font-medium capitalize text-surface">
                 {kind}
               </span>
             ) : (
@@ -449,7 +449,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                       setKind(k);
                       markDirty();
                     }}
-                    className={`rounded-control px-3 py-1.5 text-body-sm font-medium capitalize transition-colors duration-150 ease-out ${
+                    className={`rounded-control px-3 py-2 text-body-sm font-medium capitalize transition-colors duration-150 ease-out ${
                       kind === k ? "bg-on-surface text-surface" : "text-on-surface-variant hover:bg-surface-container-high"
                     }`}
                   >
@@ -458,7 +458,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                 ))}
               </div>
             )}
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Title</p>
               <input
                 value={title}
@@ -478,7 +478,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
               )}
             </div>
             {kind === "login" && (
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 <p className="label-md">URL</p>
                 <div className="relative">
                   {favicon && (
@@ -496,7 +496,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                     autoComplete="off"
                     inputMode="url"
                     placeholder="https://example.com"
-                    className={`field ${favicon ? "pl-9" : ""}`}
+                    className={`field ${favicon ? "pl-8" : ""}`}
                   />
                 </div>
                 {fieldErrors.url && (
@@ -510,7 +510,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
 
           {kind === "login" && (
             <Section title="Sign-in" icon={ShieldIcon}>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 <p className="label-md">Login method</p>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2" role="radiogroup" aria-label="Login method">
                   {methods.map((m) => (
@@ -524,7 +524,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                         setLogin({ ...login, method: m.id });
                         markDirty();
                       }}
-                      className={`flex items-center gap-2.5 rounded-control border px-3 py-2 text-body-md transition-colors duration-150 ease-out ${
+                      className={`flex items-center gap-2 rounded-control border px-3 py-2 text-body-md transition-colors duration-150 ease-out ${
                         login.method === m.id
                           ? "border-on-surface bg-surface-container-high text-on-surface"
                           : "border-outline-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
@@ -537,10 +537,10 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                 </div>
               </div>
               {login.method !== "credentials" ? (
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   <p className="label-md">{login.method === "other" ? "Sign in with" : "Account"}</p>
                   {accountSuggestions.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                       {accountSuggestions.map((s) => (
                         <button
                           key={s.id}
@@ -549,7 +549,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                             setLogin({ ...login, username: s.username || "" });
                             markDirty();
                           }}
-                          className={`flex max-w-full items-center gap-2 rounded-chip border px-2.5 py-1 text-body-sm transition-colors duration-150 ease-out ${
+                          className={`flex max-w-full items-center gap-2 rounded-chip border px-2 py-1 text-body-sm transition-colors duration-150 ease-out ${
                             login.username === s.username
                               ? "border-on-surface bg-on-surface text-surface"
                               : "border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container-high"
@@ -576,7 +576,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   <p className="label-md">Username</p>
                   <input
                     value={login.username}
@@ -614,7 +614,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   )}
                   {phoneShown && (
                     <>
-                      <div className="mt-1.5 flex items-center justify-between">
+                      <div className="mt-1 flex items-center justify-between">
                         <p className="label-md">Phone number</p>
                         <button
                           type="button"
@@ -694,7 +694,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                     aria-label="Password"
                     spellCheck={false}
                     autoComplete="new-password"
-                    className="field w-full pr-10 font-mono"
+                    className="field w-full pr-8 font-mono"
                   />
                   <button
                     type="button"
@@ -840,7 +840,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
 
           {kind === "card" && (
             <Section title="Card details" icon={CardIcon}>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 <p className="label-md">Cardholder</p>
                 <input
                   value={card.cardholder}
@@ -854,7 +854,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   className="field"
                 />
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 <p className="label-md">Number</p>
                 <div className="flex items-center gap-2">
                   <input
@@ -888,7 +888,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   </p>
                 )}
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 <p className="label-md">Exp</p>
                 <input
                   value={card.exp}
@@ -909,7 +909,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   </p>
                 )}
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 <p className="label-md">CVV</p>
                 <div className="flex items-center gap-2">
                   <input
@@ -959,7 +959,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
               aria-label="Comments"
               placeholder="Anything worth remembering about this item"
               spellCheck
-              className="field h-auto resize-y py-2.5"
+              className="field h-auto resize-y py-2"
             />
           </Section>
 
@@ -1015,15 +1015,15 @@ function PersonalChips({
   ].filter((v) => v.value.trim());
   if (values.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <p className="label-sm">Personal profile</p>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2">
         {values.map((v) => (
           <button
             key={v.label}
             type="button"
             onClick={() => onPick(v.value)}
-            className="rounded-chip border border-outline-variant bg-surface-container-low px-2.5 py-1 font-mono text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high"
+            className="rounded-chip border border-outline-variant bg-surface-container-low px-2 py-1 font-mono text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high"
           >
             {v.label}: {v.value}
           </button>
@@ -1107,7 +1107,7 @@ function NewAccountModal({
       role="dialog"
       aria-label={`Add ${providerLabel} account`}
       aria-modal="true"
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-5"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6"
     >
       <form
         className="dialog flex w-full max-w-[420px] flex-col gap-4 p-6"
@@ -1117,10 +1117,9 @@ function NewAccountModal({
         }}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <MethodChip method={providerMethod} size={22} />
             <div>
-              <p className="label-sm">New account</p>
               <h2 className="text-headline-sm text-on-surface">
                 Add {account?.label ?? providerLabel} account
               </h2>
@@ -1128,7 +1127,7 @@ function NewAccountModal({
           </div>
         </div>
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <p className="label-md">Account</p>
             <input
               value={username}
@@ -1146,7 +1145,7 @@ function NewAccountModal({
               </p>
             )}
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <p className="label-md">Password</p>
             <div className="relative">
               <input
@@ -1157,7 +1156,7 @@ function NewAccountModal({
                 aria-label="Password"
                 spellCheck={false}
                 autoComplete="new-password"
-                className="field pr-10 font-mono"
+                className="field pr-8 font-mono"
               />
               <button
                 type="button"

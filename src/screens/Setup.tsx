@@ -14,7 +14,7 @@ interface Props {
 function StrengthMeter({ password }: { password: string }) {
   const s = passwordStrength(password);
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3">
         <span className="label-md">Strength</span>
         <span className={`label-md ${s.className}`}>{s.label}</span>
@@ -99,7 +99,7 @@ export default function Setup({ onCreated, onCancel }: Props) {
             <span>We can't recover this password if you forget it.</span>
           </p>
 
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <p className="label-md">Display name</p>
             <input
               value={name}
@@ -112,7 +112,7 @@ export default function Setup({ onCreated, onCancel }: Props) {
             />
           </div>
 
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <p className="label-md">Master password</p>
             <div className="relative flex items-center">
               <input
@@ -122,7 +122,7 @@ export default function Setup({ onCreated, onCancel }: Props) {
                 aria-label="Master password"
                 spellCheck={false}
                 autoComplete="new-password"
-                className="field pr-10 font-mono"
+                className="field pr-8 font-mono"
               />
               <button
                 type="button"
@@ -139,7 +139,7 @@ export default function Setup({ onCreated, onCancel }: Props) {
 
           <StrengthMeter password={pw} />
 
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <p className="label-md">Confirm</p>
             <input
               type={show ? "text" : "password"}

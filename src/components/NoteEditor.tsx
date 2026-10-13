@@ -51,7 +51,7 @@ export default function NoteEditor({ value, onChange, label, rows = 10 }: Props)
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1">
-        <div className="flex flex-wrap items-center gap-0.5" role="toolbar" aria-label="Formatting">
+        <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Formatting">
           {TOOLS.map((tool) => (
             <button
               key={tool.label}
@@ -77,7 +77,7 @@ export default function NoteEditor({ value, onChange, label, rows = 10 }: Props)
       </div>
 
       {preview ? (
-        <div className="field h-auto min-h-[120px] overflow-y-auto py-2.5">
+        <div className="field h-auto min-h-[120px] overflow-y-auto py-2">
           <Markdown source={value} />
         </div>
       ) : (
@@ -88,7 +88,7 @@ export default function NoteEditor({ value, onChange, label, rows = 10 }: Props)
           onChange={(e) => onChange(e.target.value)}
           aria-label={label}
           spellCheck
-          className="field h-auto resize-y py-2.5"
+          className="field h-auto resize-y py-2"
         />
       )}
       <p className="label-sm">

@@ -438,9 +438,9 @@ export default function App() {
           <div
             role="status"
             aria-live="polite"
-            className="pointer-events-none fixed inset-x-0 bottom-6 z-[80] flex justify-center px-5"
+            className="pointer-events-none fixed inset-x-0 bottom-6 z-[80] flex justify-center px-6"
           >
-            <p className="dialog max-w-[420px] px-4 py-2.5 text-center text-body-sm text-on-surface">
+            <p className="dialog max-w-[420px] px-4 py-2 text-center text-body-sm text-on-surface">
               {notice}
             </p>
           </div>

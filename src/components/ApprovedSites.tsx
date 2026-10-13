@@ -60,14 +60,14 @@ export default function ApprovedSites({
       role="dialog"
       aria-modal="true"
       aria-label="Approved sites"
-      className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 p-5"
+      className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 p-6"
       onClick={onClose}
     >
       <div
         className="dialog flex max-h-[80vh] w-full max-w-[560px] flex-col gap-4 p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-2.5">
+        <div className="flex items-start gap-2">
           <KeyIcon size={18} />
           <div className="min-w-0 flex-1">
             <h2 className="text-headline-sm text-on-surface">Approved sites</h2>
@@ -115,13 +115,13 @@ export default function ApprovedSites({
                   {hosts.length} {hosts.length === 1 ? "site" : "sites"}
                 </span>
               </div>
-              <ul className="flex flex-col gap-1.5">
+              <ul className="flex flex-col gap-1">
                 {hosts.map((host) => (
                   <li
                     key={host}
                     className="flex items-center justify-between gap-3 rounded-control border border-outline-variant px-3 py-2"
                   >
-                    <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex min-w-0 items-center gap-2">
                       {logoFor(host, logos) ? (
                         <img src={logoFor(host, logos)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
                       ) : (

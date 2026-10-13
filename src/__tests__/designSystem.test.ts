@@ -116,3 +116,11 @@ describe("design system: one red, one yellow", () => {
     expect(offenders(/\b(?:bg|border|ring)-error\b/g)).toEqual([]);
   });
 });
+
+describe("design system: spacing", () => {
+  it("uses only the 4px scale for padding, margin and gaps", () => {
+    const off =
+      /(?<![\w-])-?(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|ml|mr|gap|gap-x|gap-y|space-x|space-y)-(?:0\.5|1\.5|2\.5|3\.5|5|7|9|10|11|14|\[[^\]]+\])(?![\w.])/g;
+    expect(offenders(off)).toEqual([]);
+  });
+});

@@ -22,7 +22,7 @@ export default function SearchBar({ value, onChange }: Props) {
         autoComplete="off"
         className="flex-1 bg-transparent text-body-md text-on-surface outline-none placeholder:text-outline"
       />
-      <kbd className="label-md rounded-chip border border-outline-variant px-1.5 py-0.5">Ctrl K</kbd>
+      <kbd className="label-md rounded-chip border border-outline-variant px-1">Ctrl K</kbd>
     </label>
   );
 }

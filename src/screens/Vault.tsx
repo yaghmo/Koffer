@@ -124,7 +124,7 @@ function Pane({
       <button
         type="button"
         onClick={onMore}
-        className="mt-auto flex items-center justify-center gap-1.5 rounded-control px-3 py-2 text-body-sm font-medium text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high"
+        className="mt-auto flex items-center justify-center gap-2 rounded-control px-3 py-2 text-body-sm font-medium text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high"
       >
         {count > 0 ? `All ${count} ${title.toLowerCase()}` : `Go to ${title.toLowerCase()}`}
         <ArrowRightIcon size={14} />
@@ -334,7 +334,7 @@ export default function Vault({
       )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
           <ItemEditor
             id={editing.kind === "existing" ? editing.id : null}
             initialKind={editing.kind === "new" ? editing.itemKind : undefined}

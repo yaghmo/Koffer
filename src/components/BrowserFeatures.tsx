@@ -68,7 +68,7 @@ export default function BrowserFeatures() {
   }
 
   return (
-    <div className="card flex flex-col gap-3 p-5">
+    <div className="card flex flex-col gap-3 p-6">
       <div className="flex items-center gap-2 text-on-surface">
         <SettingsIcon size={16} />
         <h2 className="text-body-md font-semibold">What the extension may do</h2>
@@ -82,9 +82,9 @@ export default function BrowserFeatures() {
                 checked={!!cfg?.[f.key]}
                 disabled={!cfg}
                 onChange={(e) => toggle(f.pref, f.key, e.target.checked)}
-                className="mt-0.5 h-4 w-4 flex-shrink-0 accent-on-surface"
+                className="mt-px h-4 w-4 flex-shrink-0 accent-on-surface"
               />
-              <span className="flex flex-col gap-0.5">
+              <span className="flex flex-col gap-1">
                 <span className="text-body-sm text-on-surface">{f.label}</span>
                 <span className="text-body-sm text-on-surface-variant">{f.detail}</span>
               </span>

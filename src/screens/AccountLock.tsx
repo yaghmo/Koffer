@@ -361,7 +361,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
                   aria-label="Master password"
                   spellCheck={false}
                   autoComplete="off"
-                  className="field pl-9 pr-10 font-mono"
+                  className="field pl-8 pr-8 font-mono"
                 />
                 <button
                   type="button"

@@ -103,7 +103,7 @@ export default function BirthDateField({ value, onChange }: { value: string; onC
         onClick={openCalendar}
         aria-label="Pick the date from a calendar"
         title="Calendar (opens on the year typed)"
-        className="btn-secondary px-3"
+        className="btn-secondary w-9 px-0"
       >
         <CalendarIcon />
       </button>

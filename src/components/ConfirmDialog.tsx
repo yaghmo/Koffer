@@ -35,7 +35,7 @@ export default function ConfirmDialog({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-5"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6"
       onClick={onCancel}
     >
       <div

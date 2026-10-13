@@ -70,10 +70,10 @@ export default function RecoveryCodeDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Confirm recovery code"
-        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-5"
+        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6"
       >
         <div className="dialog flex w-full max-w-[520px] flex-col gap-4 p-6">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <ShieldIcon size={18} />
             <div>
               <h2 className="text-headline-sm text-on-surface">Type your recovery code</h2>
@@ -122,10 +122,10 @@ export default function RecoveryCodeDialog({
       role="dialog"
       aria-modal="true"
       aria-label="Recovery code"
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-5"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6"
     >
       <div className="dialog flex w-full max-w-[520px] flex-col gap-4 p-6">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <ShieldIcon size={18} />
           <div>
             <h2 className="text-headline-sm text-on-surface">Your recovery code</h2>

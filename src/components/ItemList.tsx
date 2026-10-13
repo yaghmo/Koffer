@@ -62,7 +62,7 @@ export function itemIcon(it: ItemMeta, big = false) {
           </span>
         )}
         <span
-          className="absolute -bottom-1 -right-1 flex items-center justify-center rounded-chip bg-surface p-[3px] ring-1 ring-outline-variant"
+          className="absolute -bottom-1 -right-1 flex items-center justify-center rounded-chip bg-surface p-1 ring-1 ring-outline-variant"
           title={`Signs in with ${methodLabel(provider)}`}
         >
           <MethodChip method={provider} size={big ? 16 : 13} />
@@ -133,7 +133,7 @@ export function PinnedTiles({
               onClick={() => onTogglePin(it)}
               aria-label={`Unpin ${it.title}`}
               title="Unpin"
-              className="absolute right-1.5 top-1.5 rounded-control p-1.5 text-on-surface opacity-0 transition-opacity duration-150 ease-out hover:bg-surface-container-high group-hover:opacity-100 group-focus-within:opacity-100"
+              className="absolute right-1.5 top-1.5 rounded-control p-2 text-on-surface opacity-0 transition-opacity duration-150 ease-out hover:bg-surface-container-high group-hover:opacity-100 group-focus-within:opacity-100"
             >
               <PinIcon size={14} filled />
             </button>
@@ -165,7 +165,7 @@ function ItemActions({
           onClick={() => onTogglePin(item)}
           aria-label={`${item.pinned ? "Unpin" : "Pin"} ${item.title}`}
           title={item.pinned ? "Unpin" : "Pin to the top"}
-          className={`rounded-control p-1.5 transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface ${
+          className={`rounded-control p-2 transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface ${
             item.pinned
               ? "text-on-surface"
               : "text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
@@ -181,7 +181,7 @@ function ItemActions({
             onClick={() => onOpen(item.id)}
             aria-label={`Open ${item.title}`}
             title="Open in browser"
-            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface"
+            className="rounded-control p-2 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface"
           >
             <ExternalIcon size={14} />
           </button>
@@ -192,7 +192,7 @@ function ItemActions({
             onClick={() => onEdit(item)}
             aria-label={`Edit ${item.title}`}
             title={`Edit ${item.title}`}
-            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface"
+            className="rounded-control p-2 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface"
           >
             <PencilIcon size={14} />
           </button>
@@ -202,7 +202,7 @@ function ItemActions({
           onClick={() => onDelete(item)}
           aria-label={`Delete ${item.title}`}
           title={`Delete ${item.title}`}
-          className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-error"
+          className="rounded-control p-2 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-error"
         >
           <TrashIcon size={14} />
         </button>
@@ -241,7 +241,7 @@ export default function ItemList({
             <li
               key={it.id}
               className={`group flex items-center gap-3 rounded-control transition-colors duration-150 ease-out hover:bg-surface-container-high ${
-                compact ? "px-2 py-1.5" : "px-3 py-2.5"
+                compact ? "px-2 py-2" : "px-3 py-3"
               }`}
             >
               <button

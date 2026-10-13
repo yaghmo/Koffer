@@ -31,7 +31,7 @@ function Field({
   copied?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <p className="label-md">{label}</p>
       <div className="flex items-center gap-2">
         <input
@@ -71,12 +71,12 @@ function SecretField({
 }) {
   const [show, setShow] = useState(false);
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <p className="label-md">{label}</p>
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <input
-            className="field w-full pr-10 font-mono"
+            className="field w-full pr-8 font-mono"
             type={show ? "text" : "password"}
             value={show ? value : mask(value)}
             readOnly
@@ -134,7 +134,7 @@ function TotpField({ id, onCopy, copied }: { id: string; onCopy: (code: string) 
 
   if (error) {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1">
         <p className="label-md">2FA code</p>
         <p role="alert" className="text-body-sm text-error">{error}</p>
       </div>
@@ -143,7 +143,7 @@ function TotpField({ id, onCopy, copied }: { id: string; onCopy: (code: string) 
   // Split in half so it reads like the phone apps show it: "123 456".
   const shown = totp ? totp.code.replace(/^(\d{3,4})(\d{3,4})$/, "$1 $2") : "";
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <p className="label-md">2FA code</p>
       <div className="flex items-center gap-2">
         <input className="field flex-1 font-mono tracking-widest" value={shown} readOnly aria-label="2FA code" />
@@ -225,7 +225,7 @@ function PreviousPasswords({
   const [open, setOpen] = useState(false);
   const [revealed, setRevealed] = useState<number | null>(null);
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       <button
         type="button"
         className="link self-start"
@@ -234,7 +234,7 @@ function PreviousPasswords({
         Previous passwords ({previous.length})
       </button>
       {open && (
-        <ul aria-label="Previous passwords" className="flex flex-col gap-1.5">
+        <ul aria-label="Previous passwords" className="flex flex-col gap-1">
           {previous.map((p, i) => (
             <li key={i} className="flex items-center gap-2">
               <span className="w-24 text-body-sm text-on-surface-variant">{dateOf(p.replaced_at)}</span>
@@ -335,8 +335,8 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
             </span>
           )}
           <div className="min-w-0">
-            <span className="label-sm">{item.type}</span>
             <h2 className="truncate text-headline-sm text-on-surface">{item.title || "Untitled"}</h2>
+            <p className="label-md capitalize">{item.type}</p>
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
@@ -376,7 +376,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
         <Field label="Title" value={item.title} />
         {item.type === "login" && (
           <>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Login method</p>
               <div className="flex items-center gap-2 text-on-surface">
                 <MethodChip method={item.method || "credentials"} size={22} />
@@ -445,7 +445,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
           </>
         )}
         {item.type === "note" && (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <p className="label-md">Body</p>
             <div className="rounded-control border border-outline-variant bg-surface-container-lowest p-3">
               <Markdown source={item.body} />
@@ -468,7 +468,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
       </div>
       {item.notes && (
         <div className="card p-4">
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <p className="label-md">Comments</p>
             <p className="whitespace-pre-wrap rounded-control border border-outline-variant bg-surface-container-lowest p-3 text-body-md text-on-surface-variant">
               {item.notes}

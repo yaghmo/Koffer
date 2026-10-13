@@ -109,7 +109,7 @@ function SettingsNav({
 }) {
   const results = query.trim() ? search(query) : null;
   const item = (active: boolean) =>
-    `w-full rounded-control px-2 py-1.5 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-surface-container-high ${
+    `w-full rounded-control px-2 py-2 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-surface-container-high ${
       active ? "bg-surface-container-high text-on-surface" : "text-on-surface-variant"
     }`;
   return (
@@ -132,7 +132,7 @@ function SettingsNav({
         results.length === 0 ? (
           <p className="px-2 text-body-sm text-on-surface-variant">No matches.</p>
         ) : (
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-1">
             {results.map((sec) => (
               <li key={sec.id}>
                 <button type="button" className={item(false)} onClick={() => onSection(sec.id)}>
@@ -148,7 +148,7 @@ function SettingsNav({
       ) : (
         <ul className="flex flex-col gap-3">
           {GROUPS.map((g) => (
-            <li key={g.id} className="flex flex-col gap-0.5">
+            <li key={g.id} className="flex flex-col gap-1">
               <button
                 type="button"
                 aria-current={g.id === group ? "page" : undefined}
@@ -157,7 +157,7 @@ function SettingsNav({
               >
                 {g.label}
               </button>
-              <ul className="ml-3 flex flex-col gap-0.5 border-l border-outline-variant pl-2">
+              <ul className="ml-3 flex flex-col gap-1 border-l border-outline-variant pl-2">
                 {SECTIONS.filter((sec) => sec.group === g.id).map((sec) => (
                   <li key={sec.id}>
                     <button type="button" className={item(false)} onClick={() => onSection(sec.id)}>
@@ -539,7 +539,7 @@ export default function Settings({ accountId, onLock }: Props) {
         onSection={goTo}
         searchRef={searchRef}
       />
-      <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-6">
+      <div className="flex min-w-0 max-w-[720px] flex-1 flex-col gap-8">
         <div>
           <h1 className="text-headline-lg text-on-surface">
             {query.trim() ? "Search" : GROUPS.find((g) => g.id === group)!.label}
@@ -555,7 +555,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("autolock") && (
         <section id="settings-autolock" className="scroll-mt-8">
-          <div className="card flex flex-col gap-3 p-5">
+          <div className="card flex flex-col gap-3 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <ShieldIcon size={16} />
               <h2 className="text-body-md font-semibold">Auto-lock</h2>
@@ -587,7 +587,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("clipboard") && (
         <section id="settings-clipboard" className="scroll-mt-8">
-          <div className="card flex flex-col gap-2 p-5">
+          <div className="card flex flex-col gap-2 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <SettingsIcon size={16} />
               <h2 className="text-body-md font-semibold">Clipboard</h2>
@@ -601,7 +601,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("logos") && (
         <section id="settings-logos" className="scroll-mt-8">
-          <div className="card flex flex-col gap-3 p-5">
+          <div className="card flex flex-col gap-3 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <ImageIcon size={16} />
               <h2 className="text-body-md font-semibold">Site logos</h2>
@@ -645,7 +645,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 type="checkbox"
                 checked={autoRefreshIcons}
                 onChange={(e) => saveAutoRefreshIcons(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-on-surface"
+                className="mt-px h-4 w-4 accent-on-surface"
               />
               Re-check stale logos automatically each time the vault unlocks
             </label>
@@ -662,7 +662,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("security") && (
         <section id="settings-security" className="scroll-mt-8">
-          <div className="card flex flex-col gap-4 p-5">
+          <div className="card flex flex-col gap-4 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <KeyIcon size={16} />
               <h2 className="text-body-md font-semibold">Security</h2>
@@ -774,7 +774,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("export") && (
         <section id="settings-export" className="scroll-mt-8">
-          <div className="card flex flex-col gap-3 p-5">
+          <div className="card flex flex-col gap-3 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <DatabaseIcon size={16} />
               <h2 className="text-body-md font-semibold">Backup</h2>
@@ -808,7 +808,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("pairing") && (
         <section id="settings-pairing" className="scroll-mt-8">
-          <div className="card flex flex-col gap-3 p-5">
+          <div className="card flex flex-col gap-3 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <KeyIcon size={16} />
               <h2 className="text-body-md font-semibold">Paired browsers</h2>
@@ -916,7 +916,7 @@ export default function Settings({ accountId, onLock }: Props) {
           {/* Its own card rather than a row of chips inside the pairing panel.
               The list only grows — one entry per site you ever log into — and a
               growing list tucked under something else is one nobody reads. */}
-          <div className="card flex flex-col gap-3 p-5">
+          <div className="card flex flex-col gap-3 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <ShieldIcon size={16} />
               <h2 className="text-body-md font-semibold">Approved sites</h2>
@@ -957,7 +957,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("cloud") && (
         <section id="settings-cloud" className="scroll-mt-8">
-          <div className="card flex flex-col gap-3 p-5">
+          <div className="card flex flex-col gap-3 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <CloudIcon size={16} />
               <h2 className="text-body-md font-semibold">Cloud backup</h2>
@@ -1083,7 +1083,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("storage") && (
         <section id="settings-storage" className="scroll-mt-8">
-          <div className="card flex flex-col gap-3 p-5">
+          <div className="card flex flex-col gap-3 p-6">
             <div className="flex items-center gap-2 text-on-surface">
               <DatabaseIcon size={16} />
               <h2 className="text-body-md font-semibold">Storage</h2>
@@ -1142,7 +1142,7 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {showResetModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
           onClick={closeReset}
         >
           <div className="dialog dialog-danger flex w-full max-w-[420px] flex-col gap-4 p-6" onClick={(e) => e.stopPropagation()}>

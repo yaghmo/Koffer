@@ -26,7 +26,7 @@ export default function LeakCheck({ onViewItem }: { onViewItem: (id: string) => 
   }
 
   return (
-    <div className="card flex flex-col gap-3 p-5">
+    <div className="card flex flex-col gap-3 p-6">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-body-md font-semibold text-on-surface">Leaked passwords</h2>
         {leaked && leaked.length > 0 && <span className="label-sm flex-shrink-0">{leaked.length}</span>}
@@ -51,7 +51,7 @@ export default function LeakCheck({ onViewItem }: { onViewItem: (id: string) => 
               <button
                 type="button"
                 onClick={() => onViewItem(l.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-surface-container-high"
+                className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-2 text-left transition-colors duration-150 ease-out hover:bg-surface-container-high"
               >
                 <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">
                   {l.title}

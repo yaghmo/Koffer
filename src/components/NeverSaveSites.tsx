@@ -25,7 +25,7 @@ export default function NeverSaveSites() {
   }
 
   return (
-    <div className="card flex flex-col gap-3 p-5">
+    <div className="card flex flex-col gap-3 p-6">
       <div className="flex items-center gap-2 text-on-surface">
         <ShieldIcon size={16} />
         <h2 className="text-body-md font-semibold">Never offer to save</h2>
@@ -36,7 +36,7 @@ export default function NeverSaveSites() {
       {hosts !== null && hosts.length === 0 ? (
         <p className="text-body-sm text-on-surface-variant opacity-70">No sites.</p>
       ) : (
-        <ul aria-label="Never offer to save" className="flex flex-col gap-1.5">
+        <ul aria-label="Never offer to save" className="flex flex-col gap-1">
           {(hosts ?? []).map((h) => (
             <li key={h} className="flex items-center justify-between gap-2">
               <span className="font-mono text-body-sm text-on-surface">{h}</span>

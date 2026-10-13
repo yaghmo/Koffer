@@ -72,7 +72,7 @@ export default function Markdown({ source }: { source: string }) {
           }
           case "bullets":
             return (
-              <ul key={i} className="flex list-disc flex-col gap-1 pl-5">
+              <ul key={i} className="flex list-disc flex-col gap-1 pl-6">
                 {block.items.map((item, n) => (
                   <li key={n}>
                     <Line text={item} />
@@ -82,7 +82,7 @@ export default function Markdown({ source }: { source: string }) {
             );
           case "ordered":
             return (
-              <ol key={i} className="flex list-decimal flex-col gap-1 pl-5">
+              <ol key={i} className="flex list-decimal flex-col gap-1 pl-6">
                 {block.items.map((item, n) => (
                   <li key={n}>
                     <Line text={item} />

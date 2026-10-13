@@ -174,7 +174,6 @@ export default function PersonalInfoScreen() {
     <div className="mx-auto flex max-w-[720px] flex-col gap-6 px-8 py-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="label-sm">Personal info</p>
           <h1 className="text-headline-lg text-on-surface">Your profile</h1>
           <p className="text-body-md text-on-surface-variant">
             Used to fill sign-up forms. Stays in your encrypted vault.
@@ -192,14 +191,14 @@ export default function PersonalInfoScreen() {
       </div>
 
       {GROUPS.map((group) => (
-        <div key={group} className="card flex flex-col gap-4 p-5">
+        <div key={group} className="card flex flex-col gap-4 p-6">
           <h2 className="text-body-md font-semibold text-on-surface">{group}</h2>
           <div className="grid grid-cols-2 gap-4">
             {FIELDS.filter((f) => f.group === group).map((f) => {
               const inputProps = inputFor(f.key);
               const long = f.key === "address";
               return (
-                <div className={`flex flex-col gap-1.5 ${long ? "col-span-2" : ""}`} key={f.key}>
+                <div className={`flex flex-col gap-1 ${long ? "col-span-2" : ""}`} key={f.key}>
                   <p className="label-md">
                     {f.label}
                     {f.required && <span className="text-on-surface"> *</span>}
