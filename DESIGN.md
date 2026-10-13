@@ -69,9 +69,9 @@ spacing:
 
 # Koffer: suit and shirt
 
-Status: direction chosen on 2026-10-12. It replaces the dark "Obsidian Cipher"
-look. The app is not restyled yet; until it is, this file describes the
-target, not what ships.
+Status: direction chosen on 2026-10-12 and built on 2026-10-13 on the branch
+`restyle/suit-and-shirt`. It replaces the dark "Obsidian Cipher" look. The
+rules below are enforced by `src/__tests__/designSystem.test.ts`.
 
 ## Overview
 
@@ -206,7 +206,7 @@ except the selected sidebar entry, which uses the same 6px.
 - Do keep red to one filled element per screen.
 - Do keep yellow to its three jobs; it is a warning, not a brand colour.
 - Do say state in words; colour alone never carries meaning.
-- Do keep every transition to a 120ms colour change, and none at all under
+- Do keep every transition to a 150ms colour change, and none at all under
   `prefers-reduced-motion`.
 - Don't add glow, blur, gradients, glass or a second accent.
 - Don't animate entrances, pulse, spin or ping.

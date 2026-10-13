@@ -10,11 +10,11 @@ web
 
 ## Stack
 
-- Tauri 2 (Rust backend) + React 18 + TypeScript 5 + Vite 5
+- Tauri 2 (Rust backend) + React 18 + TypeScript 5 + Vite 8
 - Rust 1.98.1, MSRV 1.75
 - argon2 0.5 (Params::new(64*1024, 3, 1, Some(32)))
 - aes-gcm 0.10 (12-byte fresh nonce per save)
-- Vitest 2.1, Testing Library
+- Vitest 5, Testing Library
 
 ## Users
 
@@ -73,7 +73,7 @@ None binding. Design is free within a tone the user described as "calm, security
 - Working Tauri 2 desktop app, 41 lib + 2 integration Rust tests passing, 16 frontend tests passing, tsc clean, MSI build green.
 - All 25 plan tasks complete; full feature set present.
 - README in repo root (manual test checklist, build instructions).
-- The incumbent visual system is a dark, generic, form-on-canvas theme. It is not a reference for the new world; it is evidence of what to replace.
+- The visual system is "suit and shirt", specified in `DESIGN.md`: black sidebar, white content, one red, yellow for warnings.
 
 ## Product Principles
 

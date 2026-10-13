@@ -2,12 +2,12 @@
 
 https://github.com/user-attachments/assets/6ffcfdec-c14f-4248-9db0-28fb95eaa419
 
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-4edea3)](LICENSE)
-![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-4cd7f6)
-![Tauri 2](https://img.shields.io/badge/Tauri-2-4cd7f6)
-![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-4cd7f6)
-![Node.js 22.12+](https://img.shields.io/badge/Node.js-22.12%2B-4cd7f6)
-[![Extension: Chrome | Firefox](https://img.shields.io/badge/extension-Chrome%20%7C%20Firefox-c0c1ff)](extension/README.md)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-c8102e)](LICENSE)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-141414)
+![Tauri 2](https://img.shields.io/badge/Tauri-2-141414)
+![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-141414)
+![Node.js 22.12+](https://img.shields.io/badge/Node.js-22.12%2B-141414)
+[![Extension: Chrome | Firefox](https://img.shields.io/badge/extension-Chrome%20%7C%20Firefox-141414)](extension/README.md)
 
 Local-only encrypted password manager for Windows. Tauri + React.
 
@@ -20,6 +20,8 @@ Local-only encrypted password manager for Windows. Tauri + React.
 - Auto-lock after 15-30 minutes of inactivity, clipboard auto-clear (30s default)
 - Encrypted export and import, and an optional backup of the encrypted file to your own Cloudflare account
 - Browser extension for Chrome and Firefox: fills logins and 2FA codes, saves new logins, fills sign-up forms from your profile
+
+The video above shows the previous look.
 
 ## Install
 

@@ -13,6 +13,13 @@ Notable changes, newest first. The format follows
   that key is a CI secret, every push to `main` is published as an update
   (see `SIGNING.md`).
 
+### Changed
+
+- New look, "suit and shirt": a black sidebar, white content, one red for the
+  main action, and yellow only for warnings. Flat, with no glow or glass.
+  Set in IBM Plex Sans and IBM Plex Mono. See `DESIGN.md`.
+- Interface text rewritten in short plain sentences.
+
 ## [0.1.0] - 2026-10-05
 
 First public release.
