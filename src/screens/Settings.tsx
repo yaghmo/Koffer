@@ -109,8 +109,8 @@ function SettingsNav({
 }) {
   const results = query.trim() ? search(query) : null;
   const item = (active: boolean) =>
-    `w-full rounded-control px-2 py-1.5 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-white/6 ${
-      active ? "bg-white/6 text-on-surface" : "text-on-surface-variant"
+    `w-full rounded-control px-2 py-1.5 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-surface-container-high ${
+      active ? "bg-surface-container-high text-on-surface" : "text-on-surface-variant"
     }`;
   return (
     <nav aria-label="Settings sections" className="sticky top-8 flex w-[172px] flex-shrink-0 flex-col gap-4 self-start">
@@ -157,7 +157,7 @@ function SettingsNav({
               >
                 {g.label}
               </button>
-              <ul className="ml-3 flex flex-col gap-0.5 border-l border-white/8 pl-2">
+              <ul className="ml-3 flex flex-col gap-0.5 border-l border-outline-variant pl-2">
                 {SECTIONS.filter((sec) => sec.group === g.id).map((sec) => (
                   <li key={sec.id}>
                     <button type="button" className={item(false)} onClick={() => onSection(sec.id)}>
@@ -630,7 +630,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 aria-valuemin={0}
                 aria-valuemax={logosProgress[1]}
                 aria-valuenow={logosProgress[0]}
-                className="h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-white/8"
+                className="h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-outline-variant"
               >
                 <div
                   className="h-full rounded-full bg-primary transition-[width] duration-300"
@@ -640,7 +640,7 @@ export default function Settings({ accountId, onLock }: Props) {
             )}
             {logosResult && <p className="text-body-sm text-on-surface-variant">{logosResult}</p>}
 
-            <label className="flex items-start gap-2 border-t border-white/6 pt-4 text-body-sm text-on-surface">
+            <label className="flex items-start gap-2 border-t border-outline-variant pt-4 text-body-sm text-on-surface">
               <input
                 type="checkbox"
                 checked={autoRefreshIcons}
@@ -668,7 +668,7 @@ export default function Settings({ accountId, onLock }: Props) {
               <h2 className="text-body-md font-semibold">Security</h2>
             </div>
 
-            <div className="flex flex-col gap-2 border-b border-white/6 pb-4">
+            <div className="flex flex-col gap-2 border-b border-outline-variant pb-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-body-md text-on-surface">Recovery code</p>
                 <span
@@ -868,7 +868,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 {bridge.clients.map((c) => (
                   <li
                     key={c.origin}
-                    className="flex flex-col gap-2 rounded-control border border-white/8 px-3 py-2"
+                    className="flex flex-col gap-2 rounded-control border border-outline-variant px-3 py-2"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <span className="flex min-w-0 flex-col">

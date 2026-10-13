@@ -20,7 +20,7 @@ function HealthRing({ score, segments }: { score: number; segments: RingSegment[
   return (
     <div className="relative flex h-[104px] w-[104px] flex-shrink-0 items-center justify-center">
       <svg width={104} height={104} viewBox="0 0 104 104" className="-rotate-90">
-        <circle cx={52} cy={52} r={RING_RADIUS} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={8} />
+        <circle cx={52} cy={52} r={RING_RADIUS} fill="none" stroke="var(--color-outline-variant)" strokeWidth={8} />
         {total === 0 ? (
           <circle
             cx={52}
@@ -133,7 +133,7 @@ function IssueList({ issues, onViewItem }: { issues: Issue[]; onViewItem: (id: s
             <button
               type="button"
               onClick={() => onViewItem(issue.id)}
-              className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-white/6"
+              className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-surface-container-high"
             >
               <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">{issue.title}</span>
               <span className="flex flex-shrink-0 gap-1.5">

@@ -57,12 +57,12 @@ export function itemIcon(it: ItemMeta, big = false) {
         {it.favicon ? (
           <img className={`${box} rounded-control object-contain`} src={it.favicon} alt="" />
         ) : (
-          <span className={`${box} flex items-center justify-center rounded-control bg-surface-container-high text-body-md font-semibold text-on-surface-variant`}>
+          <span className={`${box} flex items-center justify-center rounded-control bg-on-surface text-body-md font-semibold text-surface`}>
             {(it.title || "?").charAt(0).toUpperCase()}
           </span>
         )}
         <span
-          className="absolute -bottom-1 -right-1 flex items-center justify-center rounded-full bg-surface p-[3px] ring-1 ring-outline-variant"
+          className="absolute -bottom-1 -right-1 flex items-center justify-center rounded-chip bg-surface p-[3px] ring-1 ring-outline-variant"
           title={`Signs in with ${methodLabel(provider)}`}
         >
           <MethodChip method={provider} size={big ? 16 : 13} />
@@ -75,27 +75,27 @@ export function itemIcon(it: ItemMeta, big = false) {
   }
   if (provider) {
     return (
-      <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high`}>
+      <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control border border-outline-variant bg-surface`}>
         <MethodChip method={provider} size={size * 2.4} />
       </span>
     );
   }
   if (it.kind === "card") {
     return (
-      <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high`}>
+      <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control border border-outline-variant bg-surface`}>
         <CardBrandIcon bin={it.card_bin} size={size * 2.6} />
       </span>
     );
   }
   if (it.kind === "note") {
     return (
-      <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high text-on-surface-variant`}>
+      <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control border border-outline-variant bg-surface text-on-surface-variant`}>
         <NoteIcon size={size * 1.8} />
       </span>
     );
   }
   return (
-    <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-surface-container-high text-body-md font-semibold text-on-surface-variant`}>
+    <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-on-surface text-body-md font-semibold text-surface`}>
       {(it.title || "?").charAt(0).toUpperCase()}
     </span>
   );
@@ -133,7 +133,7 @@ export function PinnedTiles({
               onClick={() => onTogglePin(it)}
               aria-label={`Unpin ${it.title}`}
               title="Unpin"
-              className="absolute right-1.5 top-1.5 rounded-control p-1.5 text-primary opacity-0 transition-opacity duration-150 ease-out hover:bg-white/6 group-hover:opacity-100 group-focus-within:opacity-100"
+              className="absolute right-1.5 top-1.5 rounded-control p-1.5 text-primary opacity-0 transition-opacity duration-150 ease-out hover:bg-surface-container-high group-hover:opacity-100 group-focus-within:opacity-100"
             >
               <PinIcon size={14} filled />
             </button>
@@ -165,7 +165,7 @@ function ItemActions({
           onClick={() => onTogglePin(item)}
           aria-label={`${item.pinned ? "Unpin" : "Pin"} ${item.title}`}
           title={item.pinned ? "Unpin" : "Pin to the top"}
-          className={`rounded-control p-1.5 transition-colors duration-150 ease-out hover:bg-white/4 hover:text-primary ${
+          className={`rounded-control p-1.5 transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-primary ${
             item.pinned
               ? "text-primary"
               : "text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
@@ -181,7 +181,7 @@ function ItemActions({
             onClick={() => onOpen(item.id)}
             aria-label={`Open ${item.title}`}
             title="Open in browser"
-            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-white/4 hover:text-secondary"
+            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-secondary"
           >
             <ExternalIcon size={14} />
           </button>
@@ -192,7 +192,7 @@ function ItemActions({
             onClick={() => onEdit(item)}
             aria-label={`Edit ${item.title}`}
             title={`Edit ${item.title}`}
-            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-white/4 hover:text-primary"
+            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-primary"
           >
             <PencilIcon size={14} />
           </button>

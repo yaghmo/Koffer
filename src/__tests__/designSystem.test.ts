@@ -80,3 +80,22 @@ describe("design system: palette", () => {
     expect(css).not.toMatch(/Plus Jakarta|JetBrains/);
   });
 });
+
+describe("design system: no dark-theme leftovers", () => {
+  it("has no white overlays, which vanish on a white surface", () => {
+    expect(offenders(/\b(?:bg|border|ring|divide|from|to)-white\/\d+/g)).toEqual([]);
+  });
+
+  it("has no blur or glow", () => {
+    expect(offenders(/\bbackdrop-blur[\w-]*|\bblur-[\w\[\]]+|\bdrop-shadow[\w-]*/g)).toEqual([]);
+  });
+
+  it("takes colours from the tokens, not from literals", () => {
+    // Icon.tsx and methods.tsx draw card-network and sign-in provider logos in the brands' own colours.
+    expect(offenders(/#[0-9a-fA-F]{6}\b|rgba?\(/g, ["components/Icon.tsx", "lib/methods.tsx"])).toEqual([]);
+  });
+
+  it("uses the two radii: 6px for controls, 10px for dialogs", () => {
+    expect(offenders(/\brounded(?:-[trbl]{1,2})?-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]+\])(?![\w-])/g)).toEqual([]);
+  });
+});

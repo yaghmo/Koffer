@@ -419,7 +419,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
           save();
         }}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-white/6 bg-surface-container/95 px-6 py-4 backdrop-blur">
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-outline-variant bg-surface px-6 py-4">
           <h2 className="truncate text-headline-sm text-on-surface">
             {title.trim() || (id === null ? "New item" : "Untitled")}
           </h2>
@@ -450,7 +450,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                       markDirty();
                     }}
                     className={`rounded-control px-3 py-1.5 text-body-sm font-medium capitalize transition-colors duration-150 ease-out ${
-                      kind === k ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-white/4"
+                      kind === k ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-high"
                     }`}
                   >
                     {k}
@@ -527,7 +527,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                       className={`flex items-center gap-2.5 rounded-control border px-3 py-2 text-body-md transition-colors duration-150 ease-out ${
                         login.method === m.id
                           ? "border-primary-container bg-primary/8 text-on-surface"
-                          : "border-white/8 bg-surface-container-low text-on-surface-variant hover:bg-white/4"
+                          : "border-outline-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
                       }`}
                     >
                       <MethodChip method={m.id} size={20} />
@@ -552,7 +552,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                           className={`flex max-w-full items-center gap-2 rounded-chip border px-2.5 py-1 text-body-sm transition-colors duration-150 ease-out ${
                             login.username === s.username
                               ? "border-primary bg-primary text-on-primary"
-                              : "border-white/8 bg-surface-container-low text-on-surface hover:bg-white/4"
+                              : "border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container-high"
                           }`}
                         >
                           {login.method === "other" && <span className="truncate font-medium">{s.title}</span>}
@@ -789,7 +789,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                 </button>
               </div>
               {totpQr && (
-                <div className="flex items-center gap-4 rounded-control border border-white/8 p-3">
+                <div className="flex items-center gap-4 rounded-control border border-outline-variant p-3">
                   <img
                     src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(totpQr)}`}
                     alt="The 2FA key as a QR code"
@@ -1023,7 +1023,7 @@ function PersonalChips({
             key={v.label}
             type="button"
             onClick={() => onPick(v.value)}
-            className="rounded-chip border border-white/8 bg-surface-container-low px-2.5 py-1 font-mono text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-white/4"
+            className="rounded-chip border border-outline-variant bg-surface-container-low px-2.5 py-1 font-mono text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high"
           >
             {v.label}: {v.value}
           </button>

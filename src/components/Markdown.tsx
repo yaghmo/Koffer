@@ -100,13 +100,13 @@ export default function Markdown({ source }: { source: string }) {
             return (
               <pre
                 key={i}
-                className="overflow-x-auto rounded-control bg-surface-container-lowest p-3 font-mono text-body-sm text-on-surface"
+                className="overflow-x-auto rounded-control border border-outline-variant p-3 font-mono text-body-sm text-on-surface"
               >
                 {block.text}
               </pre>
             );
           case "rule":
-            return <hr key={i} className="border-white/8" />;
+            return <hr key={i} className="border-outline-variant" />;
           default:
             return (
               <p key={i} className="whitespace-pre-wrap">

@@ -73,7 +73,7 @@ export default function BrowserFeatures() {
         <SettingsIcon size={16} />
         <h2 className="text-body-md font-semibold">What the extension may do</h2>
       </div>
-      <ul className="flex flex-col divide-y divide-white/6">
+      <ul className="flex flex-col divide-y divide-outline-variant">
         {FEATURES.map((f) => (
           <li key={f.pref} className="py-3 first:pt-0 last:pb-0">
             <label className="flex cursor-pointer items-start gap-3">

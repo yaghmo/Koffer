@@ -76,7 +76,7 @@ function SortMenu({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 flex w-48 flex-col overflow-hidden rounded-control border border-white/8 bg-surface shadow-lg"
+          className="absolute right-0 top-full z-20 mt-1 flex w-48 flex-col overflow-hidden rounded-control border border-outline-variant bg-surface shadow-lg"
         >
           {SORTS.map((s) => (
             <button
@@ -88,7 +88,7 @@ function SortMenu({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void 
                 setOpen(false);
                 logUi("info", "vault", `sort=${s.key}`);
               }}
-              className={`px-3 py-2 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-white/4 ${
+              className={`px-3 py-2 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-surface-container-high ${
                 s.key === sort ? "text-primary" : "text-on-surface"
               }`}
             >
@@ -124,7 +124,7 @@ function Pane({
       <button
         type="button"
         onClick={onMore}
-        className="mt-auto flex items-center justify-center gap-1.5 rounded-control px-3 py-2 text-body-sm font-medium text-primary transition-colors duration-150 ease-out hover:bg-white/4"
+        className="mt-auto flex items-center justify-center gap-1.5 rounded-control px-3 py-2 text-body-sm font-medium text-primary transition-colors duration-150 ease-out hover:bg-surface-container-high"
       >
         {count > 0 ? `All ${count} ${title.toLowerCase()}` : `Go to ${title.toLowerCase()}`}
         <ArrowRightIcon size={14} />
@@ -247,7 +247,7 @@ export default function Vault({
           {!kind && addMenuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-full z-20 mt-1 flex w-36 flex-col overflow-hidden rounded-control border border-white/8 bg-surface shadow-lg"
+              className="absolute right-0 top-full z-20 mt-1 flex w-36 flex-col overflow-hidden rounded-control border border-outline-variant bg-surface shadow-lg"
             >
               {addKinds.map(({ kind: k, label }) => (
                 <button
@@ -258,7 +258,7 @@ export default function Vault({
                     setAddMenuOpen(false);
                     onEditNew(k);
                   }}
-                  className="px-3 py-2 text-left text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-white/4"
+                  className="px-3 py-2 text-left text-body-sm text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high"
                 >
                   {label}
                 </button>
@@ -291,7 +291,7 @@ export default function Vault({
             )}
           </section>
 
-          <hr className="border-white/8" />
+          <hr className="border-outline-variant" />
 
           {/* Half and half: logins run long on the left, notes over cards on
               the right, each capped so the screen stays one glance. */}

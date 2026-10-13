@@ -123,7 +123,7 @@ export default function CountrySelect({
             onKeyDown={onKeyDown}
             aria-activedescendant={activeIso ? `country-${activeIso}` : undefined}
             style={{ position: "fixed", top: rect.top, left: rect.left, width: rect.width }}
-            className="z-50 max-h-64 overflow-y-auto rounded-control border border-white/8 bg-surface shadow-lg"
+            className="z-50 max-h-64 overflow-y-auto rounded-control border border-outline-variant bg-surface shadow-lg"
           >
             {list.map((c) => (
               <button
@@ -137,9 +137,9 @@ export default function CountrySelect({
                   onChange(c.dial);
                   setOpen(false);
                 }}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-white/6 ${
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-surface-container-high ${
                   c.dial === dial ? "text-primary" : "text-on-surface"
-                } ${c.iso2 === activeIso ? "bg-white/8" : ""}`}
+                } ${c.iso2 === activeIso ? "bg-surface-container-high" : ""}`}
               >
                 <span className="label-sm w-8 flex-shrink-0 rounded bg-surface-container-high px-1 py-0.5 text-center text-on-surface-variant">
                   {c.iso2}

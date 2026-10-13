@@ -120,7 +120,7 @@ export default function ApprovedSites({
                 {hosts.map((host) => (
                   <li
                     key={host}
-                    className="flex items-center justify-between gap-3 rounded-control border border-white/8 px-3 py-2"
+                    className="flex items-center justify-between gap-3 rounded-control border border-outline-variant px-3 py-2"
                   >
                     <span className="flex min-w-0 items-center gap-2.5">
                       {logoFor(host, logos) ? (

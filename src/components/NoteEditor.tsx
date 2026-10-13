@@ -60,7 +60,7 @@ export default function NoteEditor({ value, onChange, label, rows = 10 }: Props)
               aria-label={tool.title}
               disabled={preview}
               onClick={() => apply(tool.action)}
-              className={`min-w-[30px] rounded-control px-2 py-1 text-body-sm text-on-surface-variant transition-colors duration-150 ease-out hover:bg-white/6 hover:text-on-surface disabled:opacity-40 ${tool.className ?? ""}`}
+              className={`min-w-[30px] rounded-control px-2 py-1 text-body-sm text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface disabled:opacity-40 ${tool.className ?? ""}`}
             >
               {tool.label}
             </button>
@@ -70,7 +70,7 @@ export default function NoteEditor({ value, onChange, label, rows = 10 }: Props)
           type="button"
           onClick={() => setPreview((p) => !p)}
           aria-pressed={preview}
-          className="ml-auto rounded-control px-2 py-1 text-body-sm font-medium text-primary transition-colors duration-150 ease-out hover:bg-white/6"
+          className="ml-auto rounded-control px-2 py-1 text-body-sm font-medium text-primary transition-colors duration-150 ease-out hover:bg-surface-container-high"
         >
           {preview ? "Edit" : "Preview"}
         </button>

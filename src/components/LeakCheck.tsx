@@ -51,7 +51,7 @@ export default function LeakCheck({ onViewItem }: { onViewItem: (id: string) => 
               <button
                 type="button"
                 onClick={() => onViewItem(l.id)}
-                className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-white/6"
+                className="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors duration-150 ease-out hover:bg-surface-container-high"
               >
                 <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">
                   {l.title}

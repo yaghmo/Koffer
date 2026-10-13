@@ -364,7 +364,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-control p-2 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-white/4 hover:text-on-surface"
+            className="rounded-control p-2 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface"
           >
             <XIcon size={14} />
           </button>
@@ -446,7 +446,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
         {item.type === "note" && (
           <div className="flex flex-col gap-1.5">
             <p className="label-md">Body</p>
-            <div className="rounded-control border border-white/8 bg-surface-container-lowest p-3">
+            <div className="rounded-control border border-outline-variant bg-surface-container-lowest p-3">
               <Markdown source={item.body} />
             </div>
           </div>
@@ -469,7 +469,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
         <div className="card p-4">
           <div className="flex flex-col gap-1.5">
             <p className="label-md">Comments</p>
-            <p className="whitespace-pre-wrap rounded-control border border-white/8 bg-surface-container-lowest p-3 text-body-md text-on-surface-variant">
+            <p className="whitespace-pre-wrap rounded-control border border-outline-variant bg-surface-container-lowest p-3 text-body-md text-on-surface-variant">
               {item.notes}
             </p>
           </div>
