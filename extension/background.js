@@ -54,7 +54,7 @@ import { createTracker, isFresh, sameSite, lastLoginKey, fromItsOwnPage, CONFIRM
 const ext = globalThis.browser ?? globalThis.chrome;
 
 const BADGE = "●";
-const BADGE_COLOUR = "#7C9CFF";
+const BADGE_COLOUR = "#c8102e"; // the tie: a login here can be filled
 const ROOT_ID = "pm-root";
 const ASK_ID = "pm-ask";
 const KEY = "tabState";
@@ -143,7 +143,7 @@ async function renderMenu(state) {
         title:
           `2FA code for ${item.title}` +
           (item.username ? ` (${item.username})` : "") +
-          (item.id === last ? " — just signed in" : ""),
+          (item.id === last ? ", just signed in" : ""),
         contexts: ["editable"],
       });
     }
@@ -158,8 +158,8 @@ async function renderMenu(state) {
       // A provider login has nothing to type here. Clicking it points at the
       // page's "Sign in with ..." button instead.
       title: item.fillable
-        ? `${item.title} — ${item.username || "no username"}`
-        : `${item.title} — signs in with ${PROVIDER_LABELS[item.method] || item.method}` +
+        ? `${item.title}: ${item.username || "no username"}`
+        : `${item.title}: signs in with ${PROVIDER_LABELS[item.method] || item.method}` +
           (item.username ? ` (${item.username})` : ""),
       enabled: item.fillable || (item.method !== "credentials" && item.method !== "other"),
       contexts: ["editable"],

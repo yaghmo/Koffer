@@ -19,6 +19,11 @@ Notable changes, newest first. The format follows
   main action, and yellow only for warnings. Flat, with no glow or glass.
   Set in IBM Plex Sans and IBM Plex Mono. See `DESIGN.md`.
 - Interface text rewritten in short plain sentences.
+- New mark: a locked case with a white body, a yellow handle and a red
+  keyhole, on black. App, installer and extension icons are redrawn from it.
+- Browser extension: the popup, the save bar and the pointer wear the same
+  look. The toolbar badge is red, and provider marks (GitHub, Apple) are
+  drawn in ink so they show on white.
 
 ## [0.1.0] - 2026-10-05
 

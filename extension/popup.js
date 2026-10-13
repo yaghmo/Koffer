@@ -90,7 +90,7 @@ function renderPairing() {
   row.append(input, go);
 
   const error = document.createElement("div");
-  error.className = "dim";
+  error.className = "error";
 
   async function submit() {
     const code = input.value.trim().toUpperCase();
@@ -155,7 +155,7 @@ function describe(e) {
   if (e.message === NO_APP) return "The vault app is not running.";
   if (e.message === NOT_PAIRED) return "This browser is not paired yet.";
   if (e.message === NEEDS_APPROVAL) {
-    return `${e.host || "This site"} is not approved for this browser yet. The app is asking — say yes there, then try again.`;
+    return `${e.host || "This site"} is not approved for this browser yet. The app is asking. Say yes there, then try again.`;
   }
   return e.message;
 }
@@ -172,7 +172,7 @@ function renderUnavailable() {
   note.textContent = "The vault is locked, or this browser is no longer paired.";
   const hint = document.createElement("div");
   hint.className = "dim";
-  hint.textContent = "Unlock the app — this updates on its own. If it stays here, pair again.";
+  hint.textContent = "Unlock the app. This updates on its own. If it stays here, pair again.";
   const again = document.createElement("button");
   again.className = "primary";
   again.type = "button";
@@ -324,7 +324,7 @@ function renderApproval(result, origin) {
     go.disabled = true;
     try {
       await ask(origin);
-      note.textContent = "The app is asking. Say yes there — this updates on its own.";
+      note.textContent = "The app is asking. Say yes there. This updates on its own.";
     } catch (e) {
       note.textContent = describe(e);
       go.disabled = false;
@@ -427,7 +427,7 @@ async function fillPersonal(button, tabId, origin) {
     // every profile field from one click.
     const out = await ext.tabs.sendMessage(tabId, { type: "fill", data, origin, strict: true });
     if (out && out.wrongOrigin) {
-      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
+      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled. Reopen this.`);
       return;
     }
     if (!out || out.filled.length === 0) {
@@ -478,7 +478,7 @@ function renderCodes(result, tabId, origin, lastId, showAll = false) {
     const button = document.createElement("button");
     button.className = "item";
     button.type = "button";
-    accountFace(button, item, (item.username || item.phone || "no username saved") + (item.id === lastId ? " · just signed in" : ""));
+    accountFace(button, item, (item.username || item.phone || "no username saved") + (item.id === lastId ? ", just signed in" : ""));
     button.addEventListener("click", () => fillCode(button, item, tabId, origin));
     const li = document.createElement("li");
     li.append(button);
@@ -520,7 +520,7 @@ async function fillCode(button, item, tabId, origin) {
     const { code } = await whenAllowed(() => totpCode(item.id, origin), waitForApp);
     const out = await ext.tabs.sendMessage(tabId, { type: "fill-code", code, origin }).catch(() => null);
     if (out && out.wrongOrigin) {
-      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
+      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled. Reopen this.`);
       return;
     }
     if (out && out.filled) {
@@ -548,7 +548,7 @@ async function fill(button, item, tabId, origin) {
     // the tab moved between the popup opening and this click.
     const out = await ext.tabs.sendMessage(tabId, { type: "fill", data, origin });
     if (out && out.wrongOrigin) {
-      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled — reopen this.`);
+      text(vaultEl, `This tab moved to ${out.wrongOrigin}. Nothing was filled. Reopen this.`);
       return;
     }
     // The page's own country picker is on another country and there is no
@@ -571,7 +571,7 @@ async function fill(button, item, tabId, origin) {
         vaultEl,
         out.filled.length > 0
           ? "Filled what is on the page. The rest goes in when the next step appears."
-          : "No login form here yet. It fills as soon as one opens — click the site's login button.",
+          : "No login form here yet. It fills as soon as one opens. Click the site's login button.",
         "muted"
       );
       return;

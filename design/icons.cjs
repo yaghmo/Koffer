@@ -1,7 +1,8 @@
 /**
- * Regenerates every platform's icon from `design/logo.png` (the Koffer
- * logo, 1024 square) and the tracing of it drawn below. Not part of the
- * build; run it when the logo changes:
+ * Regenerates every platform's icon from the Koffer mark drawn below: a
+ * locked case with a white body, a yellow handle and a red keyhole, on the
+ * jacket's black (DESIGN.md). Not part of the build; run it when the mark
+ * changes:
  *
  *   npm i --prefix <scratch dir> sharp
  *   NODE_PATH=<scratch dir>/node_modules node design/icons.cjs
@@ -9,12 +10,16 @@
  *   npx tauri icon design/out/app-icon-macos.png -o design/out/tauri
  *   cp design/out/tauri/icon.icns src-tauri/icons/icon.icns
  *
- * `app-icon.png` is the logo cropped to its art, on its own background:
- * a full square suits Windows and Linux. macOS wants the art inside a
- * rounded square with transparent corners and Apple's margin (824 of 1024).
- * The browser needs something else again: a transparent background, and a
- * mark that still reads at 16 px, which the double lines and the glow do
- * not -- so small sizes are redrawn from the tracing.
+ * The same three paths are written out in src/components/Emblem.tsx,
+ * extension/popup.html and extension/bar.js; change them together.
+ *
+ * `app-icon.png` is the mark on a rounded black tile, for Windows and Linux.
+ * macOS wants the art inside a rounded square with transparent corners and
+ * Apple's margin (824 of 1024). The browser's toolbar is light in one theme
+ * and dark in the other, so its icons keep the tile too: the white body
+ * would vanish on a light toolbar without it.
+ *
+ * `design/logo.png` is the earlier neon logo. Nothing reads it any more.
  */
 const fs = require("fs");
 const path = require("path");
@@ -23,49 +28,32 @@ const sharp = require("sharp");
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(__dirname, "out");
 
-// Where the art sits in logo.png's 1024 grid.
-const CROP = { left: 233, top: 195, width: 560, height: 560 };
+const JACKET = "#121212";
+const SHIRT = "#ffffff";
+const TIE = "#c8102e";
+const TAPE = "#ffd60a";
 
-const CASE = "#acedff"; // tertiary-fixed, Obsidian Cipher
-const KEY = "#4edea3"; // --color-secondary
-const HANDLE = "M428 262 V252 Q428 234 446 234 H582 Q600 234 600 252 V296";
-const KEYHOLE = "M437 309 a24 24 0 0 1 15 43 l9 37 h-48 l9 -37 a24 24 0 0 1 15 -43 z";
+// The mark in a 256 grid, centred on 128,128.
+const HANDLE = "M88 96V64a24 24 0 0 1 24-24h32a24 24 0 0 1 24 24V96ZM108 96V66a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6V96Z";
+const BODY =
+  "M54 92H202a26 26 0 0 1 26 26V190a26 26 0 0 1-26 26H54a26 26 0 0 1-26-26V118a26 26 0 0 1 26-26ZM60 92h10v124h-10ZM186 92h10v124h-10Z";
+// At 16 px the two straps are a third of a pixel wide and only smear the body.
+const BODY_PLAIN = BODY.slice(0, BODY.indexOf("ZM") + 1);
+const KEYHOLE = "M128 118a20 20 0 0 1 11.8 36.2L146 192H110l6.2-37.8A20 20 0 0 1 128 118Z";
 
-/** The suitcase, key and K of logo.png, traced in its 1024 grid. */
-function logoSvg({ stroke, detail }) {
-  const inner = detail
-    ? `<rect x="268" y="330" width="490" height="364" rx="30"/>
-    <path d="M338 330 V694 M352 330 V694 M673 330 V694 M687 330 V694"/>
-    <path d="M268 380 A50 50 0 0 0 318 330 M268 644 A50 50 0 0 1 318 694 M758 380 A50 50 0 0 1 708 330 M758 644 A50 50 0 0 0 708 694"/>`
-    : `<path d="M352 313 V711 M673 313 V711"/>`;
-  const shaft = detail
-    ? `<path d="M422 414 V640 L437 660 L452 640 V632 H470 V614 H452 V600 H486 V584 H466 V572 H486 V556 H452 V414"/>`
-    : `<path d="M437 416 V650 M437 574 H482 M437 622 H472"/>`;
-  const keyhole = detail ? `<path d="${KEYHOLE}"/>` : `<path d="${KEYHOLE}" fill="${KEY}"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${CROP.left} ${CROP.top} ${CROP.width} ${CROP.height}" fill="none" stroke-linejoin="round" stroke-linecap="round">
-  <defs>
-    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
-      <rect width="1024" height="1024" fill="#fff"/>
-      <circle cx="437" cy="350" r="${66 + stroke * 2}" fill="#000"/>
-    </mask>
-  </defs>
-  <g stroke="${CASE}" stroke-width="${stroke}" mask="url(#cut)">
-    <rect x="251" y="313" width="524" height="398" rx="44"/>
-    ${inner}
-  </g>
-  <path stroke="${CASE}" stroke-width="${stroke}" d="${detail ? "M455 494 L597 384 L622 384 L512 487 L638 634 L582 634 L492 510 L455 536" : "M445 520 L610 384 M500 474 L630 634"}"/>
-  <g stroke="${KEY}" stroke-width="${stroke}">
-    <path d="${HANDLE}"/>
-    ${detail ? `<path d="M446 275 V266 Q446 250 462 250 H574 Q584 250 584 262 V296"/>` : ""}
-    <circle cx="437" cy="350" r="66"/>
-    ${keyhole}
-    ${shaft}
+/** The mark on the jacket. `radius` rounds the tile (0 is a full square);
+ *  `scale` is how much of the tile the mark takes, about its centre;
+ *  `plain` leaves the straps off. */
+function tileSvg({ radius, scale, plain = false }) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="${radius}" fill="${JACKET}"/>
+  <g transform="translate(128 128) scale(${scale}) translate(-128 -128)">
+    <path fill="${TAPE}" fill-rule="evenodd" d="${HANDLE}"/>
+    <path fill="${SHIRT}" fill-rule="evenodd" d="${plain ? BODY_PLAIN : BODY}"/>
+    <path fill="${TIE}" d="${KEYHOLE}"/>
   </g>
 </svg>`;
 }
-
-const SMALL = { stroke: 36, detail: false };
-const LARGE = { stroke: 11, detail: true };
 
 async function png(svg, size, file, pad = 0) {
   const art = await sharp(Buffer.from(svg), { density: 600 }).resize(size - pad * 2, size - pad * 2).png().toBuffer();
@@ -78,25 +66,26 @@ async function png(svg, size, file, pad = 0) {
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
 
-  // Windows and Linux: the logo itself, cropped to its art.
+  // Windows and Linux: the mark on a rounded tile.
   const appIcon = path.join(ROOT, "src-tauri", "icons", "app-icon.png");
-  await sharp(path.join(__dirname, "logo.png")).extract(CROP).resize(1024, 1024).png().toFile(appIcon);
+  await png(tileSvg({ radius: 46, scale: 0.7 }), 1024, appIcon);
 
-  // Browser: 16/32 simplified, 48 in between, 128 with Chrome's 16 px pad.
+  // Browser: the smaller the icon, the more of the tile the mark takes.
+  // 128 keeps Chrome's 16 px pad.
   const ext = path.join(ROOT, "extension", "icons");
-  await png(logoSvg(SMALL), 16, path.join(ext, "16.png"));
-  await png(logoSvg(SMALL), 32, path.join(ext, "32.png"));
-  await png(logoSvg({ ...SMALL, stroke: 26 }), 48, path.join(ext, "48.png"), 2);
-  await png(logoSvg(LARGE), 128, path.join(ext, "128.png"), 16);
+  await png(tileSvg({ radius: 56, scale: 0.9, plain: true }), 16, path.join(ext, "16.png"));
+  await png(tileSvg({ radius: 56, scale: 0.9 }), 32, path.join(ext, "32.png"));
+  await png(tileSvg({ radius: 52, scale: 0.84 }), 48, path.join(ext, "48.png"));
+  await png(tileSvg({ radius: 48, scale: 0.78 }), 128, path.join(ext, "128.png"), 16);
 
-  // macOS: the full art in Apple's rounded square, 824 of 1024.
+  // macOS: the mark on a full square, cut to Apple's rounded square, 824 of 1024.
   const inner = 824;
   const radius = 185; // Big Sur's corner, near enough to the squircle
   const mask = Buffer.from(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${inner}" height="${inner}"><rect width="${inner}" height="${inner}" rx="${radius}" ry="${radius}"/></svg>`
   );
-  const art = await sharp(appIcon)
-    .resize(inner, inner)
+  const square = await sharp(Buffer.from(tileSvg({ radius: 0, scale: 0.66 })), { density: 600 }).resize(inner, inner).png().toBuffer();
+  const art = await sharp(square)
     .composite([{ input: mask, blend: "dest-in" }])
     .png()
     .toBuffer();

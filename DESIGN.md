@@ -95,13 +95,13 @@ thing; nothing on screen should compete with that thing.
 - **Ink** (`#141414`) for text, `muted` (`#6b6b6b`) for labels and secondary
   lines. Both pass 4.5:1 on the shirt.
 - **Tie** (`#c8102e`): the one accent. It fills the single primary action of
-  a screen (Unlock, Save, Copy password) and colours the mark. White text on
-  it passes 4.5:1. `tie-pressed` is its hover and active state.
+  a screen (Unlock, Save, Copy password) and colours the keyhole of the mark.
+  White text on it passes 4.5:1. `tie-pressed` is its hover and active state.
 
 - **Tape** (`#ffd60a`): crime-scene tape yellow, and the only other colour.
   It means "careful" and is never decoration. Always a fill with `on-tape`
   ink text on it; never yellow text on the shirt, where it cannot be read.
-  It has exactly three jobs:
+  It has three jobs in the interface, and one in the mark (its handle):
   1. A flag on a password that is leaked, reused or weak.
   2. The lock countdown in the jacket during its last 30 seconds.
   3. A 12px strip of black and yellow tape across the top of a dialog that
@@ -188,6 +188,28 @@ except the selected sidebar entry, which uses the same 6px.
   change colour.
 - **Confirm dialog:** shirt, 10px corners, title, one paragraph, ghost cancel
   and a filled ink confirm that names the action.
+- **Mark:** a locked case. White body, yellow handle, red keyhole, always on
+  jacket black: in the sidebar, on a rounded black tile for the app and
+  toolbar icons, and on the same tile in the browser's save bar. Never on the
+  shirt, where the body would vanish. The 16px icon drops the two straps.
+  Its three paths are written out in `src/components/Emblem.tsx`,
+  `design/icons.cjs`, `extension/popup.html` and `extension/bar.js`.
+
+## Browser extension
+
+The popup and the bars the extension shows inside web pages follow this file.
+
+- **Popup** (320px wide): a jacket strip across the top with the mark and the
+  name, then two panels on the shirt split by a hairline: what the page is,
+  and what the vault has for it. Logins are rows that take the soft fill on
+  hover. Personal info is a card cut from the jacket, so it never reads as
+  one more login. IBM Plex ships inside the extension (Latin only).
+- **Save bar** (inside a page): a white dialog, top right, with the mark on
+  its black tile beside the title, one red button and ghost buttons for the
+  rest. System fonts, because a page's own rules decide what loads there.
+- **Pointer** (inside a page): an ink ring inside a white one, so it shows on
+  light and dark pages, with a jacket-black note. It does not pulse.
+- **Toolbar badge:** tie red when the page has a login Koffer can fill.
 
 ## Wording
 
@@ -204,7 +226,8 @@ except the selected sidebar entry, which uses the same 6px.
 ## Do's and Don'ts
 
 - Do keep red to one filled element per screen.
-- Do keep yellow to its three jobs; it is a warning, not a brand colour.
+- Do keep yellow to its three jobs and the mark's handle; in the interface
+  it is a warning, not decoration.
 - Do say state in words; colour alone never carries meaning.
 - Do keep every transition to a 150ms colour change, and none at all under
   `prefers-reduced-motion`.
@@ -215,10 +238,6 @@ except the selected sidebar entry, which uses the same 6px.
 
 ## Known Gaps
 
-- The mark. In the app it is the existing suitcase, key and K drawing with
-  new colours: lines in the text colour of the surface it sits on, the key
-  in tie red, no glow. The app and extension icon files still carry the neon
-  version until they are regenerated; three new suitcase concepts are parked.
+- The README video and banner, and `design/logo.png`, still show the earlier
+  neon logo.
 - A dark variant. Not planned: the jacket already carries the dark.
-- The browser extension's popup and save bar are not designed yet; they
-  should follow this file.

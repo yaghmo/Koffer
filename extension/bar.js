@@ -21,39 +21,48 @@
     generate: "Use a strong password?",
     keyHas: "This login already has a 2FA key",
   };
-  var PRIMARY = { new: "Save", update: "Update", approve: "Save", locked: "Try again", site: "Approve this website", key: "Save", generate: "Fill a strong password", keyHas: "OK" };
+  var PRIMARY = { new: "Save", update: "Update", approve: "Save", locked: "Try again", site: "Approve this website", key: "Save", generate: "Fill a strong password", keyHas: "Got it" };
 
-  // The app's own tokens (src/styles.css), so the bar reads as the app
-  // speaking rather than the page.
+  // The app's own look (DESIGN.md), so the bar reads as the app speaking
+  // rather than the page: a white dialog, one red button, ink for the rest.
+  // System fonts only: a page's CSP decides what fonts load inside it.
   var STYLE =
     ":host{all:initial}" +
     ".bar{position:fixed;top:16px;right:16px;z-index:2147483647;max-width:340px;margin:0;" +
-    "font:13px/1.4 system-ui,sans-serif;color:#e1e2ec;background:#1d1f27;" +
-    "border:1px solid #464554;border-radius:12px;padding:14px 16px;box-shadow:0 12px 32px rgba(5,7,12,.55)}" +
-    ".title{font-weight:600;margin:0 0 4px}.who{color:#c7c4d7;margin:0 0 12px;word-break:break-all}" +
+    "font:13px/1.45 'Segoe UI',system-ui,sans-serif;color:#141414;background:#ffffff;" +
+    "border:1px solid #e4e4e2;border-radius:10px;padding:16px;box-shadow:0 16px 40px -8px rgb(18 18 18 / .3)}" +
+    ".head{display:flex;align-items:center;gap:8px;margin:0 0 4px}.head svg{flex:none}" +
+    ".title{font-weight:600;margin:0}.who{color:#6b6b6b;margin:0 0 16px;word-break:break-all}" +
     ".row{display:flex;gap:8px;flex-wrap:wrap}" +
-    "button{font:inherit;border-radius:8px;padding:6px 12px;cursor:pointer;" +
-    "border:1px solid #464554;background:transparent;color:inherit;transition:background-color .15s,color .15s}" +
-    "button:hover{background:#272a32}button:disabled{opacity:.5;cursor:default}" +
-    "button:focus-visible{outline:2px solid #c0c1ff;outline-offset:2px}" +
-    "button.primary{background:#c0c1ff;border-color:#c0c1ff;color:#10131a;font-weight:600}" +
-    "button.primary:hover{background:#d6d6ff}" +
-    ".split{display:inline-flex}.split .later{border-radius:8px 0 0 8px}" +
-    ".split .caret{border-left:0;border-radius:0 8px 8px 0;padding:6px 8px;display:inline-flex;align-items:center}" +
-    ".caret svg{transition:transform .2s cubic-bezier(.16,1,.3,1)}" +
+    "button{font:inherit;font-weight:500;height:32px;border-radius:6px;padding:0 12px;cursor:pointer;" +
+    "border:1px solid #e4e4e2;background:#ffffff;color:inherit;transition:background-color .15s ease-out,color .15s ease-out}" +
+    "button:hover{background:#f4f4f3}button:disabled{opacity:.5;cursor:default}" +
+    "button:focus-visible{outline:2px solid #141414;outline-offset:2px}" +
+    "button.primary{background:#c8102e;border-color:#c8102e;color:#ffffff}" +
+    "button.primary:hover{background:#a90d27;border-color:#a90d27}" +
+    ".split{display:inline-flex}.split .later{border-radius:6px 0 0 6px}" +
+    ".split .caret{border-left:0;border-radius:0 6px 6px 0;padding:0 8px;display:inline-flex;align-items:center}" +
+    ".caret svg{transition:transform .15s ease-out}" +
     ".caret[aria-expanded=true] svg{transform:rotate(180deg)}" +
-    // Never sits on its own line under a hairline, centred: apart from Save,
-    // so it cannot be hit on the way to it.
-    ".menu{margin-top:12px;padding-top:8px;border-top:1px solid #32353d;text-align:center;" +
-    "transition:opacity .2s cubic-bezier(.16,1,.3,1),transform .2s cubic-bezier(.16,1,.3,1)}" +
-    "@starting-style{.menu{opacity:0;transform:translateY(-4px)}}" +
+    // Never sits on its own line under a hairline: apart from Save, so it
+    // cannot be hit on the way to it.
+    ".menu{margin-top:12px;padding-top:8px;border-top:1px solid #e4e4e2}" +
     ".menu[hidden]{display:none}" +
-    ".menu button{border-color:transparent;color:#c7c4d7}" +
-    ".menu button:hover{color:#ffb4ab;background:rgba(255,180,171,.08)}" +
-    "@media (prefers-reduced-motion:reduce){.menu,.caret svg{transition:none}}";
+    ".menu button{border-color:transparent;color:#6b6b6b}" +
+    ".menu button:hover{color:#c8102e;background:#f4f4f3}" +
+    "@media (prefers-reduced-motion:reduce){button,.caret svg{transition:none}}";
+
+  // The mark on a jacket-black tile, so the bar is recognisably Koffer's
+  // before a word of it is read (src/components/Emblem.tsx).
+  var MARK =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 256 256" aria-hidden="true">' +
+    '<rect width="256" height="256" rx="56" fill="#121212"/><g transform="translate(128 128) scale(.78) translate(-128 -128)">' +
+    '<path fill="#ffd60a" fill-rule="evenodd" d="M88 96V64a24 24 0 0 1 24-24h32a24 24 0 0 1 24 24V96ZM108 96V66a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6V96Z"/>' +
+    '<path fill="#ffffff" fill-rule="evenodd" d="M54 92H202a26 26 0 0 1 26 26V190a26 26 0 0 1-26 26H54a26 26 0 0 1-26-26V118a26 26 0 0 1 26-26ZM60 92h10v124h-10ZM186 92h10v124h-10Z"/>' +
+    '<path fill="#c8102e" d="M128 118a20 20 0 0 1 11.8 36.2L146 192H110l6.2-37.8A20 20 0 0 1 128 118Z"/></g></svg>';
 
   var CHEVRON =
-    '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" ' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" fill="none" stroke="currentColor" ' +
     'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5"/></svg>';
 
   var host = null;
@@ -89,6 +98,12 @@
     return top === host;
   }
 
+  /** One of the constant drawings above as an element: parsed, never
+   *  assigned as HTML. */
+  function svg(src) {
+    return document.importNode(new DOMParser().parseFromString(src, "image/svg+xml").documentElement, true);
+  }
+
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -122,7 +137,10 @@
       setBusy(true);
       onChoice(e.submitter.value);
     });
-    bar.appendChild(el("p", "title", TITLES[view.kind] || TITLES.new));
+    var head = el("div", "head");
+    head.appendChild(svg(MARK));
+    head.appendChild(el("p", "title", TITLES[view.kind] || TITLES.new));
+    bar.appendChild(head);
     bar.appendChild(el("p", "who", view.detail || (view.username ? view.username + " on " + view.host : view.host)));
     var row = el("div", "row");
     row.appendChild(button(PRIMARY[view.kind] || "Save", true, "save"));
@@ -132,8 +150,7 @@
     var later = button("Not now", false, "later");
     later.className = "later";
     var caret = el("button", "caret");
-    // Our own constant markup, inside our own closed root.
-    caret.innerHTML = CHEVRON;
+    caret.appendChild(svg(CHEVRON));
     caret.type = "button";
     caret.setAttribute("aria-label", "More choices");
     caret.setAttribute("aria-expanded", "false");
@@ -209,12 +226,12 @@
     var style = document.createElement("style");
     style.textContent =
       ":host{all:initial}" +
-      ".ring{position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #c0c1ff;border-radius:10px;" +
-      "box-shadow:0 0 0 4px rgba(192,193,255,.25),0 0 24px rgba(192,193,255,.45);animation:pulse 1.4s ease-in-out infinite}" +
-      ".note{position:fixed;z-index:2147483647;pointer-events:none;max-width:280px;padding:7px 10px;border-radius:8px;" +
-      "font:12px/1.4 system-ui,sans-serif;color:#e1e2ec;background:#1d1f27;border:1px solid #464554;box-shadow:0 8px 24px rgba(5,7,12,.5)}" +
-      "@keyframes pulse{50%{box-shadow:0 0 0 7px rgba(192,193,255,.12),0 0 32px rgba(192,193,255,.3)}}" +
-      "@media (prefers-reduced-motion:reduce){.ring{animation:none}}";
+      // An ink ring inside a white one: it shows on a light page and on a
+      // dark one, and it holds still.
+      ".ring{position:fixed;z-index:2147483646;pointer-events:none;border:2px solid #141414;border-radius:8px;" +
+      "box-shadow:0 0 0 2px #ffffff}" +
+      ".note{position:fixed;z-index:2147483647;pointer-events:none;max-width:280px;padding:8px 12px;border-radius:6px;" +
+      "font:12px/1.4 'Segoe UI',system-ui,sans-serif;color:#f5f5f5;background:#121212;box-shadow:0 16px 40px -8px rgb(18 18 18 / .3)}";
     var ring = el("div", "ring");
     var label = el("div", "note", note);
     sroot.appendChild(style);

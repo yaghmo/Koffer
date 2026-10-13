@@ -4,229 +4,273 @@
 <meta charset="utf-8">
 <title>Koffer</title>
 <style>
+  /* The app's look (DESIGN.md, "suit and shirt"): a black jacket across the
+     top, everything else on the white shirt, one red button per state. The
+     fonts ship with the extension; nothing is fetched. */
+  @font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-display: swap; src: url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2"); }
+  @font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap; src: url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
   :root {
-    color-scheme: dark;
-    --surface: #0b0e15;
-    --raised: #191b23;
-    --line: #464554;
-    --text: #e1e2ec;
-    --muted: #c7c4d7;
-    --dim: #908fa0;
-    --accent: #c0c1ff;
+    color-scheme: light;
+    --jacket: #121212;
+    --jacket-soft: #1f1f1f;
+    --jacket-line: #2a2a2a;
+    --on-jacket: #f5f5f5;
+    --on-jacket-muted: #a3a3a3;
+    --shirt: #ffffff;
+    --soft: #f4f4f3;
+    --line: #e4e4e2;
+    --ink: #141414;
+    --muted: #6b6b6b;
+    --tie: #c8102e;
+    --tie-pressed: #a90d27;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
   body {
     width: 320px;
     margin: 0;
-    padding: 14px;
-    background: var(--surface);
-    color: var(--text);
-    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--shirt);
+    color: var(--ink);
+    font: 13px/1.45 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    caret-color: var(--ink);
   }
-  h1 {
-    margin: 0 0 10px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .09em;
-    text-transform: uppercase;
-    color: var(--dim);
-  }
-  /* A flex column so every state gets the same breathing room without each
-     one remembering to add a margin. */
-  .card {
+  ::selection { background: var(--ink); color: var(--shirt); }
+  :focus { outline: none; }
+  /* Ink, never red: a focused control must not look like the primary action. */
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  button { font: inherit; }
+
+  header {
     display: flex;
-    flex-direction: column;
-    gap: 7px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 12px;
-    background: var(--raised);
-  }
-  .card + .card { margin-top: 8px; }
-  /* A standalone action sits centred, clear of the text above it. */
-  .card > .primary { align-self: center; margin-top: 3px; padding: 8px 20px; }
-  /* States that are one message and one button read better centred. */
-  .stack {
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 7px;
-    padding: 2px 0;
-    text-align: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--jacket);
+    color: var(--on-jacket);
   }
-  .stack .primary { margin-top: 3px; padding: 8px 20px; }
-  .origin {
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  header svg { flex: none; width: 20px; height: 20px; }
+  h1 { margin: 0; font-size: 13px; font-weight: 600; }
+
+  /* Two panels split by a hairline: what the page is, then what the vault
+     has for it. */
+  #page {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  #vault { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+  /* A state that is one message and one button. */
+  .stack { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .stack .primary { margin-top: 4px; }
+
+  .origin { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+  .muted { color: var(--ink); }
+  .dim { color: var(--muted); font-size: 12px; }
+  .caption { color: var(--muted); font-size: 12px; }
+  .error { color: var(--tie); font-size: 12px; }
+  .error:empty { display: none; }
+
+  ul { list-style: none; margin: 0; padding: 0; }
+  li + li { margin-top: 4px; }
+  button.more {
+    align-self: flex-start;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink);
     font-size: 12px;
-    color: var(--accent);
-    overflow-wrap: anywhere;
-  }
-  .muted { color: var(--muted); }
-  .dim { color: var(--dim); font-size: 12px; }
-  ul { list-style: none; margin: 1px 0 0; padding: 0; }
-  .caption { font-size: 11px; color: var(--dim); }
-  button.more { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--accent); cursor: pointer; text-align: left; }
-  button.more:hover { text-decoration: underline; }
-  li + li { margin-top: 6px; }
-  button.item {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
     text-align: left;
+    text-decoration: underline;
+    text-decoration-color: var(--muted);
+    text-underline-offset: 3px;
     cursor: pointer;
   }
-  button.item:hover:not(:disabled) { border-color: var(--accent); }
-  button.item:disabled { cursor: not-allowed; opacity: .55; }
-  .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .title { font-weight: 600; }
+  button.more:hover { text-decoration-color: var(--ink); }
+
+  /* A row reaches 8px past the text on each side, so its hover fill has room
+     around the logo while the logo stays on the panel's 16px line. */
+  button.item {
+    width: calc(100% + 16px);
+    margin: 0 -8px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color .15s ease-out;
+  }
+  button.item:hover:not(:disabled) { background: var(--soft); }
+  button.item:disabled { cursor: not-allowed; opacity: .5; }
+  .text { display: flex; flex-direction: column; min-width: 0; }
+  .title { font-weight: 500; }
   .title, .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { font-size: 12px; color: var(--muted); }
+
   /* The login's logo, with the provider it signs in through on its corner. */
   .logo {
     position: relative;
-    flex: 0 0 auto;
-    width: 30px;
-    height: 30px;
+    flex: none;
+    width: 32px;
+    height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 7px;
-    background: #272a32;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--shirt);
   }
   .logo img { width: 22px; height: 22px; object-fit: contain; border-radius: 4px; }
-  .logo.letter { font-weight: 600; color: var(--muted); }
+  .logo.letter { border-color: var(--ink); background: var(--ink); color: var(--shirt); font-weight: 600; }
   .logo .badge {
     position: absolute;
     right: -4px;
     bottom: -4px;
-    width: 15px;
-    height: 15px;
+    width: 16px;
+    height: 16px;
     padding: 2px;
     display: inline-flex;
-    border-radius: 50%;
-    background: var(--surface);
+    border-radius: 4px;
+    background: var(--shirt);
     box-shadow: 0 0 0 1px var(--line);
   }
   .logo .badge svg { width: 100%; height: 100%; }
-  /* Personal info: an ID card, so it never reads as one more login. */
+
+  /* Personal info: an ID card cut from the jacket, so it never reads as one
+     more login. */
   button.idcard {
     width: 100%;
+    margin-bottom: 4px;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 10px 12px 8px;
-    border: 1px solid rgba(192, 193, 255, .35);
-    border-radius: 12px;
-    background: linear-gradient(135deg, #22254a 0%, #151a2c 55%, #10202a 100%);
-    color: inherit;
-    font: inherit;
+    padding: 12px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--jacket);
+    color: var(--on-jacket);
     text-align: left;
     cursor: pointer;
-    transition: border-color .15s;
+    transition: background-color .15s ease-out;
   }
-  button.idcard:hover:not(:disabled) { border-color: var(--accent); }
-  button.idcard:disabled { cursor: not-allowed; opacity: .55; }
+  button.idcard:hover:not(:disabled) { background: var(--jacket-soft); }
+  button.idcard:disabled { cursor: not-allowed; opacity: .5; }
   .id-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--dim);
+    font-size: 12px;
+    color: var(--on-jacket-muted);
   }
   .id-chip {
-    padding: 1px 6px;
+    padding: 0 4px;
+    border: 1px solid var(--jacket-line);
     border-radius: 4px;
-    background: rgba(192, 193, 255, .16);
-    color: var(--accent);
-    letter-spacing: .08em;
+    font-family: var(--mono);
+    color: var(--on-jacket);
   }
-  .id-body { display: flex; align-items: center; gap: 10px; }
+  .id-body { display: flex; align-items: center; gap: 12px; }
   .id-photo {
-    flex: 0 0 auto;
-    width: 38px;
+    flex: none;
+    width: 36px;
     height: 44px;
-    padding: 5px;
+    padding: 4px;
     display: inline-flex;
-    border-radius: 6px;
-    background: rgba(192, 193, 255, .1);
-    box-shadow: inset 0 0 0 1px rgba(192, 193, 255, .25);
+    border: 1px solid var(--jacket-line);
+    border-radius: 4px;
   }
   .id-photo svg { width: 100%; height: 100%; }
+  .idcard .sub { color: var(--on-jacket-muted); }
   .id-strip {
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-family: var(--mono);
     font-size: 10px;
     letter-spacing: .12em;
-    color: rgba(199, 196, 215, .45);
+    color: var(--on-jacket-muted);
     overflow: hidden;
     white-space: nowrap;
   }
-  .sub { font-size: 12px; color: var(--muted); }
+
   /* Not a button: a provider login has nothing to fill, only an account to
      be reminded of. Dashed border so it never reads as clickable. */
   .hint {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
+    gap: 12px;
+    padding: 8px;
     border: 1px dashed var(--line);
-    border-radius: 8px;
+    border-radius: 6px;
   }
   button.hint {
     width: 100%;
     background: transparent;
     color: inherit;
-    font: inherit;
     text-align: left;
     cursor: pointer;
+    transition: background-color .15s ease-out, border-color .15s ease-out;
   }
-  button.hint:hover { border-color: var(--accent); border-style: solid; }
-  .hint .who {
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-    font-size: 12px;
-    color: var(--accent);
-    overflow-wrap: anywhere;
-  }
-  .row { display: flex; gap: 6px; }
+  button.hint:hover { border-style: solid; border-color: var(--ink); background: var(--soft); }
+  .hint .who { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+
+  .row { display: flex; gap: 8px; align-self: stretch; }
   .code {
     flex: 1;
     min-width: 0;
-    padding: 7px 9px;
+    height: 36px;
+    padding: 0 12px;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--text);
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    border-radius: 6px;
+    background: var(--shirt);
+    color: var(--ink);
+    font-family: var(--mono);
     font-size: 14px;
     letter-spacing: .16em;
     text-transform: uppercase;
+    transition: border-color .15s ease-out;
   }
-  .code:focus { outline: none; border-color: var(--accent); }
+  .code::placeholder { color: var(--muted); font-size: 12px; letter-spacing: .08em; }
+  .code:focus { border-color: var(--ink); }
+  /* The tie: the one thing to press in the state on show. */
   .primary {
-    padding: 7px 14px;
+    height: 36px;
+    padding: 0 16px;
     border: 0;
-    border-radius: 8px;
-    background: var(--accent);
-    color: #1a1b2a;
-    font: inherit;
-    font-weight: 600;
+    border-radius: 6px;
+    background: var(--tie);
+    color: #ffffff;
+    font-weight: 500;
+    white-space: nowrap;
     cursor: pointer;
+    transition: background-color .15s ease-out;
   }
-  .primary:disabled { opacity: .55; cursor: not-allowed; }
+  .primary:hover:not(:disabled) { background: var(--tie-pressed); }
+  .primary:disabled { opacity: .5; cursor: not-allowed; }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
 </style>
 </head>
 <body>
-  <h1>Koffer</h1>
-  <div id="page" class="card"><span class="dim">Checking this page…</span></div>
-  <div id="vault" class="card"><span class="dim">Checking the vault…</span></div>
+  <header>
+    <!-- The mark: white case, yellow handle, red keyhole (src/components/Emblem.tsx). -->
+    <svg viewBox="16 16 224 224" aria-hidden="true">
+      <path fill="#ffd60a" fill-rule="evenodd" d="M88 96V64a24 24 0 0 1 24-24h32a24 24 0 0 1 24 24V96ZM108 96V66a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6V96Z"/>
+      <path fill="#ffffff" fill-rule="evenodd" d="M54 92H202a26 26 0 0 1 26 26V190a26 26 0 0 1-26 26H54a26 26 0 0 1-26-26V118a26 26 0 0 1 26-26ZM60 92h10v124h-10ZM186 92h10v124h-10Z"/>
+      <path fill="#c8102e" d="M128 118a20 20 0 0 1 11.8 36.2L146 192H110l6.2-37.8A20 20 0 0 1 128 118Z"/>
+    </svg>
+    <h1>Koffer</h1>
+  </header>
+  <div id="page"><span class="dim">Checking this page…</span></div>
+  <div id="vault"><span class="dim">Checking the vault…</span></div>
   <script src="popup.js" type="module"></script>
 </body>
 </html>

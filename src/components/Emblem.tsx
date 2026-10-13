@@ -2,66 +2,30 @@ interface Props {
   size?: number;
 }
 
-// Lines take the text colour of whatever the mark sits on; the key is the tie.
-const CASE = "currentColor";
-const KEY = "var(--color-primary)";
-const KEYHOLE = "M437 309a24 24 0 0 1 15 43l9 37h-48l9-37a24 24 0 0 1 15-43z";
-
-/** The Koffer mark, traced from design/logo.png (see design/icons.cjs), in the suit's colours.
- *  Below 40 px the double lines blur together, so it drops to one line. */
+/** The Koffer mark: a locked case. White body, yellow handle, red keyhole.
+ *  It is drawn for the jacket's black; on white the body would vanish. The
+ *  same three paths as design/icons.cjs and the extension's popup and bar. */
 export function Emblem({ size = 48 }: Props) {
-  const detail = size >= 40;
-  const stroke = detail ? 14 : 30;
   return (
-    <span
-      className="relative inline-flex shrink-0 items-center justify-center"
-      style={{ width: size, height: size }}
+    <svg
+      className="shrink-0"
+      width={size}
+      height={size}
+      viewBox="16 16 224 224"
+      aria-hidden
+      focusable={false}
     >
-      <svg
-        width={size}
-        height={size}
-        viewBox="233 195 560 560"
-        fill="none"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        aria-hidden
-        focusable={false}
-      >
-        <defs>
-          <mask id={`emblem-cut-${size}`} maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
-            <rect width="1024" height="1024" fill="#fff" />
-            <circle cx="437" cy="350" r={66 + stroke * 2} fill="#000" />
-          </mask>
-        </defs>
-        <g stroke={CASE} strokeWidth={stroke} mask={`url(#emblem-cut-${size})`}>
-          <rect x="251" y="313" width="524" height="398" rx="44" />
-          {detail ? (
-            <>
-              <rect x="268" y="330" width="490" height="364" rx="30" />
-              <path d="M338 330V694M352 330V694M673 330V694M687 330V694" />
-            </>
-          ) : (
-            <path d="M352 313V711M673 313V711" />
-          )}
-        </g>
-        <path
-          stroke={CASE}
-          strokeWidth={stroke}
-          d={detail ? "M455 494L597 384L622 384L512 487L638 634L582 634L492 510L455 536" : "M445 520L610 384M500 474L630 634"}
-        />
-        <g stroke={KEY} strokeWidth={stroke}>
-          <path d="M428 262V252Q428 234 446 234H582Q600 234 600 252V296" />
-          <circle cx="437" cy="350" r="66" />
-          <path d={KEYHOLE} fill={detail ? undefined : KEY} />
-          <path
-            d={
-              detail
-                ? "M422 414V640L437 660L452 640V632H470V614H452V600H486V584H466V572H486V556H452V414"
-                : "M437 416V650M437 574H482M437 622H472"
-            }
-          />
-        </g>
-      </svg>
-    </span>
+      <path
+        fill="var(--color-tape)"
+        fillRule="evenodd"
+        d="M88 96V64a24 24 0 0 1 24-24h32a24 24 0 0 1 24 24V96ZM108 96V66a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6V96Z"
+      />
+      <path
+        fill="var(--color-shirt)"
+        fillRule="evenodd"
+        d="M54 92H202a26 26 0 0 1 26 26V190a26 26 0 0 1-26 26H54a26 26 0 0 1-26-26V118a26 26 0 0 1 26-26ZM60 92h10v124h-10ZM186 92h10v124h-10Z"
+      />
+      <path fill="var(--color-primary)" d="M128 118a20 20 0 0 1 11.8 36.2L146 192H110l6.2-37.8A20 20 0 0 1 128 118Z" />
+    </svg>
   );
 }
