@@ -76,7 +76,6 @@ export default function RecoveryCodeDialog({
           <div className="flex items-center gap-2.5">
             <ShieldIcon size={18} />
             <div>
-              <p className="label-sm text-secondary">One last check</p>
               <h2 className="text-headline-sm text-on-surface">Type your recovery code</h2>
             </div>
           </div>
@@ -129,7 +128,6 @@ export default function RecoveryCodeDialog({
         <div className="flex items-center gap-2.5">
           <ShieldIcon size={18} />
           <div>
-            <p className="label-sm text-secondary">Write this down</p>
             <h2 className="text-headline-sm text-on-surface">Your recovery code</h2>
           </div>
         </div>
@@ -140,18 +138,19 @@ export default function RecoveryCodeDialog({
         </p>
 
         <p
-          className="select-all rounded-control border border-primary/30 bg-surface-container-lowest px-4 py-4 text-center font-mono text-body-lg tracking-widest text-on-surface"
+          className="select-all rounded-control border border-outline-variant px-4 py-4 text-center font-mono text-body-lg tracking-widest text-on-surface"
           aria-label="Recovery code"
         >
           {code}
         </p>
 
-        <div className="rounded-control border border-warning/30 bg-warning/10 px-3 py-2">
-          <p className="text-body-sm text-warning">
+        <p className="flex items-start gap-2 text-body-sm text-on-surface">
+          <span className="flag">Shown once</span>
+          <span>
             Anyone holding this code and a copy of your vault file can open it. Treat it like the
             master password itself.
-          </p>
-        </div>
+          </span>
+        </p>
 
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary" onClick={copy}>
@@ -165,9 +164,12 @@ export default function RecoveryCodeDialog({
         </div>
 
         {saved && (
-          <p role="status" className="text-body-sm text-warning">
-            Saved to {saved}. A file next to your vault is only as safe as this computer: print it or
-            move it to a USB stick, then delete it here.
+          <p role="status" className="flex items-start gap-2 text-body-sm text-on-surface">
+            <span className="flag">Plain text</span>
+            <span>
+              Saved to {saved}. A file next to your vault is only as safe as this computer: print it
+              or move it to a USB stick, then delete it here.
+            </span>
           </p>
         )}
         {saveError && (

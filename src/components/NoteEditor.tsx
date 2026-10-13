@@ -70,7 +70,7 @@ export default function NoteEditor({ value, onChange, label, rows = 10 }: Props)
           type="button"
           onClick={() => setPreview((p) => !p)}
           aria-pressed={preview}
-          className="ml-auto rounded-control px-2 py-1 text-body-sm font-medium text-primary transition-colors duration-150 ease-out hover:bg-surface-container-high"
+          className="ml-auto rounded-control px-2 py-1 text-body-sm font-medium text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high"
         >
           {preview ? "Edit" : "Preview"}
         </button>

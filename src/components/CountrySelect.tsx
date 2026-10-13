@@ -138,7 +138,7 @@ export default function CountrySelect({
                   setOpen(false);
                 }}
                 className={`flex w-full items-center gap-2 px-3 py-2 text-left text-body-sm transition-colors duration-150 ease-out hover:bg-surface-container-high ${
-                  c.dial === dial ? "text-primary" : "text-on-surface"
+                  c.dial === dial ? "font-medium text-on-surface" : "text-on-surface"
                 } ${c.iso2 === activeIso ? "bg-surface-container-high" : ""}`}
               >
                 <span className="label-sm w-8 flex-shrink-0 rounded bg-surface-container-high px-1 py-0.5 text-center text-on-surface-variant">

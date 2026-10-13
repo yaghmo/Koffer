@@ -133,7 +133,7 @@ export function PinnedTiles({
               onClick={() => onTogglePin(it)}
               aria-label={`Unpin ${it.title}`}
               title="Unpin"
-              className="absolute right-1.5 top-1.5 rounded-control p-1.5 text-primary opacity-0 transition-opacity duration-150 ease-out hover:bg-surface-container-high group-hover:opacity-100 group-focus-within:opacity-100"
+              className="absolute right-1.5 top-1.5 rounded-control p-1.5 text-on-surface opacity-0 transition-opacity duration-150 ease-out hover:bg-surface-container-high group-hover:opacity-100 group-focus-within:opacity-100"
             >
               <PinIcon size={14} filled />
             </button>
@@ -165,9 +165,9 @@ function ItemActions({
           onClick={() => onTogglePin(item)}
           aria-label={`${item.pinned ? "Unpin" : "Pin"} ${item.title}`}
           title={item.pinned ? "Unpin" : "Pin to the top"}
-          className={`rounded-control p-1.5 transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-primary ${
+          className={`rounded-control p-1.5 transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface ${
             item.pinned
-              ? "text-primary"
+              ? "text-on-surface"
               : "text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
           }`}
         >
@@ -181,7 +181,7 @@ function ItemActions({
             onClick={() => onOpen(item.id)}
             aria-label={`Open ${item.title}`}
             title="Open in browser"
-            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-secondary"
+            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface"
           >
             <ExternalIcon size={14} />
           </button>
@@ -192,7 +192,7 @@ function ItemActions({
             onClick={() => onEdit(item)}
             aria-label={`Edit ${item.title}`}
             title={`Edit ${item.title}`}
-            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-primary"
+            className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-on-surface"
           >
             <PencilIcon size={14} />
           </button>
@@ -202,7 +202,7 @@ function ItemActions({
           onClick={() => onDelete(item)}
           aria-label={`Delete ${item.title}`}
           title={`Delete ${item.title}`}
-          className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-error/12 hover:text-error"
+          className="rounded-control p-1.5 text-on-surface-variant transition-colors duration-150 ease-out hover:bg-surface-container-high hover:text-error"
         >
           <TrashIcon size={14} />
         </button>
@@ -278,6 +278,7 @@ export default function ItemList({
           title="Delete item"
           message={`Delete "${pendingDelete.title}"? This can't be undone.`}
           typeToConfirm="Delete"
+          confirmLabel={`Delete ${pendingDelete.kind}`}
           onCancel={() => setPendingDelete(null)}
           onConfirm={() => {
             onDelete(pendingDelete.id);

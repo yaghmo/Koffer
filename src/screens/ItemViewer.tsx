@@ -47,7 +47,7 @@ function Field({
             onClick={onCopy}
             disabled={!value}
             aria-label={`Copy ${label}`}
-            className={`btn-secondary ${copied ? "!border-secondary !text-secondary" : ""}`}
+            className={`btn-secondary ${copied ? "!border-on-surface" : ""}`}
           >
             {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
             {copied ? "Copied" : "Copy"}
@@ -99,7 +99,7 @@ function SecretField({
           onClick={onCopy}
           disabled={!value}
           aria-label={`Copy ${label}`}
-          className={`btn-secondary ${copied ? "!border-secondary !text-secondary" : ""}`}
+          className={`btn-secondary ${copied ? "!border-on-surface" : ""}`}
         >
           {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
           {copied ? "Copied" : "Copy"}
@@ -158,7 +158,7 @@ function TotpField({ id, onCopy, copied }: { id: string; onCopy: (code: string) 
           onClick={() => totp && onCopy(totp.code)}
           disabled={!totp}
           aria-label="Copy 2FA code"
-          className={`btn-secondary ${copied ? "!border-secondary !text-secondary" : ""}`}
+          className={`btn-secondary ${copied ? "!border-on-surface" : ""}`}
         >
           {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
           {copied ? "Copied" : "Copy"}
@@ -188,10 +188,11 @@ function LastSeenBanner({
     <div
       role="status"
       aria-label="Password may be out of date"
-      className="flex flex-col gap-2 rounded-control border border-warning/30 bg-warning/10 px-3 py-2"
+      className="flex flex-col gap-2 rounded-control border border-outline-variant p-3"
     >
-      <p className="text-body-sm text-warning">
-        Your last successful login ({dateOf(seen.seen_at)}) used a different password.
+      <p className="flex items-start gap-2 text-body-sm text-on-surface">
+        <span className="flag">Out of date</span>
+        <span>Your last successful login ({dateOf(seen.seen_at)}) used a different password.</span>
       </p>
       {shown && <p className="font-mono text-body-sm text-on-surface">{seen.password}</p>}
       <div className="flex flex-wrap gap-2">
@@ -227,7 +228,7 @@ function PreviousPasswords({
     <div className="flex flex-col gap-1.5">
       <button
         type="button"
-        className="self-start text-body-sm font-medium text-primary hover:underline"
+        className="link self-start"
         onClick={() => setOpen((o) => !o)}
       >
         Previous passwords ({previous.length})
@@ -356,7 +357,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
             type="button"
             onClick={() => setConfirmingDelete(true)}
             aria-label="Delete item"
-            className="rounded-control p-2 text-error transition-colors duration-150 ease-out hover:bg-error/12"
+            className="rounded-control p-2 text-error transition-colors duration-150 ease-out hover:bg-surface-container-high"
           >
             <TrashIcon size={14} />
           </button>
@@ -481,6 +482,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
         title="Delete item"
         message={`Delete "${item.title}"? This can't be undone.`}
         typeToConfirm="Delete"
+        confirmLabel={`Delete ${item.type}`}
         onCancel={() => setConfirmingDelete(false)}
         onConfirm={() => {
           setConfirmingDelete(false);

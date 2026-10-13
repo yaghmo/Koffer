@@ -122,7 +122,7 @@ export function MethodChip({ method, size = 18 }: { method: LoginMethod; size?: 
       );
     case "other":
       return (
-        <svg style={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-tertiary" aria-hidden>
+        <svg style={box} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="text-on-surface-variant" aria-hidden>
           <circle cx="12" cy="12" r="9" />
           <path d="M8 12h8M12 8v8" strokeLinecap="round" />
         </svg>

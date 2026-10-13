@@ -24,16 +24,10 @@
   --color-primary: #c8102e; /* tie */
   --color-on-primary: #ffffff;
   --color-primary-container: #a90d27; /* tie-pressed */
-  --color-secondary: #141414; /* was the green "good"; removed in Task 5 */
-  --color-on-secondary: #ffffff;
-  --color-secondary-container: #141414;
-  --color-tertiary: #141414; /* removed in Task 5 */
-  --color-tertiary-container: #141414;
   --color-error: #c8102e;
   --color-on-error: #ffffff;
   --color-error-container: #f4f4f3;
   --color-on-error-container: #c8102e;
-  --color-warning: #ffd60a; /* removed in Task 5, once nothing uses it */
 
   /* Fixed colours, the same on the shirt and inside the jacket. */
   --color-shirt: #ffffff;

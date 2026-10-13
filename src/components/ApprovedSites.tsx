@@ -70,7 +70,6 @@ export default function ApprovedSites({
         <div className="flex items-start gap-2.5">
           <KeyIcon size={18} />
           <div className="min-w-0 flex-1">
-            <p className="label-sm text-secondary">Browser extension</p>
             <h2 className="text-headline-sm text-on-surface">Approved sites</h2>
           </div>
           <button type="button" className="btn-secondary" aria-label="Close" onClick={onClose}>

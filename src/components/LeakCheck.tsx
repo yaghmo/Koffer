@@ -41,7 +41,7 @@ export default function LeakCheck({ onViewItem }: { onViewItem: (id: string) => 
       {error && <p className="text-body-sm text-error">{error}</p>}
 
       {leaked && leaked.length === 0 && (
-        <p className="text-body-sm text-secondary">None of your passwords appear in a known leak.</p>
+        <p className="text-body-sm text-on-surface">None of your passwords appear in a known leak.</p>
       )}
 
       {leaked && leaked.length > 0 && (
@@ -57,8 +57,11 @@ export default function LeakCheck({ onViewItem }: { onViewItem: (id: string) => 
                   {l.title}
                   {l.username && <span className="text-on-surface-variant"> · {l.username}</span>}
                 </span>
-                <span className="flex-shrink-0 rounded-full bg-error/15 px-2 py-0.5 text-body-sm text-error">
-                  seen {l.count.toLocaleString()}×
+                <span className="flex flex-shrink-0 items-center gap-2">
+                  <span className="label-md">
+                    seen {l.count === 1 ? "once" : `${l.count.toLocaleString()} times`}
+                  </span>
+                  <span className="flag">Leaked</span>
                 </span>
               </button>
             </li>

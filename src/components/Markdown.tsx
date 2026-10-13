@@ -34,7 +34,7 @@ function Line({ text }: { text: string }) {
             return (
               <code
                 key={i}
-                className="rounded bg-surface-container-high px-1 py-0.5 font-mono text-body-sm text-tertiary"
+                className="rounded-chip bg-surface-container-high px-1 font-mono text-body-sm text-on-surface"
               >
                 {piece.text}
               </code>
@@ -92,7 +92,7 @@ export default function Markdown({ source }: { source: string }) {
             );
           case "quote":
             return (
-              <blockquote key={i} className="border-l-2 border-primary/40 pl-3 italic">
+              <blockquote key={i} className="border-l-2 border-outline-variant pl-3 italic">
                 <Line text={block.text} />
               </blockquote>
             );

@@ -6,54 +6,28 @@ import type { VaultStats } from "../lib/types";
 const RING_RADIUS = 44;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-interface RingSegment {
-  count: number;
-  className: string;
-}
-
-// Three stacked arcs (good/moderate/weak), each sized by its share of total
-// logins — more weak logins visibly fills more of the ring with red, rather
-// than boiling everything down to one color picked off the overall score.
-function HealthRing({ score, segments }: { score: number; segments: RingSegment[] }) {
-  const total = segments.reduce((sum, s) => sum + s.count, 0);
-  let cumulative = 0;
+// One ink arc as long as the score, so the filled share of the ring is the
+// number in the middle. The tiers are spelled out beside it in words.
+function HealthRing({ score }: { score: number }) {
+  const length = (RING_CIRCUMFERENCE * Math.max(0, Math.min(100, score))) / 100;
   return (
-    <div className="relative flex h-[104px] w-[104px] flex-shrink-0 items-center justify-center">
-      <svg width={104} height={104} viewBox="0 0 104 104" className="-rotate-90">
+    <div
+      className="relative flex h-[104px] w-[104px] flex-shrink-0 items-center justify-center"
+      role="img"
+      aria-label={`Health score ${score}%`}
+    >
+      <svg width={104} height={104} viewBox="0 0 104 104" className="-rotate-90" aria-hidden>
         <circle cx={52} cy={52} r={RING_RADIUS} fill="none" stroke="var(--color-outline-variant)" strokeWidth={8} />
-        {total === 0 ? (
-          <circle
-            cx={52}
-            cy={52}
-            r={RING_RADIUS}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={8}
-            className="text-secondary"
-          />
-        ) : (
-          segments
-            .filter((s) => s.count > 0)
-            .map((s, i) => {
-              const length = (RING_CIRCUMFERENCE * s.count) / total;
-              const offset = -cumulative;
-              cumulative += length;
-              return (
-                <circle
-                  key={i}
-                  cx={52}
-                  cy={52}
-                  r={RING_RADIUS}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={8}
-                  strokeDasharray={`${length} ${RING_CIRCUMFERENCE - length}`}
-                  strokeDashoffset={offset}
-                  className={`${s.className} transition-[stroke-dasharray] duration-500 ease-out`}
-                />
-              );
-            })
-        )}
+        <circle
+          cx={52}
+          cy={52}
+          r={RING_RADIUS}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={8}
+          strokeDasharray={`${length} ${RING_CIRCUMFERENCE - length}`}
+          className="text-on-surface transition-[stroke-dasharray] duration-500 ease-out"
+        />
       </svg>
       <span className="absolute text-headline-md leading-none text-on-surface">{score}%</span>
     </div>
@@ -137,11 +111,9 @@ function IssueList({ issues, onViewItem }: { issues: Issue[]; onViewItem: (id: s
             >
               <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">{issue.title}</span>
               <span className="flex flex-shrink-0 gap-1.5">
+                {/* Weak and reused are the tape's job; stale is only a note. */}
                 {issue.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-error/15 px-2 py-0.5 text-body-sm text-error"
-                  >
+                  <span key={tag} className={tag === "old" ? "label-md self-center" : "flag"}>
                     {TAG_LABEL[tag]}
                   </span>
                 ))}
@@ -169,17 +141,15 @@ export default function Stats({ onViewItem }: { onViewItem: (id: string) => void
   const moderateCount = issues.length - weakCount;
   const goodCount = Math.max(0, stats.logins - issues.length);
   const tiers = [
-    { label: "Strong", count: goodCount, className: "text-secondary", hint: "No issues found." },
+    { label: "Strong", count: goodCount, hint: "No issues found." },
     {
       label: "Moderate",
       count: moderateCount,
-      className: "text-tertiary",
       hint: "Password is strong enough on its own, but it is reused on another login or has not been changed in over 90 days.",
     },
     {
       label: "Weak",
       count: weakCount,
-      className: "text-error",
       hint: "Under 8 characters, or built from fewer than 3 of: lowercase, uppercase, digits, symbols.",
     },
   ];
@@ -192,7 +162,7 @@ export default function Stats({ onViewItem }: { onViewItem: (id: string) => void
       </div>
 
       <div className="card flex items-center gap-6 p-6">
-        <HealthRing score={stats.health_score} segments={tiers} />
+        <HealthRing score={stats.health_score} />
         <div className="flex min-w-0 flex-col gap-2">
           <p className="text-body-md font-semibold text-on-surface">Health score</p>
           <p className="text-body-sm text-on-surface-variant">
@@ -205,9 +175,10 @@ export default function Stats({ onViewItem }: { onViewItem: (id: string) => void
               <span
                 key={t.label}
                 title={t.hint}
-                className={`flex cursor-help items-center gap-1.5 text-body-sm ${t.className}`}
+                className={`cursor-help text-body-sm ${
+                  t.label === "Weak" && t.count > 0 ? "font-medium text-error" : "text-on-surface-variant"
+                }`}
               >
-                <span className="h-2 w-2 rounded-full bg-current" />
                 {t.count} {t.label.toLowerCase()}
               </span>
             ))}

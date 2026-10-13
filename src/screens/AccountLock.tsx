@@ -451,7 +451,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
               <button type="button" className="btn-secondary" onClick={() => setImportPath(null)}>
                 Cancel
               </button>
-              <button type="submit" className="btn-primary" disabled={importBusy || !importName.trim()}>
+              <button type="submit" className="btn-secondary" disabled={importBusy || !importName.trim()}>
                 {importBusy ? "Importing…" : "Import"}
               </button>
             </div>

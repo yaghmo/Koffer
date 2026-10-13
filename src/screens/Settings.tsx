@@ -575,7 +575,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 value={autolockMins}
                 onChange={(e) => setAutolockMins(Number(e.target.value))}
                 aria-label="Auto-lock timeout in minutes"
-                className="h-1 w-full appearance-none rounded-full bg-surface-container-high accent-primary"
+                className="h-1 w-full appearance-none rounded-full bg-surface-container-high accent-on-surface"
               />
             </div>
             <button type="button" className="btn-primary self-start" onClick={saveAutolock} disabled={busy}>
@@ -633,7 +633,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 className="h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-outline-variant"
               >
                 <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-300"
+                  className="h-full rounded-full bg-on-surface transition-[width] duration-300"
                   style={{ width: `${(logosProgress[0] / logosProgress[1]) * 100}%` }}
                 />
               </div>
@@ -645,7 +645,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 type="checkbox"
                 checked={autoRefreshIcons}
                 onChange={(e) => saveAutoRefreshIcons(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-primary"
+                className="mt-0.5 h-4 w-4 accent-on-surface"
               />
               Re-check stale logos automatically each time the vault unlocks
             </label>
@@ -671,11 +671,7 @@ export default function Settings({ accountId, onLock }: Props) {
             <div className="flex flex-col gap-2 border-b border-outline-variant pb-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-body-md text-on-surface">Recovery code</p>
-                <span
-                  className={`label-sm rounded-chip px-2 py-1 ${
-                    security?.has_recovery ? "bg-secondary/15 text-secondary" : "bg-error/15 text-error"
-                  }`}
-                >
+                <span className={security?.has_recovery ? "label-md" : "label-md font-medium text-error"}>
                   {security?.has_recovery ? "Set up" : "Not set up"}
                 </span>
               </div>
@@ -712,7 +708,7 @@ export default function Settings({ accountId, onLock }: Props) {
                     >
                       Cancel
                     </button>
-                    <button type="submit" className="btn-primary" disabled={recoveryBusy || !recoveryPw}>
+                    <button type="submit" className="btn-secondary" disabled={recoveryBusy || !recoveryPw}>
                       {recoveryBusy ? "Generating…" : "Generate code"}
                     </button>
                   </div>
@@ -763,7 +759,7 @@ export default function Settings({ accountId, onLock }: Props) {
                   {pwError}
                 </p>
               )}
-              {pwDone && <p className="text-body-sm text-secondary">Master password changed.</p>}
+              {pwDone && <p role="status" className="text-body-sm text-on-surface">Master password changed.</p>}
               <button
                 type="submit"
                 className="btn-secondary self-start"
@@ -784,13 +780,14 @@ export default function Settings({ accountId, onLock }: Props) {
               <h2 className="text-body-md font-semibold">Backup</h2>
             </div>
             {security && (security.last_export_secs === 0 || daysAgo(security.last_export_secs) >= 30) && (
-              <div className="rounded-control border border-warning/30 bg-warning/10 px-3 py-2">
-                <p className="text-body-sm text-warning">
+              <p className="flex items-start gap-2 text-body-sm text-on-surface">
+                <span className="flag">{security.last_export_secs === 0 ? "Not backed up" : "Old backup"}</span>
+                <span>
                   {security.last_export_secs === 0
                     ? "This vault has never been exported. It exists on one disk only."
                     : `Last backup: ${daysAgo(security.last_export_secs)} days ago.`}
-                </p>
-              </div>
+                </span>
+              </p>
             )}
             <p className="text-body-sm text-on-surface-variant">
               Save a copy of your encrypted vault file so a lost or replaced device doesn't mean lost
@@ -846,7 +843,7 @@ export default function Settings({ accountId, onLock }: Props) {
             {pairCode ? (
               <div className="flex flex-col gap-2">
                 <span className="label-md">Type this into the extension</span>
-                <code className="field flex items-center font-mono text-headline-sm tracking-[0.35em] text-primary">
+                <code className="field flex items-center font-mono text-headline-sm tracking-[0.35em] text-on-surface">
                   {pairCode}
                 </code>
                 <p className="text-body-sm text-on-surface-variant">
@@ -882,7 +879,7 @@ export default function Settings({ accountId, onLock }: Props) {
                       </button>
                     </div>
                     {c.port !== bridge.port && (
-                      <span role="alert" className="text-body-sm text-warning">
+                      <span role="alert" className="text-body-sm text-error">
                         Paired while the app was on port {c.port}; it is on {bridge.port} now. Pair
                         this browser again to reconnect it.
                       </span>
@@ -1117,8 +1114,8 @@ export default function Settings({ accountId, onLock }: Props) {
 
       {show("danger") && (
         <section id="settings-danger" className="scroll-mt-8">
-          <div className="rounded-panel border border-error/30 bg-error/5 p-5">
-            <h2 className="text-body-md font-semibold text-error">Danger zone</h2>
+          <div className="card p-6">
+            <h2 className="text-body-md font-semibold text-on-surface">Danger zone</h2>
             <p className="mt-1 text-body-sm text-on-surface-variant">
               Permanently delete all items and reset the master password. This cannot be undone.
             </p>
@@ -1149,8 +1146,10 @@ export default function Settings({ accountId, onLock }: Props) {
           onClick={closeReset}
         >
           <div className="dialog dialog-danger flex w-full max-w-[420px] flex-col gap-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <p className="label-sm text-error">Reset · Step {resetStep === "warn" ? "1" : "2"} of 2</p>
-            <h2 className="text-headline-sm text-error">Reset vault?</h2>
+            <div>
+              <h2 className="text-headline-sm text-on-surface">Reset vault?</h2>
+              <p className="label-md">Step {resetStep === "warn" ? "1" : "2"} of 2</p>
+            </div>
             {resetStep === "warn" ? (
             <>
               <p className="text-body-sm text-on-surface-variant">
@@ -1162,7 +1161,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 <button type="button" className="btn-secondary" onClick={closeReset}>
                   <XIcon size={14} /> Cancel
                 </button>
-                <button type="button" className="btn-danger" onClick={() => setResetStep("password")}>
+                <button type="button" className="btn-ink" onClick={() => setResetStep("password")}>
                   Continue
                 </button>
               </div>
@@ -1190,7 +1189,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 <button type="button" className="btn-secondary" onClick={() => setResetStep("warn")}>
                   Back
                 </button>
-                <button type="submit" className="btn-danger" disabled={busy || !resetPassword}>
+                <button type="submit" className="btn-ink" disabled={busy || !resetPassword}>
                   {busy ? "Resetting…" : "Reset vault"}
                 </button>
               </div>

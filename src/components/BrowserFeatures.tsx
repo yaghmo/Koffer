@@ -82,7 +82,7 @@ export default function BrowserFeatures() {
                 checked={!!cfg?.[f.key]}
                 disabled={!cfg}
                 onChange={(e) => toggle(f.pref, f.key, e.target.checked)}
-                className="mt-0.5 h-4 w-4 flex-shrink-0 accent-primary"
+                className="mt-0.5 h-4 w-4 flex-shrink-0 accent-on-surface"
               />
               <span className="flex flex-col gap-0.5">
                 <span className="text-body-sm text-on-surface">{f.label}</span>

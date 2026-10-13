@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import css from "../styles.css?raw";
 
-// Every component and screen, as text. Tests are left out: they quote the
-// old strings they guard against.
-const sources = import.meta.glob<string>(["../**/*.tsx", "!../__tests__/**"], {
+// Every component, screen and helper, as text: helpers in lib/ carry class
+// names and interface strings too. Tests are left out: they quote the old
+// strings they guard against.
+const sources = import.meta.glob<string>(["../**/*.{ts,tsx}", "!../__tests__/**"], {
   query: "?raw",
   import: "default",
   eager: true,
@@ -97,5 +98,21 @@ describe("design system: no dark-theme leftovers", () => {
 
   it("uses the two radii: 6px for controls, 10px for dialogs", () => {
     expect(offenders(/\brounded(?:-[trbl]{1,2})?-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]+\])(?![\w-])/g)).toEqual([]);
+  });
+});
+describe("design system: one red, one yellow", () => {
+  it("never writes in yellow or outlines with it", () => {
+    expect(offenders(/\b(?:text|border|ring|decoration)-(?:warning|tape)\b/g)).toEqual([]);
+  });
+
+  it("has no warning, green or cyan token left", () => {
+    expect(offenders(/\b(?:bg|text|border|ring|fill|stroke)-(?:warning|secondary|tertiary)(?:-container)?\b/g)).toEqual([]);
+    expect(css).not.toMatch(/--color-(?:warning|secondary|on-secondary|secondary-container|tertiary|tertiary-container):/);
+  });
+
+  it("keeps red for the primary button, error words and the mark", () => {
+    // .btn-primary is the only red fill; nothing else is written, outlined or ticked in red.
+    expect(offenders(/\b(?:bg|text|border|ring|accent|decoration|fill|stroke)-(?:on-)?primary(?:-container)?\b/g)).toEqual([]);
+    expect(offenders(/\b(?:bg|border|ring)-error\b/g)).toEqual([]);
   });
 });

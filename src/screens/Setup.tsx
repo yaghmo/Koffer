@@ -19,21 +19,17 @@ function StrengthMeter({ password }: { password: string }) {
         <span className="label-md">Strength</span>
         <span className={`label-md ${s.className}`}>{s.label}</span>
       </div>
-      <div className="flex gap-1" role="img" aria-label={`Password strength: ${s.label}`}>
-        {[1, 2, 3, 4].map((step) => (
-          <span
-            key={step}
-            className={`h-1 flex-1 rounded-full transition-colors duration-150 ease-out ${
-              password && step <= s.score
-                ? s.score >= 3
-                  ? "bg-secondary"
-                  : s.score === 2
-                    ? "bg-tertiary"
-                    : "bg-error"
-                : "bg-surface-container-high"
-            }`}
-          />
-        ))}
+      {/* One ink bar whose length is the score. The verdict is the word above
+          it; the bar never changes colour. */}
+      <div
+        className="h-[3px] overflow-hidden rounded-full bg-outline-variant"
+        role="img"
+        aria-label={`Password strength: ${s.label}`}
+      >
+        <span
+          className="block h-full bg-on-surface transition-[width] duration-150 ease-out"
+          style={{ width: `${password ? Math.max(1, s.score) * 25 : 0}%` }}
+        />
       </div>
       {s.hint && <p className="text-body-sm text-on-surface-variant">{s.hint}</p>}
     </div>
@@ -98,8 +94,9 @@ export default function Setup({ onCreated, onCancel }: Props) {
         <h1 className="text-headline-lg text-on-surface">Create a vault</h1>
 
         <form onSubmit={submit} className="flex w-full flex-col gap-4">
-          <p className="rounded-control border border-warning/30 bg-warning/10 px-3 py-2 text-body-sm text-warning">
-            We can't recover this password if you forget it.
+          <p className="flex items-start gap-2 text-body-sm text-on-surface">
+            <span className="flag">Not recoverable</span>
+            <span>We can't recover this password if you forget it.</span>
           </p>
 
           <div className="flex flex-col gap-1.5">

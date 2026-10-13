@@ -202,7 +202,7 @@ export default function PersonalInfoScreen() {
                 <div className={`flex flex-col gap-1.5 ${long ? "col-span-2" : ""}`} key={f.key}>
                   <p className="label-md">
                     {f.label}
-                    {f.required && <span className="text-primary"> *</span>}
+                    {f.required && <span className="text-on-surface"> *</span>}
                   </p>
                   {f.key === "date_of_birth" ? (
                     <BirthDateField

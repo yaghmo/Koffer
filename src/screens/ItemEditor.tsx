@@ -436,7 +436,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
         <div className="flex flex-col gap-4 px-6 pb-6">
           <Section title="Item" icon={SectionIcon}>
             {kindLocked ? (
-              <span className="self-start rounded-control bg-primary px-3 py-1.5 text-body-sm font-medium capitalize text-on-primary">
+              <span className="self-start rounded-control bg-on-surface px-3 py-1.5 text-body-sm font-medium capitalize text-surface">
                 {kind}
               </span>
             ) : (
@@ -450,7 +450,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                       markDirty();
                     }}
                     className={`rounded-control px-3 py-1.5 text-body-sm font-medium capitalize transition-colors duration-150 ease-out ${
-                      kind === k ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-high"
+                      kind === k ? "bg-on-surface text-surface" : "text-on-surface-variant hover:bg-surface-container-high"
                     }`}
                   >
                     {k}
@@ -526,7 +526,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                       }}
                       className={`flex items-center gap-2.5 rounded-control border px-3 py-2 text-body-md transition-colors duration-150 ease-out ${
                         login.method === m.id
-                          ? "border-primary-container bg-primary/8 text-on-surface"
+                          ? "border-on-surface bg-surface-container-high text-on-surface"
                           : "border-outline-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high"
                       }`}
                     >
@@ -551,7 +551,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                           }}
                           className={`flex max-w-full items-center gap-2 rounded-chip border px-2.5 py-1 text-body-sm transition-colors duration-150 ease-out ${
                             login.username === s.username
-                              ? "border-primary bg-primary text-on-primary"
+                              ? "border-on-surface bg-on-surface text-surface"
                               : "border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container-high"
                           }`}
                         >
@@ -570,7 +570,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   <button
                     type="button"
                     onClick={() => setCreatingAccount(true)}
-                    className="self-start text-body-sm font-medium text-primary hover:underline"
+                    className="link self-start"
                   >
                     + Add new account
                   </button>
@@ -607,7 +607,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                     <button
                       type="button"
                       onClick={() => setWantsPhone(true)}
-                      className="mt-1.5 self-start text-body-sm font-medium text-primary hover:underline"
+                      className="link mt-1 self-start"
                     >
                       + Use a phone number
                     </button>
@@ -650,7 +650,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                             setLogin({ ...login, phone: personalInfo.phone });
                             markDirty();
                           }}
-                          className="self-start text-body-sm font-medium text-primary hover:underline"
+                          className="link self-start"
                         >
                           Use {personalInfo.phone}
                         </button>
@@ -711,7 +711,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                   type="button"
                   onClick={() => copy("password", login.password)}
                   disabled={!login.password}
-                  className={`btn-secondary ${copied === "password" ? "!border-secondary !text-secondary" : ""}`}
+                  className={`btn-secondary ${copied === "password" ? "!border-on-surface" : ""}`}
                 >
                   {copied === "password" ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
                   {copied === "password" ? "Copied" : "Copy"}
@@ -876,7 +876,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                     type="button"
                     onClick={() => copy("number", card.number)}
                     disabled={!card.number}
-                    className={`btn-secondary ${copied === "number" ? "!border-secondary !text-secondary" : ""}`}
+                    className={`btn-secondary ${copied === "number" ? "!border-on-surface" : ""}`}
                   >
                     {copied === "number" ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
                     {copied === "number" ? "Copied" : "Copy"}
@@ -930,7 +930,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                     type="button"
                     onClick={() => copy("cvv", card.cvv)}
                     disabled={!card.cvv}
-                    className={`btn-secondary ${copied === "cvv" ? "!border-secondary !text-secondary" : ""}`}
+                    className={`btn-secondary ${copied === "cvv" ? "!border-on-surface" : ""}`}
                   >
                     {copied === "cvv" ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
                     {copied === "cvv" ? "Copied" : "Copy"}

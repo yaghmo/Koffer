@@ -49,9 +49,9 @@ export function passwordStrength(pw: string): Strength {
   const labels: Record<number, { label: string; className: string }> = {
     0: { label: "Very weak", className: "text-error" },
     1: { label: "Weak", className: "text-error" },
-    2: { label: "Fair", className: "text-tertiary" },
-    3: { label: "Good", className: "text-secondary" },
-    4: { label: "Strong", className: "text-secondary" },
+    2: { label: "Fair", className: "text-on-surface" },
+    3: { label: "Good", className: "text-on-surface" },
+    4: { label: "Strong", className: "text-on-surface" },
   };
   return { score: score as 0 | 1 | 2 | 3 | 4, ...labels[score], hint };
 }
