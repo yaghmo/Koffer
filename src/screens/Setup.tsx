@@ -2,7 +2,6 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
 import { EyeIcon, EyeOffIcon, PlusIcon, XIcon } from "../components/Icon";
-import { Emblem } from "../components/Emblem";
 import { passwordStrength } from "../lib/passwordStrength";
 import RecoveryCodeDialog from "../components/RecoveryCodeDialog";
 
@@ -94,10 +93,9 @@ export default function Setup({ onCreated, onCancel }: Props) {
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-6 p-5">
-      <div className="card flex w-full max-w-[440px] flex-col items-center gap-6 p-8">
-        <Emblem size={56} />
-        <p className="label-sm text-secondary">New vault</p>
+    <div className="flex min-h-full flex-col items-center justify-center p-6">
+      <div className="flex w-full max-w-[360px] flex-col gap-6">
+        <h1 className="text-headline-lg text-on-surface">Create a vault</h1>
 
         <form onSubmit={submit} className="flex w-full flex-col gap-4">
           <p className="rounded-control border border-warning/30 bg-warning/10 px-3 py-2 text-body-sm text-warning">

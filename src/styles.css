@@ -241,6 +241,11 @@
   .flag {
     @apply inline-flex h-5 shrink-0 items-center rounded-chip bg-tape px-2 font-sans text-label-md font-medium whitespace-nowrap text-on-tape;
   }
+  /* DESIGN.md "Text link": ink, underlined, 3px offset. The line darkens on
+     hover; the text never turns red, which is the primary action's colour. */
+  .link {
+    @apply font-sans text-body-sm text-on-surface underline decoration-outline underline-offset-[3px] transition-colors duration-150 ease-out hover:decoration-on-surface disabled:pointer-events-none disabled:opacity-50;
+  }
   .label-sm {
     @apply font-sans text-label-sm text-on-surface-variant;
   }

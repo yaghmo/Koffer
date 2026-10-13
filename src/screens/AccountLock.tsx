@@ -3,10 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "../lib/api";
 import type { Account } from "../lib/types";
 import { EyeIcon, EyeOffIcon, PlusIcon, LockIcon, UnlockIcon, CheckIcon } from "../components/Icon";
-import { Emblem } from "../components/Emblem";
 import { useHotkey } from "../lib/useHotkey";
-
-const CRYPTO_BADGES = ["ARGON2ID", "AES-256-GCM", "LOCAL · AIR-GAPPED"];
 
 interface Props {
   accounts: Account[];
@@ -187,25 +184,13 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center gap-6 p-5">
-      <div className="card flex w-full max-w-[440px] flex-col items-center gap-6 p-8">
-        <Emblem size={56} />
-        <p className="label-sm flex items-center gap-2 text-secondary">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-secondary" aria-hidden />
-          Locked
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-1.5">
-          {CRYPTO_BADGES.map((b) => (
-            <span key={b} className="label-sm rounded-chip border border-white/8 px-2 py-1 text-tertiary">
-              {b}
-            </span>
-          ))}
-        </div>
+    <div className="flex min-h-full flex-col items-center justify-center p-6">
+      <div className="flex w-full max-w-[360px] flex-col gap-6">
 
         {restoring ? (
           <form onSubmit={confirmRestore} className="flex w-full flex-col gap-4">
             <div>
-              <h2 className="text-headline-sm text-on-surface">Restore from cloud</h2>
+              <h1 className="text-headline-lg text-on-surface">Restore from cloud</h1>
               <p className="mt-1 text-body-sm text-on-surface-variant">
                 Downloads the newest backup from your Worker and{" "}
                 <strong className="text-on-surface">adds it as a new vault</strong>. Nothing on
@@ -216,7 +201,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
                 once unlocked. If you keep both vaults, turn cloud backup off in one.
               </p>
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Worker URL</p>
               <input
                 type="url"
@@ -229,7 +214,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
                 className="field"
               />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Download token</p>
               <input
                 type="password"
@@ -241,7 +226,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
                 className="field font-mono"
               />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Name</p>
               <input
                 type="text"
@@ -272,8 +257,8 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
             </div>
           </form>
         ) : !selected ? (
-          <div className="flex w-full flex-col items-center gap-4 text-center">
-            <p className="text-body-md text-on-surface-variant">No vaults exist on this device.</p>
+          <div className="flex w-full flex-col gap-4">
+            <h1 className="text-headline-lg text-on-surface">No vaults exist on this device</h1>
             <button type="button" className="btn-primary w-full" onClick={onAddNew}>
               <PlusIcon size={16} /> Create one
             </button>
@@ -281,15 +266,14 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
         ) : recovering ? (
           <form onSubmit={submitRecovery} className="flex w-full flex-col gap-4">
             <div>
-              <p className="label-sm text-secondary">Recovery</p>
-              <h2 className="text-headline-sm text-on-surface">Unlock with your recovery code</h2>
+              <h1 className="text-headline-lg text-on-surface">Unlock with your recovery code</h1>
               <p className="mt-1 text-body-sm text-on-surface-variant">
                 Enter the code issued when this vault was created, then choose a new master
                 password. The recovery code itself keeps working afterwards.
               </p>
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Recovery code</p>
               <input
                 value={code}
@@ -303,7 +287,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">New master password</p>
               <input
                 type="password"
@@ -344,12 +328,13 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           </form>
         ) : (
           <form onSubmit={submit} className="flex w-full flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
+            <h1 className="mb-2 text-headline-lg text-on-surface">Unlock your vault</h1>
+            <div className="flex flex-col gap-1">
               <p className="label-md">Vault</p>
-              <div className="flex items-center justify-between gap-3 rounded-control border border-white/8 bg-surface px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3 rounded-control border border-outline-variant px-3 py-2">
                 <div className="min-w-0">
                   <p className="truncate text-body-md font-medium text-on-surface">{selected.name}</p>
-                  <p className="label-md">Local vault · this device</p>
+                  <p className="label-md">Local vault on this device</p>
                 </div>
                 {accounts.length > 1 && (
                   <button
@@ -364,7 +349,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
               </div>
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Master password</p>
               <div className="relative flex items-center">
                 <LockIcon size={16} className="pointer-events-none absolute left-3 text-outline" />
@@ -408,29 +393,21 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
                 setError(null);
               }}
               disabled={busy}
-              className="self-center text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary disabled:opacity-50"
+              className="link self-start"
             >
               Forgot your master password?
-            </button>
-
-            <button
-              type="button"
-              onClick={onAddNew}
-              disabled={busy}
-              className="self-center text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary disabled:opacity-50"
-            >
-              <PlusIcon size={14} className="mr-1 inline align-[-2px]" /> Add another vault
             </button>
           </form>
         )}
 
         {!restoring && (
-          <div className="flex items-center justify-center gap-4">
-            <button
-              type="button"
-              onClick={pickImportFile}
-              className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
-            >
+          <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-outline-variant pt-4">
+            {selected && !recovering && (
+              <button type="button" onClick={onAddNew} disabled={busy} className="link">
+                Add another vault
+              </button>
+            )}
+            <button type="button" onClick={pickImportFile} className="link">
               Import vault
             </button>
             <button
@@ -439,7 +416,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
                 setRestoring(true);
                 setImportPath(null);
               }}
-              className="text-body-sm font-medium text-on-surface-variant underline decoration-outline-variant underline-offset-4 transition-colors duration-150 ease-out hover:text-primary hover:decoration-primary"
+              className="link"
             >
               Restore from cloud
             </button>
@@ -453,8 +430,8 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
         )}
 
         {importPath && (
-          <form onSubmit={confirmImport} className="flex w-full flex-col gap-3 border-t border-white/6 pt-4">
-            <div className="flex flex-col gap-1.5">
+          <form onSubmit={confirmImport} className="flex w-full flex-col gap-4 border-t border-outline-variant pt-4">
+            <div className="flex flex-col gap-1">
               <p className="label-md">Vault name</p>
               <input
                 type="text"
@@ -481,11 +458,16 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
           </form>
         )}
 
+        {!restoring && selected && (
+          <p className="text-body-sm text-on-surface-variant">
+            Encrypted on this device with Argon2id and AES-256-GCM.
+          </p>
+        )}
       </div>
 
       {switcherOpen && accounts.length > 1 && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-5"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
           onClick={() => setSwitcherOpen(false)}
         >
           <div
@@ -495,7 +477,6 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
             className="dialog flex w-full max-w-[380px] flex-col gap-3 p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="label-sm">Switch · Vault</p>
             <h2 className="text-headline-sm text-on-surface">Choose a vault</h2>
             <div className="flex flex-col gap-1">
               {accounts.map((a) => {
@@ -506,15 +487,15 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
                     type="button"
                     disabled={isCurrent}
                     onClick={() => pickAccount(a.id)}
-                    className={`flex items-center justify-between gap-3 rounded-control px-3 py-2.5 text-left text-body-sm transition-colors duration-150 ease-out ${
+                    className={`flex items-center justify-between gap-3 rounded-control px-3 py-2 text-left text-body-sm transition-colors duration-150 ease-out ${
                       isCurrent
                         ? "cursor-default text-on-surface-variant"
-                        : "text-on-surface hover:bg-white/4"
+                        : "text-on-surface hover:bg-surface-container-high"
                     }`}
                   >
                     {a.name}
                     {isCurrent && (
-                      <span className="label-sm flex items-center gap-1 text-secondary">
+                      <span className="label-md flex items-center gap-1">
                         <CheckIcon size={14} /> Current
                       </span>
                     )}
