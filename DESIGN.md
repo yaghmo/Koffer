@@ -188,10 +188,12 @@ except the selected sidebar entry, which uses the same 6px.
   change colour.
 - **Confirm dialog:** shirt, 10px corners, title, one paragraph, ghost cancel
   and a filled ink confirm that names the action.
-- **Mark:** a locked case. White body, yellow handle, red keyhole, always on
-  jacket black: in the sidebar, on a rounded black tile for the app and
-  toolbar icons, and on the same tile in the browser's save bar. Never on the
-  shirt, where the body would vanish. The 16px icon drops the two straps.
+- **Mark:** a locked case on a white tile. Black body, yellow handle, red
+  keyhole. The tile is part of the mark in the sidebar, the popup header and
+  every app and toolbar icon, so the black body never sits on black. The
+  save bar is white already and shows the mark without a tile. The 16px icon
+  drops the two straps. Known weakness: yellow on white is low contrast, so
+  the handle fades at 16 and 32px.
   Its three paths are written out in `src/components/Emblem.tsx`,
   `design/icons.cjs`, `extension/popup.html` and `extension/bar.js`.
 
@@ -205,7 +207,7 @@ The popup and the bars the extension shows inside web pages follow this file.
   hover. Personal info is a card cut from the jacket, so it never reads as
   one more login. IBM Plex ships inside the extension (Latin only).
 - **Save bar** (inside a page): a white dialog, top right, with the mark on
-  its black tile beside the title, one red button and ghost buttons for the
+  beside the title, one red button and ghost buttons for the
   rest. System fonts, because a page's own rules decide what loads there.
 - **Pointer** (inside a page): an ink ring inside a white one, so it shows on
   light and dark pages, with a jacket-black note. It does not pulse.

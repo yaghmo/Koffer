@@ -67,11 +67,22 @@ describe("extension: suit and shirt", () => {
 });
 
 describe("the mark", () => {
-  it("is a white case with a yellow handle and a red keyhole", () => {
+  it("is a black case with a yellow handle and a red keyhole, on a white tile", () => {
     const { container } = render(<Emblem size={28} />);
+    expect(container.querySelector("rect")?.getAttribute("fill")).toBe("var(--color-shirt)");
     const fills = [...container.querySelectorAll("path")].map((p) => p.getAttribute("fill"));
-    expect(fills).toEqual(["var(--color-tape)", "var(--color-shirt)", "var(--color-primary)"]);
+    expect(fills).toEqual(["var(--color-tape)", "var(--color-ink)", "var(--color-primary)"]);
     expect(container.querySelector("svg")?.getAttribute("width")).toBe("28");
+  });
+
+  it("is drawn the same way in the popup and the save bar", () => {
+    for (const [name, src] of [
+      ["popup.html", popupHtml],
+      ["bar.js", barJs],
+    ] as const) {
+      expect(src, name).toMatch(/fill="#141414" fill-rule="evenodd" d="M54 92/);
+      expect(src, name).not.toMatch(/fill="#ffffff" fill-rule="evenodd" d="M54 92/);
+    }
   });
 });
 

@@ -1,7 +1,7 @@
 /**
  * Regenerates every platform's icon from the Koffer mark drawn below: a
- * locked case with a white body, a yellow handle and a red keyhole, on the
- * jacket's black (DESIGN.md). Not part of the build; run it when the mark
+ * locked case with a black body, a yellow handle and a red keyhole, on a
+ * white tile (DESIGN.md). Not part of the build; run it when the mark
  * changes:
  *
  *   npm i --prefix <scratch dir> sharp
@@ -13,11 +13,11 @@
  * The same three paths are written out in src/components/Emblem.tsx,
  * extension/popup.html and extension/bar.js; change them together.
  *
- * `app-icon.png` is the mark on a rounded black tile, for Windows and Linux.
- * macOS wants the art inside a rounded square with transparent corners and
- * Apple's margin (824 of 1024). The browser's toolbar is light in one theme
- * and dark in the other, so its icons keep the tile too: the white body
- * would vanish on a light toolbar without it.
+ * `app-icon.png` is the mark on its rounded white tile, for Windows and
+ * Linux. macOS wants the art inside a rounded square with transparent
+ * corners and Apple's margin (824 of 1024). The browser's toolbar is light in
+ * one theme and dark in the other, so its icons keep the tile too: the black
+ * body would vanish on a dark toolbar without it.
  *
  * `design/logo.png` is the earlier neon logo. Nothing reads it any more.
  */
@@ -28,8 +28,8 @@ const sharp = require("sharp");
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(__dirname, "out");
 
-const JACKET = "#121212";
 const SHIRT = "#ffffff";
+const INK = "#141414";
 const TIE = "#c8102e";
 const TAPE = "#ffd60a";
 
@@ -41,15 +41,15 @@ const BODY =
 const BODY_PLAIN = BODY.slice(0, BODY.indexOf("ZM") + 1);
 const KEYHOLE = "M128 118a20 20 0 0 1 11.8 36.2L146 192H110l6.2-37.8A20 20 0 0 1 128 118Z";
 
-/** The mark on the jacket. `radius` rounds the tile (0 is a full square);
+/** The mark on its tile. `radius` rounds the tile (0 is a full square);
  *  `scale` is how much of the tile the mark takes, about its centre;
  *  `plain` leaves the straps off. */
 function tileSvg({ radius, scale, plain = false }) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="${radius}" fill="${JACKET}"/>
+  <rect width="256" height="256" rx="${radius}" fill="${SHIRT}"/>
   <g transform="translate(128 128) scale(${scale}) translate(-128 -128)">
     <path fill="${TAPE}" fill-rule="evenodd" d="${HANDLE}"/>
-    <path fill="${SHIRT}" fill-rule="evenodd" d="${plain ? BODY_PLAIN : BODY}"/>
+    <path fill="${INK}" fill-rule="evenodd" d="${plain ? BODY_PLAIN : BODY}"/>
     <path fill="${TIE}" d="${KEYHOLE}"/>
   </g>
 </svg>`;
