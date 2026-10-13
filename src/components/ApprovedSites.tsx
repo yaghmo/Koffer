@@ -79,7 +79,7 @@ export default function ApprovedSites({
 
         <p className="text-body-sm text-on-surface-variant">
           A paired browser may ask about any site; these are the ones it may be answered for.
-          Revoking one puts that site back to asking — nothing else changes, and the browser
+          Revoking one puts that site back to asking. Nothing else changes, and the browser
           stays paired.
         </p>
 

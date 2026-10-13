@@ -182,8 +182,8 @@ describe("Vault — All items dashboard", () => {
     const titles = () =>
       screen.getAllByRole("button", { name: /^view /i }).map((b) => b.textContent ?? "");
     expect(titles()[0]).toContain("Amazon");
-    fireEvent.click(screen.getByRole("button", { name: /name a–z/i }));
-    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /name z–a/i }));
+    fireEvent.click(screen.getByRole("button", { name: /name a to z/i }));
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /name z to a/i }));
     expect(titles()[0]).toContain("wifi");
   });
 });

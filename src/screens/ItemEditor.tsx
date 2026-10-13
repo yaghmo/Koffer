@@ -320,7 +320,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
       const number = card.number.trim();
       if (!number) errors.number = "Card number is required.";
       else if (!isValidCardNumber(number)) {
-        errors.number = "Card number looks wrong — check the digits.";
+        errors.number = "That card number has a wrong digit. Check it and try again.";
       }
       const cvv = card.cvv.trim();
       if (cvv && cvv.length < 3) errors.cvv = "CVV is 3 or 4 digits.";

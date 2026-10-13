@@ -340,7 +340,7 @@ describe("ItemEditor", () => {
   it("rejects a card number that fails the Luhn check", async () => {
     const { api } = await import("../lib/api");
     await fillCard({ number: "4111111111111112", exp: "12/40" });
-    expect(await screen.findByText(/check the digits/i)).toBeTruthy();
+    expect(await screen.findByText(/has a wrong digit/i)).toBeTruthy();
     expect(api.saveItem).not.toHaveBeenCalled();
   });
 

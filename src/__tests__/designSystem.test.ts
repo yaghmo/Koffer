@@ -124,3 +124,14 @@ describe("design system: spacing", () => {
     expect(offenders(off)).toEqual([]);
   });
 });
+
+describe("design system: wording", () => {
+  it("uses no dash as punctuation or as an empty value", () => {
+    expect(offenders(/[—–]| -- /g)).toEqual([]);
+  });
+
+  it("does not beg, boast or shout", () => {
+    expect(offenders(/\bplease\b|\bsuccessfully\b/gi)).toEqual([]);
+    expect(offenders(/>[^<>{}]*[A-Za-z]!(?=[\s<])[^<>{}=]*</g)).toEqual([]);
+  });
+});

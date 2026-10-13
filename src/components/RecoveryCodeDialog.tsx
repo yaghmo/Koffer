@@ -80,7 +80,7 @@ export default function RecoveryCodeDialog({
             </div>
           </div>
           <p className="text-body-sm text-on-surface-variant">
-            From wherever you saved it — not from memory. If you can read it back now, you can read it
+            From wherever you saved it, not from memory. If you can read it back now, you can read it
             back the day you need it.
           </p>
           <input
@@ -134,7 +134,7 @@ export default function RecoveryCodeDialog({
 
         <p className="text-body-sm text-on-surface-variant">
           This is the only way back into your vault if you forget the master password. It is shown
-          once and cannot be recovered — store it on paper, somewhere away from this computer.
+          once and cannot be recovered. Store it on paper, somewhere away from this computer.
         </p>
 
         <p
@@ -155,7 +155,7 @@ export default function RecoveryCodeDialog({
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn-secondary" onClick={copy}>
             {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-            {copied ? "Copied — clears in 60s" : "Copy to clipboard"}
+            {copied ? "Copied. Clears in 60 seconds." : "Copy to clipboard"}
           </button>
           <button type="button" className="btn-secondary" onClick={saveTxt}>
             {saved ? <CheckIcon size={14} /> : null}

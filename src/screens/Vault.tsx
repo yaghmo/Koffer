@@ -19,8 +19,8 @@ type Filter = "all" | ItemKind;
 type Sort = "az" | "za" | "recent";
 
 const SORTS: { key: Sort; label: string }[] = [
-  { key: "az", label: "Name A–Z" },
-  { key: "za", label: "Name Z–A" },
+  { key: "az", label: "Name A to Z" },
+  { key: "za", label: "Name Z to A" },
   { key: "recent", label: "Recently updated" },
 ];
 
@@ -286,7 +286,7 @@ export default function Vault({
               <PinnedTiles items={pinnedLogins} onView={(it) => onViewItem(it.id)} onTogglePin={togglePin} />
             ) : (
               <p className="text-body-sm text-on-surface-variant">
-                Pin a login from any list to keep it here — up to 10.
+                Pin a login from any list to keep it here. Up to 10.
               </p>
             )}
           </section>

@@ -165,7 +165,7 @@ export default function Stats({ onViewItem }: { onViewItem: (id: string) => void
           <p className="text-body-sm text-on-surface-variant">
             {issues.length === 0
               ? "No weak, reused, or stale passwords."
-              : `${issues.length} login${issues.length === 1 ? "" : "s"} need attention — see below.`}
+              : `${issues.length} ${issues.length === 1 ? "login needs" : "logins need"} attention. See below.`}
           </p>
           <div className="flex flex-wrap gap-3">
             {tiers.map((t) => (

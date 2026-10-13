@@ -18,7 +18,7 @@ const FIELDS: { key: keyof PersonalInfo; label: string; placeholder?: string; gr
   { key: "date_of_birth", label: "Date of birth", placeholder: "1985-04-12", group: "Basics" },
   { key: "address", label: "Street address", placeholder: "1 Maths Rd, Apt 4", group: "Address" },
   { key: "city", label: "City", placeholder: "London", group: "Address" },
-  { key: "state", label: "State / Province", placeholder: "—", group: "Address" },
+  { key: "state", label: "State / Province", placeholder: "", group: "Address" },
   { key: "zip", label: "ZIP / Postal code", placeholder: "W1T 3AL", group: "Address" },
   { key: "country", label: "Country", placeholder: "United Kingdom", group: "Address" },
   { key: "website", label: "Portfolio / Website", placeholder: "https://example.com", group: "Online" },

@@ -19,14 +19,14 @@ export function charClasses(pw: string): number {
 export function passwordStrength(pw: string): Strength {
   const classes = charClasses(pw);
   if (pw.length === 0) {
-    return { score: 0, label: "—", className: "text-on-surface-variant", hint: "" };
+    return { score: 0, label: "", className: "text-on-surface-variant", hint: "" };
   }
   if (pw.length < 8) {
     return {
       score: 0,
       label: "Too short",
       className: "text-error",
-      hint: "At least 8 characters — a passphrase of a few words beats a short scramble.",
+      hint: "At least 8 characters. A passphrase of a few words beats a short scramble.",
     };
   }
   let score = 0;
@@ -39,12 +39,12 @@ export function passwordStrength(pw: string): Strength {
 
   const hint =
     classes < 3
-      ? "Mix in upper case, digits or symbols — this counts as weak in vault health."
+      ? "Mix in upper case, digits or symbols. This counts as weak in vault health."
       : pw.length < 12
         ? "Longer is stronger: 12+ characters makes offline guessing far harder."
         : pw.length < 16
           ? "Good. 16+ characters would make it stronger still."
-          : "Long and mixed — this is the one password worth over-building.";
+          : "Long and mixed. This is the one password worth over-building.";
 
   const labels: Record<number, { label: string; className: string }> = {
     0: { label: "Very weak", className: "text-error" },

@@ -607,8 +607,8 @@ export default function Settings({ accountId, onLock }: Props) {
               <h2 className="text-body-md font-semibold">Site logos</h2>
             </div>
             <p className="text-body-sm text-on-surface-variant">
-              Logos are fetched when you add a login's URL, then re-checked at most every 30 days —
-              each check is a request to that site, so it stays rare. Refresh to re-check all of them now.
+              Logos are fetched when you add a login's URL, then re-checked at most every 30 days.
+              Each check is a request to that site, so it stays rare. Refresh to re-check all of them now.
             </p>
             <button type="button" className="btn-secondary self-start" onClick={refreshLogos} disabled={logosBusy}>
               {logosBusy && (
@@ -651,7 +651,7 @@ export default function Settings({ accountId, onLock }: Props) {
             </label>
             <p className="text-body-sm text-on-surface-variant">
               Off by default. Turning it on contacts every site whose logo is over 30 days old, every
-              time you unlock — so whoever can see your network (your internet provider, a proxy, or
+              time you unlock. Whoever can see your network (your internet provider, a proxy, or
               anyone on the same Wi-Fi) learns which sites you keep accounts with, and when you opened
               the vault. The sites themselves see a visit too. Nothing from inside the vault is sent,
               and the button above still works with this off.
@@ -821,13 +821,13 @@ export default function Settings({ accountId, onLock }: Props) {
 
             <p className="text-body-sm text-on-surface-variant">
               Lets the extension fill logins in your browser. The app listens on{" "}
-              <code>127.0.0.1:{bridge?.port ?? 38471}</code> — on this machine only, never the
+              <code>127.0.0.1:{bridge?.port ?? 38471}</code>, on this machine only, never the
               network. A paired browser can read a login <strong>only for the site it is
               actually on</strong>, and only while this vault is unlocked.
             </p>
             <p className="text-body-sm text-on-surface-variant">
               Pairing lets a browser <em>ask</em>. The first time it wants a password for a site,
-              this window asks you, and the site is remembered below — so a stolen pairing cannot
+              this window asks you, and the site is remembered below, so a stolen pairing cannot
               quietly walk through the vault. There is no shared password between the two: the
               browser signs what it sends with a key it cannot export, and that key is replaced
               hourly and dies after a week unused.
@@ -847,7 +847,7 @@ export default function Settings({ accountId, onLock }: Props) {
                   {pairCode}
                 </code>
                 <p className="text-body-sm text-on-surface-variant">
-                  Good for three minutes, once. Three wrong tries and it is dead — ask for another.
+                  Good for three minutes, once. Three wrong tries and it is dead. Ask for another.
                   This panel closes itself as soon as the browser pairs.
                 </p>
                 <button type="button" className="btn-secondary self-start" onClick={stopPairing}>
@@ -886,7 +886,7 @@ export default function Settings({ accountId, onLock }: Props) {
                     )}
                     <span className="text-label-md text-on-surface-variant opacity-70">
                       {c.allowed_hosts.length === 0
-                        ? "No sites approved yet — it will ask on the first fill."
+                        ? "No sites approved yet. It asks the first time it fills one."
                         : `Approved for ${c.allowed_hosts.length} ${
                             c.allowed_hosts.length === 1 ? "site" : "sites"
                           }.`}
@@ -975,30 +975,30 @@ export default function Settings({ accountId, onLock }: Props) {
             {!backup?.configured && (
               <p className="text-body-sm text-on-surface-variant">
                 <strong>Off.</strong> Nothing leaves this device. Setting it up needs a Cloudflare
-                account with R2 enabled — see <code>worker/README.md</code>. Until then, use{" "}
+                account with R2 enabled. See <code>worker/README.md</code>. Until then, use{" "}
                 <strong>Export vault backup</strong> above and keep the file somewhere else.
               </p>
             )}
 
             <p className="text-body-sm text-on-surface-variant">
               Keeps an encrypted copy in your own Cloudflare account, uploaded when this vault locks
-              after a change. It is a copy, not a sync — editing the same vault on two machines is not
+              after a change. It is a copy, not a sync. Editing the same vault on two machines is not
               supported.
             </p>
             <p className="text-body-sm text-on-surface-variant">
               Your <strong>master password is still required</strong> to open a restored vault. This is
-              not account recovery and does not help with a forgotten password — your recovery code
+              not account recovery and does not help with a forgotten password. Your recovery code
               does that. Because a downloaded copy can be attacked offline, a strong master password
               matters more once this is on.
             </p>
             <p className="text-body-sm text-on-surface-variant">
               Paste the <strong>upload</strong> token below. It can upload but not download, which is
-              why there are two. The app <strong>never stores your download token</strong> — keep that
+              why there are two. The app <strong>never stores your download token</strong>. Keep that
               one with your recovery code, or the backup cannot be retrieved.
             </p>
             <p className="text-body-sm text-on-surface-variant">
               History is kept for 30 days; the latest copy never expires. Turning backup off only stops
-              future uploads — it does not delete anything already in the cloud.
+              future uploads. It does not delete anything already in the cloud.
             </p>
 
             <label className="flex flex-col gap-1">
@@ -1018,7 +1018,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 type="password"
                 value={backupToken}
                 onChange={(e) => setBackupToken(e.target.value)}
-                placeholder={backup?.configured ? "Saved — leave blank to keep it, or enter a new one" : ""}
+                placeholder={backup?.configured ? "Saved. Leave blank to keep it, or enter a new one." : ""}
                 className="field font-mono"
               />
             </label>
@@ -1067,8 +1067,8 @@ export default function Settings({ accountId, onLock }: Props) {
                 wrong. Suppressed once a fresh attempt below has its own result. */}
             {backup?.configured && backup.last_backup_error && !backupError && !backupResult && (
               <p role="alert" className="text-body-sm text-error">
-                Last upload attempt failed: {backup.last_backup_error} (this may not reflect the
-                current status — try "Back up now" to check).
+                Last upload attempt failed: {backup.last_backup_error}. This may not reflect the
+                current status. Try "Back up now" to check.
               </p>
             )}
             {backupResult && <p className="text-body-sm text-on-surface-variant">{backupResult}</p>}
@@ -1097,7 +1097,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 <div className="flex items-baseline justify-between gap-3">
                   <dt className="label-md">Last saved</dt>
                   <dd className="font-mono text-body-sm text-on-surface">
-                    {storage.modified_secs ? new Date(storage.modified_secs * 1000).toLocaleString() : "—"}
+                    {storage.modified_secs ? new Date(storage.modified_secs * 1000).toLocaleString() : "Unknown"}
                   </dd>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -1154,7 +1154,7 @@ export default function Settings({ accountId, onLock }: Props) {
             <>
               <p className="text-body-sm text-on-surface-variant">
                 Every login, note and card in this vault is deleted permanently, and the master
-                password is cleared. There is no undo and no recovery — export a backup first if you
+                password is cleared. There is no undo and no recovery. Export a backup first if you
                 want to keep the data.
               </p>
               <div className="flex justify-end gap-2">

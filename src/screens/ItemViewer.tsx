@@ -15,7 +15,7 @@ interface Props {
   onDelete: (id: string) => void;
 }
 
-const mask = (s: string) => (s ? "•".repeat(Math.max(8, s.length)) : "—");
+const mask = (s: string) => (s ? "•".repeat(Math.max(8, s.length)) : "None");
 
 function Field({
   label,
