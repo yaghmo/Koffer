@@ -96,7 +96,7 @@ export default function Setup({ onCreated, onCancel }: Props) {
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-6 p-5">
       <div className="card flex w-full max-w-[440px] flex-col items-center gap-6 p-8">
-        <Emblem size={56} glow />
+        <Emblem size={56} />
         <p className="label-sm text-secondary">New vault</p>
 
         <form onSubmit={submit} className="flex w-full flex-col gap-4">

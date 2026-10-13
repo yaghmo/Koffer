@@ -189,7 +189,7 @@ export default function AccountLock({ accounts, onUnlocked, onAddNew, onImported
   return (
     <div className="flex min-h-full flex-col items-center justify-center gap-6 p-5">
       <div className="card flex w-full max-w-[440px] flex-col items-center gap-6 p-8">
-        <Emblem size={56} glow />
+        <Emblem size={56} />
         <p className="label-sm flex items-center gap-2 text-secondary">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-secondary" aria-hidden />
           Locked

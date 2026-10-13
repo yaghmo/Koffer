@@ -1,29 +1,22 @@
 interface Props {
   size?: number;
-  glow?: boolean;
 }
 
-const CASE = "#acedff"; // tertiary-fixed, Obsidian Cipher
-const KEY = "#4edea3"; // --color-secondary
+// Lines take the text colour of whatever the mark sits on; the key is the tie.
+const CASE = "currentColor";
+const KEY = "var(--color-primary)";
 const KEYHOLE = "M437 309a24 24 0 0 1 15 43l9 37h-48l9-37a24 24 0 0 1 15-43z";
 
-/** The Koffer logo, traced from design/logo.png (see design/icons.cjs).
+/** The Koffer mark, traced from design/logo.png (see design/icons.cjs), in the suit's colours.
  *  Below 40 px the double lines blur together, so it drops to one line. */
-export function Emblem({ size = 48, glow = false }: Props) {
+export function Emblem({ size = 48 }: Props) {
   const detail = size >= 40;
   const stroke = detail ? 14 : 30;
   return (
     <span
-      className="relative inline-flex items-center justify-center"
+      className="relative inline-flex shrink-0 items-center justify-center"
       style={{ width: size, height: size }}
     >
-      {glow && (
-        <span
-          aria-hidden
-          className="absolute inset-[-30%] -z-10 rounded-full blur-xl"
-          style={{ background: "rgba(78,222,163,.2)" }}
-        />
-      )}
       <svg
         width={size}
         height={size}
