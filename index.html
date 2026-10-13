@@ -7,12 +7,11 @@
   </head>
   <body>
     <!--
-THESIS: A locked vault, not a control panel. Dark, precise, glass-on-obsidian. Trust is signaled by restraint — one soft glow on the thing you press, everything else still.
-PALETTE: surface-container-lowest is the canvas; cards float one step up (surface-container-low, blurred, hairline border). primary (#c0c1ff) is the one warm signal — the unlock button, the active nav row. secondary (#4edea3) marks "locked/live" state. error (#ffb4ab) only on the danger zone. warning (#f5c26b) only on the setup "can't recover" notice.
-MOTION: color/border/opacity transitions under 150ms on hover/focus, plus a static glow behind the primary button and the emblem. No spinners, no pulsing, no pinging, no fake delays. prefers-reduced-motion disables all of it.
-STORY: unlock with a master password, find the one thing you came for, copy it, lock. No sync, no biometrics, no audit trail — a private local drawer.
-FORM: Obsidian Cipher. Replaces the paper-on-a-desk world (2026-09-04 → 2026-09-13) after adopting the Stitch "CipherVault" visual system — same restraint, colder material.
-FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md.
+THESIS: Koffer means suitcase, so the app dresses like the person carrying one. A black jacket (the sidebar), a white shirt (everything you read and type), one red tie (the single primary action of a screen), yellow tape for warnings. Flat and quiet.
+PALETTE: jacket #121212, shirt #ffffff, ink #141414, tie #c8102e, tape #ffd60a. No green, no orange, no second accent. Red fills one element per screen; yellow is always a fill with ink text on it.
+MOTION: 150ms colour transitions on hover and focus, nothing else. No glow, blur, spinners or pulsing. prefers-reduced-motion disables all of it.
+STORY: unlock with a master password, find the one thing you came for, copy it, lock. No sync, no biometrics, no audit trail.
+FORM: Suit and shirt. Replaces Obsidian Cipher (2026-09-13 to 2026-10-13). The full rules are in DESIGN.md and are enforced by src/__tests__/designSystem.test.ts.
     -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
