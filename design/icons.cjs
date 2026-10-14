@@ -18,8 +18,6 @@
  * Apple's margin (824 of 1024). The browser's toolbar is light in one theme
  * and dark in the other, so its icons keep the tile too: the white body
  * would vanish on a light toolbar without it.
- *
- * `design/logo.png` is the earlier neon logo. Nothing reads it any more.
  */
 const fs = require("fs");
 const path = require("path");

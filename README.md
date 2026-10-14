@@ -1,6 +1,6 @@
 # Koffer
 
-https://github.com/user-attachments/assets/6ffcfdec-c14f-4248-9db0-28fb95eaa419
+https://github.com/user-attachments/assets/1023bbd1-932b-49d2-acf5-340f1a348f20
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-c8102e)](LICENSE)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-141414)
@@ -20,8 +20,6 @@ Local-only encrypted password manager for Windows. Tauri + React.
 - Auto-lock after 15-30 minutes of inactivity, clipboard auto-clear (30s default)
 - Encrypted export and import, and an optional backup of the encrypted file to your own Cloudflare account
 - Browser extension for Chrome and Firefox: fills logins and 2FA codes, saves new logins, fills sign-up forms from your profile
-
-The video above shows the previous look.
 
 ## Install
 

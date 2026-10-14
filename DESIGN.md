@@ -238,6 +238,4 @@ The popup and the bars the extension shows inside web pages follow this file.
 
 ## Known Gaps
 
-- The README video and banner, and `design/logo.png`, still show the earlier
-  neon logo.
 - A dark variant. Not planned: the jacket already carries the dark.
