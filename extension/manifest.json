@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Koffer",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Fills logins from your local Koffer vault.",
   "minimum_chrome_version": "102",
   "permissions": ["activeTab", "storage", "contextMenus"],

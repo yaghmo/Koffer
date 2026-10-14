@@ -34,7 +34,7 @@ the same version twice. `npm run ext:lint` runs Mozilla's checks first.
 `npm run ext:build` makes the zip the Chrome Web Store asks for.
 
 To publish on addons.mozilla.org instead, bump `version`, push, then push a
-tag named after it: `git tag ext-v0.2.2 && git push origin ext-v0.2.2`.
+tag named after it: `git tag ext-v0.3.0 && git push origin ext-v0.3.0`.
 `.github/workflows/extension.yml` submits it as a *listed* version, with the
 listing text from `.github/amo-metadata.json`, and Mozilla reviews it. The
 workflow needs the same two API values as repository secrets
