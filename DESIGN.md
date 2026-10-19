@@ -200,5 +200,4 @@ that say what went wrong and what to do next, no dashes as punctuation, no
 
 ## Known gaps
 
-- The README banner and launch video in `design/` still show the old look.
 - A light variant is not planned.

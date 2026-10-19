@@ -378,8 +378,8 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
           <>
             <div className="flex flex-col gap-1">
               <p className="label-md">Login method</p>
-              <div className="flex items-center gap-2 text-on-surface">
-                <MethodChip method={item.method || "credentials"} size={22} />
+              <div className="flex items-center gap-2 text-body-md text-on-surface">
+                <MethodChip method={item.method || "credentials"} size={18} />
                 <span>{methodLabel(item.method || "credentials")}</span>
               </div>
             </div>
