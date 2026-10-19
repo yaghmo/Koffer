@@ -413,7 +413,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
   return (
     <>
       <form
-        className="dialog flex max-h-[90vh] w-full max-w-[640px] flex-col gap-4 overflow-y-auto"
+        className="dialog sheet flex max-h-[90vh] w-full max-w-[640px] flex-col gap-4 overflow-y-auto"
         onSubmit={(e) => {
           e.preventDefault();
           save();
@@ -436,7 +436,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
         <div className="flex flex-col gap-4 px-6 pb-6">
           <Section title="Item" icon={SectionIcon}>
             {kindLocked ? (
-              <span className="self-start rounded-control bg-on-surface px-3 py-2 text-body-sm font-medium capitalize text-surface">
+              <span className="self-start rounded-control bg-surface-container-highest px-3 py-2 text-body-sm font-medium capitalize text-on-surface">
                 {kind}
               </span>
             ) : (
@@ -450,7 +450,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                       markDirty();
                     }}
                     className={`rounded-control px-3 py-2 text-body-sm font-medium capitalize transition-colors duration-150 ease-out ${
-                      kind === k ? "bg-on-surface text-surface" : "text-on-surface-variant hover:bg-surface-container-high"
+                      kind === k ? "bg-surface-container-highest text-on-surface" : "text-on-surface-variant hover:bg-surface-container-high"
                     }`}
                   >
                     {k}
@@ -551,7 +551,7 @@ export default function ItemEditor({ id, initialKind, lockKind, onClose, onSaved
                           }}
                           className={`flex max-w-full items-center gap-2 rounded-chip border px-2 py-1 text-body-sm transition-colors duration-150 ease-out ${
                             login.username === s.username
-                              ? "border-on-surface bg-on-surface text-surface"
+                              ? "border-on-surface-variant bg-surface-container-highest text-on-surface"
                               : "border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container-high"
                           }`}
                         >

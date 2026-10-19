@@ -26,7 +26,7 @@ function HealthRing({ score }: { score: number }) {
           stroke="currentColor"
           strokeWidth={8}
           strokeDasharray={`${length} ${RING_CIRCUMFERENCE - length}`}
-          className="text-on-surface transition-[stroke-dasharray] duration-500 ease-out"
+          className="text-primary transition-[stroke-dasharray] duration-500 ease-out"
         />
       </svg>
       <span className="absolute text-headline-md leading-none text-on-surface">{score}%</span>
@@ -111,7 +111,7 @@ function IssueList({ issues, onViewItem }: { issues: Issue[]; onViewItem: (id: s
             >
               <span className="min-w-0 flex-1 truncate text-body-sm text-on-surface">{issue.title}</span>
               <span className="flex flex-shrink-0 gap-2">
-                {/* Weak and reused are the tape's job; stale is only a note. */}
+                {/* Weak and reused are amber flags; stale is only a note. */}
                 {issue.tags.map((tag) => (
                   <span key={tag} className={tag === "old" ? "label-md self-center" : "flag"}>
                     {TAG_LABEL[tag]}

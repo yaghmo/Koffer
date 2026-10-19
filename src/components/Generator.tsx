@@ -75,7 +75,7 @@ export default function Generator({ onClose, onUse }: Props) {
             value={opts.length}
             onChange={(e) => setOpts({ ...opts, length: Number(e.target.value) })}
             aria-label="Password length"
-            className="h-1 w-full appearance-none rounded-full bg-surface-container-high accent-on-surface"
+            className="h-1 w-full appearance-none rounded-full bg-surface-container-high accent-primary"
           />
         </div>
 
@@ -87,7 +87,7 @@ export default function Generator({ onClose, onUse }: Props) {
                 checked={opts[key]}
                 onChange={(e) => setOpts({ ...opts, [key]: e.target.checked })}
                 aria-label={key}
-                className="h-4 w-4 accent-on-surface"
+                className="h-4 w-4 accent-primary"
               />
               {label}
             </label>

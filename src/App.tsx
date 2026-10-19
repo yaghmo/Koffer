@@ -19,7 +19,7 @@ import PersonalInfoScreen from "./screens/PersonalInfo";
 import ItemViewer from "./screens/ItemViewer";
 import Stats from "./screens/Stats";
 import Sidebar from "./components/Sidebar";
-import JacketFrame from "./components/JacketFrame";
+import RailFrame from "./components/RailFrame";
 import ConfirmDialog from "./components/ConfirmDialog";
 import type { Account, ItemKind } from "./lib/types";
 
@@ -266,11 +266,11 @@ export default function App() {
 
   if (status === "loading") {
     return (
-      <JacketFrame>
+      <RailFrame>
         <div className="flex h-full items-center justify-center">
           <p className="text-body-md text-on-surface-variant">Loading…</p>
         </div>
-      </JacketFrame>
+      </RailFrame>
     );
   }
 
@@ -281,7 +281,7 @@ export default function App() {
   // option) is reachable.
   if (status === "no-accounts") {
     return (
-      <JacketFrame>
+      <RailFrame>
           <Setup
             onCreated={async (acct) => {
               setCurrentAccount(acct);
@@ -293,13 +293,13 @@ export default function App() {
               setStatus("locked");
             }}
           />
-      </JacketFrame>
+      </RailFrame>
     );
   }
 
   if (status === "locked") {
     return (
-      <JacketFrame>
+      <RailFrame>
           <AccountLock
             accounts={accounts}
             onUnlocked={(acct) => {
@@ -314,7 +314,7 @@ export default function App() {
               await refreshAccounts().catch(() => {});
             }}
           />
-      </JacketFrame>
+      </RailFrame>
     );
   }
 

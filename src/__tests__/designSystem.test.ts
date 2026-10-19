@@ -45,40 +45,54 @@ export function offenders(pattern: RegExp, skip: string[] = []): string[] {
 }
 
 describe("design system: palette", () => {
-  it("uses the DESIGN.md colours", () => {
-    expect(token("surface")).toBe("#ffffff");
-    expect(token("on-surface")).toBe("#141414");
-    expect(token("on-surface-variant")).toBe("#6b6b6b");
-    expect(token("outline-variant")).toBe("#e4e4e2");
-    expect(token("primary")).toBe("#c8102e");
-    expect(token("jacket")).toBe("#121212");
-    expect(token("tape")).toBe("#ffd60a");
+  it("uses the DESIGN.md Midnight colours", () => {
+    expect(token("surface")).toBe("#0f1216");
+    expect(token("surface-container-low")).toBe("#14181d");
+    expect(token("on-surface")).toBe("#e8ebef");
+    expect(token("on-surface-variant")).toBe("#9ba3ae");
+    expect(token("outline-variant")).toBe("#232931");
+    expect(token("primary")).toBe("#3dbe8b");
+    expect(token("error")).toBe("#f06a6f");
+    expect(token("canvas")).toBe("#0b0d10");
+    expect(token("on-warning-container")).toBe("#f2b544");
   });
 
   it("keeps every text pair at 4.5:1 or better", () => {
     const pairs: [string, string][] = [
       ["on-surface", "surface"],
+      ["on-surface", "surface-container-low"],
+      ["on-surface", "surface-container-highest"],
       ["on-surface-variant", "surface"],
+      ["on-surface-variant", "surface-container-low"],
       ["on-surface-variant", "surface-container-high"],
       ["outline", "surface"],
+      ["outline", "surface-container-lowest"],
       ["on-primary", "primary"],
       ["on-primary", "primary-container"],
       ["error", "surface"],
+      ["error", "surface-container-low"],
+      ["on-error", "error"],
       ["on-error-container", "error-container"],
-      ["on-tape", "tape"],
-      ["on-jacket", "jacket"],
-      ["on-jacket-muted", "jacket"],
-      ["ink", "shirt"],
+      ["on-warning-container", "warning-container"],
+      ["on-canvas", "canvas"],
+      ["on-canvas-muted", "canvas"],
     ];
     for (const [fg, bg] of pairs) {
       expect(contrast(token(fg), token(bg)), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
   });
 
-  it("is flat: no glow and no glass in the stylesheet", () => {
+  it("steps surfaces up in lightness as they come forward", () => {
+    const order = ["canvas", "surface", "surface-container-low", "surface-container-high", "surface-container-highest"];
+    const l = order.map((n) => luminance(token(n)));
+    for (let i = 1; i < l.length; i++) expect(l[i], order[i]).toBeGreaterThan(l[i - 1]);
+  });
+
+  it("has no glow, no glass and no retired typeface", () => {
     expect(css).not.toMatch(/backdrop-blur|backdrop-filter/);
     expect(css).not.toMatch(/box-shadow:\s*0 0 [1-9]\d+px/);
-    expect(css).not.toMatch(/Plus Jakarta|JetBrains/);
+    expect(css).not.toMatch(/Plus Jakarta|JetBrains|IBM Plex Sans/);
+    expect(css).toMatch(/font-family: "Inter"/);
   });
 });
 
@@ -96,23 +110,23 @@ describe("design system: no dark-theme leftovers", () => {
     expect(offenders(/#[0-9a-fA-F]{6}\b|rgba?\(/g, ["components/Icon.tsx", "lib/methods.tsx"])).toEqual([]);
   });
 
-  it("uses the two radii: 6px for controls, 10px for dialogs", () => {
+  it("uses the token radii: chip, control and panel", () => {
     expect(offenders(/\brounded(?:-[trbl]{1,2})?-(?:sm|md|lg|xl|2xl|3xl|\[[^\]]+\])(?![\w-])/g)).toEqual([]);
   });
 });
-describe("design system: one red, one yellow", () => {
-  it("never writes in yellow or outlines with it", () => {
-    expect(offenders(/\b(?:text|border|ring|decoration)-(?:warning|tape)\b/g)).toEqual([]);
+describe("design system: one accent, one warning", () => {
+  it("writes amber only as the warning pair, never as loose text or a line", () => {
+    expect(offenders(/\b(?:text|border|ring|decoration|bg)-(?:warning|tape)(?![\w-])/g)).toEqual([]);
+    expect(offenders(/\b(?:bg|text|border|ring)-(?:shirt|ink|jacket|on-jacket|tape|on-tape)\b/g)).toEqual([]);
   });
 
-  it("has no warning, green or cyan token left", () => {
-    expect(offenders(/\b(?:bg|text|border|ring|fill|stroke)-(?:warning|secondary|tertiary)(?:-container)?\b/g)).toEqual([]);
-    expect(css).not.toMatch(/--color-(?:warning|secondary|on-secondary|secondary-container|tertiary|tertiary-container):/);
+  it("has no second accent: no secondary or tertiary token", () => {
+    expect(offenders(/\b(?:bg|text|border|ring|fill|stroke)-(?:secondary|tertiary)(?:-container)?\b/g)).toEqual([]);
+    expect(css).not.toMatch(/--color-(?:secondary|on-secondary|secondary-container|tertiary|tertiary-container):/);
   });
 
-  it("keeps red for the primary button, error words and the mark", () => {
-    // .btn-primary is the only red fill; nothing else is written, outlined or ticked in red.
-    expect(offenders(/\b(?:bg|text|border|ring|accent|decoration|fill|stroke)-(?:on-)?primary(?:-container)?\b/g)).toEqual([]);
+  it("fills emerald only in .btn-primary; screens use it for focus, controls and the score ring", () => {
+    expect(offenders(/\bbg-(?:on-)?primary(?:-container)?\b/g)).toEqual([]);
     expect(offenders(/\b(?:bg|border|ring)-error\b/g)).toEqual([]);
   });
 });

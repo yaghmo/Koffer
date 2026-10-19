@@ -15,15 +15,21 @@ Notable changes, newest first. The format follows
 
 ### Changed
 
-- New look, "suit and shirt": a black sidebar, white content, one red for the
-  main action, and yellow only for warnings. Flat, with no glow or glass.
-  Set in IBM Plex Sans and IBM Plex Mono. See `DESIGN.md`.
+- New look, "Midnight": dark slate surfaces that step lighter as they come
+  forward, one emerald accent for the main action of a screen, amber only for
+  warnings. Flat, with no glow, glass or gradient. Set in Inter (bundled, never
+  fetched) with IBM Plex Mono for passwords and codes. See `DESIGN.md`.
 - Interface text rewritten in short plain sentences.
-- New mark: a locked case with a white body, a yellow handle and a red
-  keyhole, on black. App, installer and extension icons are redrawn from it.
-- Browser extension: the popup, the save bar and the pointer wear the same
-  look. The toolbar badge is red, and provider marks (GitHub, Apple) are
-  drawn in ink so they show on white.
+- New mark: a locked case with a light body, a slate handle and an emerald
+  keyhole, on the dark rail. App, installer and extension icons are redrawn
+  from it.
+- Browser extension 0.4.0: the popup, the save bar and the pointer wear the
+  same look. The toolbar badge is emerald.
+
+### Removed
+
+- IBM Plex Sans, from the app and the extension, and the old banner and launch
+  video files in `design/`.
 
 ## [0.1.0] - 2026-10-05
 

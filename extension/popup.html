@@ -4,44 +4,47 @@
 <meta charset="utf-8">
 <title>Koffer</title>
 <style>
-  /* The app's look (DESIGN.md, "suit and shirt"): a black jacket across the
-     top, everything else on the white shirt, one red button per state. The
-     fonts ship with the extension; nothing is fetched. */
-  @font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
-  @font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-display: swap; src: url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2"); }
-  @font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap; src: url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+  /* The app's look (DESIGN.md, "Midnight"): the canvas strip across the top,
+     everything else on the dark page, layered one step lighter as it comes
+     forward, and one emerald button per state. The fonts ship with the
+     extension; nothing is fetched. */
+  @font-face { font-family: "Inter"; font-weight: 100 900; font-display: swap; src: url(fonts/inter-latin-wght-normal.woff2) format("woff2-variations"); }
   @font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
   :root {
-    color-scheme: light;
-    --jacket: #121212;
-    --jacket-soft: #1f1f1f;
-    --jacket-line: #2a2a2a;
-    --on-jacket: #f5f5f5;
-    --on-jacket-muted: #a3a3a3;
-    --shirt: #ffffff;
-    --soft: #f4f4f3;
-    --line: #e4e4e2;
-    --ink: #141414;
-    --muted: #6b6b6b;
-    --tie: #c8102e;
-    --tie-pressed: #a90d27;
-    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-    --mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
+    color-scheme: dark;
+    --canvas: #0b0d10;
+    --canvas-line: #1d2228;
+    --surface: #0f1216;
+    --well: #0c0f13;
+    --raised: #14181d;
+    --hover: #1b2027;
+    --selected: #252b33;
+    --line: #232931;
+    --text: #e8ebef;
+    --muted: #9ba3ae;
+    --placeholder: #838b97;
+    --emerald: #3dbe8b;
+    --emerald-hover: #5acf9f;
+    --on-emerald: #04140d;
+    --danger: #f06a6f;
+    --sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
   }
   * { box-sizing: border-box; }
   body {
     width: 320px;
     margin: 0;
-    background: var(--shirt);
-    color: var(--ink);
+    background: var(--surface);
+    color: var(--text);
     font: 13px/1.45 var(--sans);
+    font-feature-settings: "cv05", "cv08", "ss03";
     -webkit-font-smoothing: antialiased;
-    caret-color: var(--ink);
+    caret-color: var(--text);
   }
-  ::selection { background: var(--ink); color: var(--shirt); }
+  ::selection { background: var(--selected); color: var(--text); }
   :focus { outline: none; }
-  /* Ink, never red: a focused control must not look like the primary action. */
-  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  /* Emerald, solid, 2px off the control: the one line the accent draws. */
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; }
   button { font: inherit; }
 
   header {
@@ -49,11 +52,12 @@
     align-items: center;
     gap: 8px;
     padding: 12px 16px;
-    background: var(--jacket);
-    color: var(--on-jacket);
+    background: var(--canvas);
+    border-bottom: 1px solid var(--canvas-line);
+    color: var(--text);
   }
   header svg { flex: none; width: 20px; height: 20px; }
-  h1 { margin: 0; font-size: 13px; font-weight: 600; }
+  h1 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
 
   /* Two panels split by a hairline: what the page is, then what the vault
      has for it. */
@@ -70,10 +74,10 @@
   .stack .primary { margin-top: 4px; }
 
   .origin { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
-  .muted { color: var(--ink); }
+  .muted { color: var(--text); }
   .dim { color: var(--muted); font-size: 12px; }
   .caption { color: var(--muted); font-size: 12px; }
-  .error { color: var(--tie); font-size: 12px; }
+  .error { color: var(--danger); font-size: 12px; }
   .error:empty { display: none; }
 
   ul { list-style: none; margin: 0; padding: 0; }
@@ -83,15 +87,16 @@
     padding: 0;
     border: 0;
     background: none;
-    color: var(--ink);
+    color: var(--text);
     font-size: 12px;
     text-align: left;
     text-decoration: underline;
-    text-decoration-color: var(--muted);
+    text-decoration-color: var(--placeholder);
     text-underline-offset: 3px;
     cursor: pointer;
+    transition: text-decoration-color .15s ease-out;
   }
-  button.more:hover { text-decoration-color: var(--ink); }
+  button.more:hover { text-decoration-color: var(--emerald); }
 
   /* A row reaches 8px past the text on each side, so its hover fill has room
      around the logo while the logo stays on the panel's 16px line. */
@@ -103,14 +108,14 @@
     gap: 12px;
     padding: 8px;
     border: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     background: transparent;
     color: inherit;
     text-align: left;
     cursor: pointer;
     transition: background-color .15s ease-out;
   }
-  button.item:hover:not(:disabled) { background: var(--soft); }
+  button.item:hover:not(:disabled) { background: var(--hover); }
   button.item:disabled { cursor: not-allowed; opacity: .5; }
   .text { display: flex; flex-direction: column; min-width: 0; }
   .title { font-weight: 500; }
@@ -127,11 +132,11 @@
     align-items: center;
     justify-content: center;
     border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--shirt);
+    border-radius: 8px;
+    background: var(--selected);
   }
   .logo img { width: 22px; height: 22px; object-fit: contain; border-radius: 4px; }
-  .logo.letter { border-color: var(--ink); background: var(--ink); color: var(--shirt); font-weight: 600; }
+  .logo.letter { border-color: var(--selected); background: var(--selected); color: var(--text); font-weight: 600; }
   .logo .badge {
     position: absolute;
     right: -4px;
@@ -141,12 +146,13 @@
     padding: 2px;
     display: inline-flex;
     border-radius: 4px;
-    background: var(--shirt);
+    background: var(--raised);
+    color: var(--text);
     box-shadow: 0 0 0 1px var(--line);
   }
   .logo .badge svg { width: 100%; height: 100%; }
 
-  /* Personal info: an ID card cut from the jacket, so it never reads as one
+  /* Personal info: an ID card raised off the page, so it never reads as one
      more login. */
   button.idcard {
     width: 100%;
@@ -155,29 +161,29 @@
     flex-direction: column;
     gap: 8px;
     padding: 12px;
-    border: 0;
-    border-radius: 6px;
-    background: var(--jacket);
-    color: var(--on-jacket);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--raised);
+    color: var(--text);
     text-align: left;
     cursor: pointer;
-    transition: background-color .15s ease-out;
+    transition: background-color .15s ease-out, border-color .15s ease-out;
   }
-  button.idcard:hover:not(:disabled) { background: var(--jacket-soft); }
+  button.idcard:hover:not(:disabled) { background: var(--hover); border-color: var(--selected); }
   button.idcard:disabled { cursor: not-allowed; opacity: .5; }
   .id-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 12px;
-    color: var(--on-jacket-muted);
+    color: var(--muted);
   }
   .id-chip {
     padding: 0 4px;
-    border: 1px solid var(--jacket-line);
+    border: 1px solid var(--line);
     border-radius: 4px;
     font-family: var(--mono);
-    color: var(--on-jacket);
+    color: var(--text);
   }
   .id-body { display: flex; align-items: center; gap: 12px; }
   .id-photo {
@@ -186,16 +192,17 @@
     height: 44px;
     padding: 4px;
     display: inline-flex;
-    border: 1px solid var(--jacket-line);
-    border-radius: 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--well);
   }
   .id-photo svg { width: 100%; height: 100%; }
-  .idcard .sub { color: var(--on-jacket-muted); }
+  .idcard .sub { color: var(--muted); }
   .id-strip {
     font-family: var(--mono);
     font-size: 10px;
     letter-spacing: .12em;
-    color: var(--on-jacket-muted);
+    color: var(--placeholder);
     overflow: hidden;
     white-space: nowrap;
   }
@@ -208,7 +215,7 @@
     gap: 12px;
     padding: 8px;
     border: 1px dashed var(--line);
-    border-radius: 6px;
+    border-radius: 8px;
   }
   button.hint {
     width: 100%;
@@ -218,7 +225,7 @@
     cursor: pointer;
     transition: background-color .15s ease-out, border-color .15s ease-out;
   }
-  button.hint:hover { border-style: solid; border-color: var(--ink); background: var(--soft); }
+  button.hint:hover { border-style: solid; border-color: var(--selected); background: var(--hover); }
   .hint .who { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
 
   .row { display: flex; gap: 8px; align-self: stretch; }
@@ -228,32 +235,35 @@
     height: 36px;
     padding: 0 12px;
     border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--shirt);
-    color: var(--ink);
+    border-radius: 8px;
+    background: var(--well);
+    color: var(--text);
     font-family: var(--mono);
     font-size: 14px;
     letter-spacing: .16em;
     text-transform: uppercase;
-    transition: border-color .15s ease-out;
+    transition: border-color .15s ease-out, box-shadow .15s ease-out;
   }
-  .code::placeholder { color: var(--muted); font-size: 12px; letter-spacing: .08em; }
-  .code:focus { border-color: var(--ink); }
-  /* The tie: the one thing to press in the state on show. */
+  .code::placeholder { color: var(--placeholder); font-size: 12px; letter-spacing: .08em; }
+  .code:hover { border-color: var(--selected); }
+  .code:focus { border-color: var(--emerald); box-shadow: 0 0 0 3px rgb(61 190 139 / .22); }
+  .code:focus-visible { outline: none; }
+  /* Emerald: the one thing to press in the state on show. */
   .primary {
     height: 36px;
     padding: 0 16px;
     border: 0;
-    border-radius: 6px;
-    background: var(--tie);
-    color: #ffffff;
-    font-weight: 500;
+    border-radius: 8px;
+    background: var(--emerald);
+    color: var(--on-emerald);
+    font-weight: 600;
     white-space: nowrap;
     cursor: pointer;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), 0 1px 2px rgb(0 0 0 / .4);
     transition: background-color .15s ease-out;
   }
-  .primary:hover:not(:disabled) { background: var(--tie-pressed); }
-  .primary:disabled { opacity: .5; cursor: not-allowed; }
+  .primary:hover:not(:disabled) { background: var(--emerald-hover); }
+  .primary:disabled { background: var(--hover); color: var(--placeholder); box-shadow: inset 0 0 0 1px var(--line); cursor: not-allowed; }
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
@@ -261,11 +271,11 @@
 </head>
 <body>
   <header>
-    <!-- The mark: white case, yellow handle, red keyhole (src/components/Emblem.tsx). -->
+    <!-- The mark: light case, slate handle, emerald keyhole (src/components/Emblem.tsx). -->
     <svg viewBox="16 16 224 224" aria-hidden="true">
-      <path fill="#ffd60a" fill-rule="evenodd" d="M88 96V64a24 24 0 0 1 24-24h32a24 24 0 0 1 24 24V96ZM108 96V66a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6V96Z"/>
-      <path fill="#ffffff" fill-rule="evenodd" d="M54 92H202a26 26 0 0 1 26 26V190a26 26 0 0 1-26 26H54a26 26 0 0 1-26-26V118a26 26 0 0 1 26-26ZM60 92h10v124h-10ZM186 92h10v124h-10Z"/>
-      <path fill="#c8102e" d="M128 118a20 20 0 0 1 11.8 36.2L146 192H110l6.2-37.8A20 20 0 0 1 128 118Z"/>
+      <path fill="#9ba3ae" fill-rule="evenodd" d="M88 96V64a24 24 0 0 1 24-24h32a24 24 0 0 1 24 24V96ZM108 96V66a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6V96Z"/>
+      <path fill="#e8ebef" fill-rule="evenodd" d="M54 92H202a26 26 0 0 1 26 26V190a26 26 0 0 1-26 26H54a26 26 0 0 1-26-26V118a26 26 0 0 1 26-26ZM60 92h10v124h-10ZM186 92h10v124h-10Z"/>
+      <path fill="#3dbe8b" d="M128 118a20 20 0 0 1 11.8 36.2L146 192H110l6.2-37.8A20 20 0 0 1 128 118Z"/>
     </svg>
     <h1>Koffer</h1>
   </header>

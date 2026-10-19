@@ -575,7 +575,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 value={autolockMins}
                 onChange={(e) => setAutolockMins(Number(e.target.value))}
                 aria-label="Auto-lock timeout in minutes"
-                className="h-1 w-full appearance-none rounded-full bg-surface-container-high accent-on-surface"
+                className="h-1 w-full appearance-none rounded-full bg-surface-container-high accent-primary"
               />
             </div>
             <button type="button" className="btn-primary self-start" onClick={saveAutolock} disabled={busy}>
@@ -645,7 +645,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 type="checkbox"
                 checked={autoRefreshIcons}
                 onChange={(e) => saveAutoRefreshIcons(e.target.checked)}
-                className="mt-px h-4 w-4 accent-on-surface"
+                className="mt-px h-4 w-4 accent-primary"
               />
               Re-check stale logos automatically each time the vault unlocks
             </label>
@@ -1161,7 +1161,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 <button type="button" className="btn-secondary" onClick={closeReset}>
                   <XIcon size={14} /> Cancel
                 </button>
-                <button type="button" className="btn-ink" onClick={() => setResetStep("password")}>
+                <button type="button" className="btn-destructive" onClick={() => setResetStep("password")}>
                   Continue
                 </button>
               </div>
@@ -1189,7 +1189,7 @@ export default function Settings({ accountId, onLock }: Props) {
                 <button type="button" className="btn-secondary" onClick={() => setResetStep("warn")}>
                   Back
                 </button>
-                <button type="submit" className="btn-ink" disabled={busy || !resetPassword}>
+                <button type="submit" className="btn-destructive" disabled={busy || !resetPassword}>
                   {busy ? "Resetting…" : "Reset vault"}
                 </button>
               </div>

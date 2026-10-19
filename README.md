@@ -2,12 +2,12 @@
 
 https://github.com/user-attachments/assets/1023bbd1-932b-49d2-acf5-340f1a348f20
 
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-c8102e)](LICENSE)
-![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-141414)
-![Tauri 2](https://img.shields.io/badge/Tauri-2-141414)
-![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-141414)
-![Node.js 22.12+](https://img.shields.io/badge/Node.js-22.12%2B-141414)
-[![Extension: Chrome | Firefox](https://img.shields.io/badge/extension-Chrome%20%7C%20Firefox-141414)](extension/README.md)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-3dbe8b)](LICENSE)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0b0d10)
+![Tauri 2](https://img.shields.io/badge/Tauri-2-0b0d10)
+![Rust 1.75+](https://img.shields.io/badge/Rust-1.75%2B-0b0d10)
+![Node.js 22.12+](https://img.shields.io/badge/Node.js-22.12%2B-0b0d10)
+[![Extension: Chrome | Firefox](https://img.shields.io/badge/extension-Chrome%20%7C%20Firefox-0b0d10)](extension/README.md)
 
 Local-only encrypted password manager for Windows. Tauri + React.
 

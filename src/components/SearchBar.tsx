@@ -9,7 +9,7 @@ export default function SearchBar({ value, onChange }: Props) {
   return (
     <label
       htmlFor="vault-search"
-      className="flex h-9 flex-1 items-center gap-2 rounded-control border border-outline-variant bg-surface px-3 transition-colors duration-150 ease-out focus-within:border-on-surface"
+      className="flex h-9 flex-1 items-center gap-2 rounded-control border border-outline-variant bg-surface-container-lowest px-3 transition-[border-color,box-shadow] duration-150 ease-out hover:border-surface-container-highest focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/20"
     >
       <SearchIcon size={16} className="text-outline" />
       <input

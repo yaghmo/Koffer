@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import JacketFrame from "../components/JacketFrame";
+import RailFrame from "../components/RailFrame";
 
-describe("JacketFrame", () => {
-  it("puts the content on the shirt beside a jacket as wide as the sidebar", () => {
+describe("RailFrame", () => {
+  it("puts the content on the page beside a rail as wide as the sidebar", () => {
     const { container } = render(
-      <JacketFrame>
+      <RailFrame>
         <p>Unlock</p>
-      </JacketFrame>,
+      </RailFrame>,
     );
     const aside = container.querySelector("aside");
-    expect(aside?.className).toContain("jacket");
+    expect(aside?.className).toContain("rail");
     expect(aside?.className).toContain("w-[220px]");
     expect(screen.getByText("Koffer")).toBeTruthy();
     expect(screen.getByText("Unlock").closest("main")).toBeTruthy();

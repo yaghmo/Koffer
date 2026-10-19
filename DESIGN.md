@@ -1,63 +1,44 @@
 ---
-version: alpha
-name: Koffer suit and shirt
-description: A black jacket, a white shirt, one red tie, and yellow tape for warnings. Flat, quiet product UI for a local password manager on Windows.
+version: beta
+name: Koffer Midnight
+description: Dark-first, layered slate surfaces, one emerald accent, amber for warnings. A calm, premium product UI for a local password manager on Windows.
 
 colors:
-  jacket: "#121212"
-  jacket-line: "#2a2a2a"
-  on-jacket: "#f5f5f5"
-  on-jacket-muted: "#a3a3a3"
-  shirt: "#ffffff"
-  shirt-soft: "#f4f4f3"
-  hairline: "#e4e4e2"
-  ink: "#141414"
-  muted: "#6b6b6b"
-  tie: "#c8102e"
-  tie-pressed: "#a90d27"
-  on-tie: "#ffffff"
-  tape: "#ffd60a"
-  on-tape: "#141414"
-  scrim: "#12121280"
+  canvas: "#0b0d10"
+  canvas-line: "#1d2228"
+  surface: "#0f1216"
+  well: "#0c0f13"
+  raised: "#14181d"
+  hover: "#1b2027"
+  selected: "#252b33"
+  hairline: "#232931"
+  text: "#e8ebef"
+  muted: "#9ba3ae"
+  placeholder: "#838b97"
+  emerald: "#3dbe8b"
+  emerald-hover: "#5acf9f"
+  on-emerald: "#04140d"
+  danger: "#f06a6f"
+  danger-container: "#2a1719"
+  on-danger-container: "#f79599"
+  on-danger: "#1a0507"
+  warning-container: "#2b2413"
+  on-warning-container: "#f2b544"
+  scrim: "#000000 at 50%"
 
 typography:
-  title:
-    fontFamily: "IBM Plex Sans, Segoe UI, sans-serif"
-    fontSize: 22px
-    fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: -0.01em
-  heading:
-    fontFamily: "IBM Plex Sans, Segoe UI, sans-serif"
-    fontSize: 19px
-    fontWeight: 600
-    lineHeight: 1.3
-    letterSpacing: -0.01em
-  body:
-    fontFamily: "IBM Plex Sans, Segoe UI, sans-serif"
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 1.45
-  label:
-    fontFamily: "IBM Plex Sans, Segoe UI, sans-serif"
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 1.35
-  control:
-    fontFamily: "IBM Plex Sans, Segoe UI, sans-serif"
-    fontSize: 13px
-    fontWeight: 500
-    lineHeight: 1.2
-  secret:
-    fontFamily: "IBM Plex Mono, Consolas, monospace"
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 1.45
+  title:     { fontFamily: "Inter", fontSize: 22px, fontWeight: 600, lineHeight: 28px, letterSpacing: -0.018em }
+  heading:   { fontFamily: "Inter", fontSize: 19px, fontWeight: 600, lineHeight: 24px, letterSpacing: -0.014em }
+  subhead:   { fontFamily: "Inter", fontSize: 17px, fontWeight: 600, lineHeight: 24px, letterSpacing: -0.01em }
+  body:      { fontFamily: "Inter", fontSize: 13px, fontWeight: 400, lineHeight: 20px }
+  small:     { fontFamily: "Inter", fontSize: 12px, fontWeight: 400, lineHeight: 18px }
+  caption:   { fontFamily: "Inter", fontSize: 11px, fontWeight: 500, lineHeight: 16px, letterSpacing: 0.01em }
+  secret:    { fontFamily: "IBM Plex Mono", fontSize: 13px, fontWeight: 400, lineHeight: 20px }
 
 rounded:
-  control: 6px
-  avatar: 6px
-  dialog: 10px
+  chip: 6px
+  control: 8px
+  panel: 12px
 
 spacing:
   unit: 4px
@@ -67,175 +48,157 @@ spacing:
   panel-padding: 24px
 ---
 
-# Koffer: suit and shirt
+# Koffer: Midnight
 
-Status: direction chosen on 2026-10-12 and built on 2026-10-13 on the branch
-`restyle/suit-and-shirt`. It replaces the dark "Obsidian Cipher" look. The
-rules below are enforced by `src/__tests__/designSystem.test.ts`.
+Status: chosen on 2026-10-19. It replaces "suit and shirt" (2026-10-13 to
+2026-10-19). The rules below are enforced by
+`src/__tests__/designSystem.test.ts`, and the same system lives as a Claude
+Design System artifact ("Koffer Midnight").
 
 ## Overview
 
-Koffer means suitcase, so the app dresses like the person carrying one. The
-sidebar is the jacket: one flat near-black panel. Everything you read and
-type sits on the shirt: plain white. The tie is a single red, worn once per
-screen.
-
-The look is deliberately plain. No glow, no glass, no gradients, no second
-accent colour. A password manager is opened for a few seconds to fetch one
-thing; nothing on screen should compete with that thing.
+A password manager is opened for a few seconds, in the evening as often as
+the morning, to fetch one thing. Midnight keeps the room dark and quiet so
+that one thing is the brightest object on screen. Depth comes from layered
+slate surfaces, never from colour: each step forward is a little lighter.
+One emerald accent marks the single action a screen is for.
 
 ## Colors
 
-- **Jacket** (`#121212`): the sidebar on every screen, including the lock
-  screen. Text on it is `on-jacket`; quieter text is `on-jacket-muted`. The
-  selected entry is a white pill with ink text, the shirt showing through.
-- **Shirt** (`#ffffff`): every content surface. `shirt-soft` marks the
-  selected or hovered row. Panels are separated by a 1px `hairline`, never by
-  a shadow or a different background.
-- **Ink** (`#141414`) for text, `muted` (`#6b6b6b`) for labels and secondary
-  lines. Both pass 4.5:1 on the shirt.
-- **Tie** (`#c8102e`): the one accent. It fills the single primary action of
-  a screen (Unlock, Save, Copy password) and colours the keyhole of the mark.
-  White text on it passes 4.5:1. `tie-pressed` is its hover and active state.
+Surfaces, back to front. Each is lighter than the one behind it:
 
-- **Tape** (`#ffd60a`): crime-scene tape yellow, and the only other colour.
-  It means "careful" and is never decoration. Always a fill with `on-tape`
-  ink text on it; never yellow text on the shirt, where it cannot be read.
-  It has three jobs in the interface, and one in the mark (its handle):
-  1. A flag on a password that is leaked, reused or weak.
-  2. The lock countdown in the jacket during its last 30 seconds.
-  3. A 12px strip of black and yellow tape across the top of a dialog that
-     destroys something (delete, reset vault, forgot password).
+| Layer | Hex | Job |
+| --- | --- | --- |
+| canvas | `#0b0d10` | The rail (sidebar) on every screen, including lock and setup. |
+| surface | `#0f1216` | The page. |
+| well | `#0c0f13` | Inside a field: a step *back*, so typing sits in the surface. |
+| raised | `#14181d` | Cards, panels, dialogs, the side sheet. |
+| hover | `#1b2027` | A hovered row or button. |
+| selected | `#252b33` | The current nav entry, the chosen segment, avatars. |
 
-Red is the action and yellow is the warning, so they never trade places:
+- **Hairline** (`#232931`) separates panels. Never a second background
+  colour, never a shadow, for that job.
+- **Text** (`#e8ebef`) and **muted** (`#9ba3ae`) pass 4.5:1 on every
+  surface. **Placeholder** (`#838b97`) passes 4.5:1 on the page and in a
+  field.
+- **Emerald** (`#3dbe8b`) is the accent. It fills the one primary button of
+  a screen with dark `on-emerald` text, draws the focus ring, ticks
+  checkboxes and sliders, and fills the health score ring. It is never body
+  text and never a second filled button.
+- **Danger** (`#f06a6f`) is for words that warn about loss, the ghost
+  `btn-danger` that leads into a destructive dialog, the 3px rule along the
+  top of that dialog, and its one filled `btn-destructive` confirm.
+- **Amber** is for warnings and is always the pair `warning-container` /
+  `on-warning-container`: a tinted chip with amber words (Leaked, Reused,
+  Weak, Not recoverable) and the lock countdown in its last 30 seconds.
+  Never loose amber text, never an amber line.
 
-- A destructive action (Delete, Reset vault) is never a filled red button. It
-  is a ghost button with tie-coloured text, and it always opens the taped
-  confirm dialog, whose confirm button is filled ink and names the action.
-- A form error is tie-coloured text with a sentence that names the problem
-  and the way out.
-- There is no green. Success is said in words, in ink.
-- There is no orange and no severity scale. A warning is yellow, and the
-  word on it (Leaked, Reused, Weak) says how bad it is. Black, white, red and
-  yellow are the whole palette; a fifth colour needs a new job that none of
-  these can do.
+There is no blue, no purple and no gradient. A new colour needs a job none
+of these can do.
 
 ## Typography
 
-IBM Plex Sans for the interface and IBM Plex Mono for anything secret or
-typed exactly: passwords, codes, keys, card numbers. Plex Mono keeps `0`/`O`
-and `1`/`l`/`I` apart, which is the job. Both are open (OFL-1.1) and must be
-bundled with the app, never fetched.
+Inter for the interface, bundled in `src/fonts/` (OFL-1.1) and never
+fetched. Stylistic sets `cv05`, `cv08` and `ss03` are on, so `l`, `1` and `I`
+stay apart. IBM Plex Mono for anything secret or typed exactly: passwords,
+codes, keys, card numbers.
 
-Three weights only: 400 for reading, 500 for controls and the selected nav
-entry, 600 for titles. Sentence case everywhere. No uppercase labels, no
-letter-spaced captions.
+Three weights: 400 to read, 500 for controls and labels, 600 for titles and
+the primary button. Titles are tracked slightly tight (−1% to −1.8%).
+Sentence case everywhere.
 
 ## Layout
 
-- Two columns at all times: the jacket (220px) and the shirt. The vault adds
-  a list column between them, split from the detail by a hairline.
-- The lock and setup screens keep the jacket in the same place, carrying
-  only the mark and the name. The unlock form sits centred on the shirt, and
-  choosing between vaults stays a dialog.
-- Forms are one column, labels above fields. Two short fields may share a
-  row.
-- The window is 900 x 700 with an 820 x 600 minimum; nothing may need a wider
-  window than that.
+- Two columns at all times: the rail (220px) and the page. The vault adds a
+  list column between them.
+- The rail is separated from the page by a 1px `canvas-line` on its right
+  edge, not by a contrast jump.
+- Lock and setup keep the rail in place, carrying only the mark and the
+  name. The form sits centred on the page.
+- Forms are one column, labels above fields.
+- The window is 900 x 700 with an 820 x 600 minimum.
 
 ## Spacing
 
-Every gap is a step of the 4px scale: 4, 8, 12, 16, 24, 32 (Tailwind's
-`1 2 3 4 6 8`). No half steps and no one-off pixel values.
+Every gap is a step of the 4px scale: 4, 8, 12, 16, 24, 32. Inner gaps are
+always at least one step smaller than the gap around a group. A heading has
+more space above it than below it.
 
-- 4px: a label to its field, a title to the line under it.
-- 8px: between buttons, between an icon and its text, inside a list row.
-- 12px: inside a field or button (horizontal padding), between list rows'
-  contents and the hairline.
-- 16px: between fields in a form, between a heading and its content.
-- 24px: panel padding, and between groups of fields.
-- 32px: between sections of a page such as Settings.
+## Elevation
 
-Things that belong together sit closer than things that do not: a group's
-inner gaps are always at least one step smaller than the gap around it. A
-heading has more space above it than below it.
-
-## Elevation & Depth
-
-Flat. The only shadow in the app belongs to things that float over the page:
-dialogs and the notice line. They sit on a `scrim` and carry one soft shadow
-with an offset. Nothing else is raised.
+Mostly flat. Cards carry a 1px white highlight along their top edge at 3%
+opacity, which reads as a lit edge rather than a shadow. Things that float
+(dialogs, the side sheet, menus) add one deep shadow,
+`0 24px 64px -16px rgb(0 0 0 / .75)`, over a 50% black scrim. No glow, no
+blur, no glass.
 
 ## Shapes
 
-6px corners on buttons, fields, rows and avatars; 10px on dialogs. No pills
-except the selected sidebar entry, which uses the same 6px.
+6px on chips and flags, 8px on buttons, fields, rows and avatars, 12px on
+cards and dialogs.
 
 ## Components
 
-- **Primary button:** filled tie, on-tie text, weight 500, 36px high. One per
-  screen.
-- **Ghost button:** shirt background, hairline border, ink text. Every other
-  action.
-- **Text link:** ink, underlined, 3px offset.
-- **Field:** shirt background, hairline border, 6px corners. Focus is a 2px
-  ink ring set off by 2px of shirt; on the jacket the ring is `on-jacket`.
-  Focus is never red.
-- **List row:** square avatar with the item's logo or initial (ink on shirt
-  inverted: ink square, white letter), title at 500, one muted line below.
-- **Strength meter:** a 3px hairline track filled in ink, with the verdict in
-  words beside it. Weak is said in tie-coloured words; the bar does not
-  change colour.
-- **Confirm dialog:** shirt, 10px corners, title, one paragraph, ghost cancel
-  and a filled ink confirm that names the action.
-- **Mark:** a locked case. White body, yellow handle, red keyhole, always on
-  jacket black: in the sidebar, on a rounded black tile for the app and
-  toolbar icons, and on the same tile in the browser's save bar. Never on the
-  shirt, where the body would vanish. The 16px icon drops the two straps.
-  Its three paths are written out in `src/components/Emblem.tsx`,
-  `design/icons.cjs`, `extension/popup.html` and `extension/bar.js`.
+- **Primary button** (`.btn-primary`): emerald fill, dark text at 600, 36px
+  high, a soft top highlight. One per screen. Disabled is a quiet hover-grey
+  step with placeholder text, not a faded emerald.
+- **Secondary button** (`.btn-secondary`): raised fill, hairline border,
+  text colour. Every other action.
+- **Danger button** (`.btn-danger`): like secondary, with danger words. Opens
+  a confirm dialog.
+- **Destructive confirm** (`.btn-destructive`): danger fill, dark text. Only
+  inside a destructive dialog.
+- **Field** (`.field`): well fill, hairline border, 8px corners. Hover lifts
+  the border one step; focus turns it emerald with a 3px emerald halo at 22%.
+- **Card** (`.card`): raised fill, hairline border, 12px corners, lit top edge.
+- **Dialog** (`.dialog`): a card that floats. A destructive one adds
+  `.dialog-danger`: a 3px danger rule along its top edge.
+- **Flag** (`.flag`): amber words on the amber container, 20px high, 6px
+  corners, a faint amber inner border.
+- **Link** (`.link`): text colour, underlined in the placeholder grey; the
+  underline turns emerald on hover.
+- **Nav entry**: muted text; hover takes the hover surface; the current one
+  takes the selected surface with full text colour.
+- **Avatar**: selected-surface square with the item's initial or logo.
+- **Mark**: a locked case. Light body (`on-canvas`), slate handle
+  (`on-canvas-muted`), emerald keyhole, always on the canvas.
 
 ## Browser extension
 
 The popup and the bars the extension shows inside web pages follow this file.
 
-- **Popup** (320px wide): a jacket strip across the top with the mark and the
-  name, then two panels on the shirt split by a hairline: what the page is,
-  and what the vault has for it. Logins are rows that take the soft fill on
-  hover. Personal info is a card cut from the jacket, so it never reads as
-  one more login. IBM Plex ships inside the extension (Latin only).
-- **Save bar** (inside a page): a white dialog, top right, with the mark on
-  its black tile beside the title, one red button and ghost buttons for the
-  rest. System fonts, because a page's own rules decide what loads there.
-- **Pointer** (inside a page): an ink ring inside a white one, so it shows on
-  light and dark pages, with a jacket-black note. It does not pulse.
-- **Toolbar badge:** tie red when the page has a login Koffer can fill.
+- **Popup** (320px wide): a canvas strip across the top with the mark and the
+  name, then two panels on the page colour split by a hairline: what the page
+  is, and what the vault has for it. Logins are rows that take the hover fill.
+  Personal info is a raised card with a hairline, so it never reads as one
+  more login. Inter and IBM Plex Mono ship inside the extension.
+- **Save bar** (inside a page): a raised dark dialog, top right, with the mark
+  on its canvas tile beside the title, one emerald button and quiet buttons
+  for the rest. System fonts, because a page's own rules decide what loads
+  there.
+- **Pointer** (inside a page): an emerald ring set in a canvas-dark one, so it
+  shows on light and dark pages, with a canvas note. It does not pulse.
+- **Toolbar badge:** emerald, with dark ink, when the page has a login Koffer
+  can fill.
 
 ## Wording
 
-- Short, plain sentences. One idea each. A full stop instead of a dash: no
-  em dashes, en dashes or double hyphens anywhere in the interface.
-- A button names what it does: "Copy password", "Reset vault", "Keep the
-  vault". Never "OK", "Yes" or "Submit".
-- An error says what went wrong and what to do next: "That card number has a
-  wrong digit. Check it and try again."
-- An empty value is left empty or says "None". Never a dash as a placeholder.
-- Sentence case. No exclamation marks. No "please", no "successfully".
-- Numbers are specific: "Locks in 0:28", "3 of your 42 logins".
+Unchanged: short plain sentences, buttons that name what they do, errors
+that say what went wrong and what to do next, no dashes as punctuation, no
+"please", no exclamation marks, specific numbers.
 
 ## Do's and Don'ts
 
-- Do keep red to one filled element per screen.
-- Do keep yellow to its three jobs and the mark's handle; in the interface
-  it is a warning, not decoration.
+- Do keep emerald to one filled button per screen.
+- Do keep amber in its container pair.
 - Do say state in words; colour alone never carries meaning.
-- Do keep every transition to a 150ms colour change, and none at all under
+- Do keep transitions to 150ms colour and border changes, and none under
   `prefers-reduced-motion`.
-- Don't add glow, blur, gradients, glass or a second accent.
-- Don't animate entrances, pulse, spin or ping.
-- Don't show anything that implies a network: no sync marks, no cloud icons,
-  no "protected" badges.
+- Don't add glow, blur, glass, gradients or a second accent.
+- Don't animate entrances, pulse or spin.
+- Don't show anything that implies a network: no sync marks, no cloud icons.
 
-## Known Gaps
+## Known gaps
 
-- A dark variant. Not planned: the jacket already carries the dark.
+- The README banner and launch video in `design/` still show the old look.
+- A light variant is not planned.

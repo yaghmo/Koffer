@@ -9,28 +9,30 @@ import { mark } from "../../extension/marks.js";
 import { Emblem } from "../components/Emblem";
 import { MethodChip } from "../lib/methods";
 
-// DESIGN.md's palette, plus the jacket's hover step. Nothing else may be
-// written into the popup or the in-page bar.
+// DESIGN.md's Midnight palette. Nothing else may be written into the popup
+// or the in-page bar.
 const PALETTE = new Set([
-  "#121212",
-  "#1f1f1f",
-  "#2a2a2a",
-  "#f5f5f5",
-  "#a3a3a3",
-  "#ffffff",
-  "#f4f4f3",
-  "#e4e4e2",
-  "#141414",
-  "#6b6b6b",
-  "#c8102e",
-  "#a90d27",
-  "#ffd60a",
+  "#0b0d10",
+  "#1d2228",
+  "#0f1216",
+  "#0c0f13",
+  "#14181d",
+  "#1b2027",
+  "#252b33",
+  "#232931",
+  "#e8ebef",
+  "#9ba3ae",
+  "#838b97",
+  "#3dbe8b",
+  "#5acf9f",
+  "#04140d",
+  "#f06a6f",
 ]);
 
 const hexes = (src: string) => [...src.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0].toLowerCase());
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\s\/\/ .*$/gm, "");
 
-describe("extension: suit and shirt", () => {
+describe("extension: Midnight", () => {
   it("draws the popup and the in-page bar from the palette only", () => {
     for (const [name, src] of [
       ["popup.html", popupHtml],
@@ -41,8 +43,8 @@ describe("extension: suit and shirt", () => {
     }
   });
 
-  it("marks a detected login on the toolbar in the tie's red", () => {
-    expect(backgroundJs).toMatch(/BADGE_COLOUR = "#c8102e"/);
+  it("marks a detected login on the toolbar in emerald", () => {
+    expect(backgroundJs).toMatch(/BADGE_COLOUR = "#3dbe8b"/);
   });
 
   it("uses no dash as punctuation in what it says", () => {
@@ -59,24 +61,24 @@ describe("extension: suit and shirt", () => {
     expect(barJs).not.toMatch(/"OK"/);
   });
 
-  it("draws monochrome provider marks in ink, not white on white", () => {
+  it("draws monochrome provider marks in the text colour, so they show on the dark popup", () => {
     for (const name of ["github", "apple"]) {
-      expect(mark(name).querySelector("path")?.getAttribute("fill"), name).toBe("#141414");
+      expect(mark(name).querySelector("path")?.getAttribute("fill"), name).toBe("currentColor");
     }
   });
 });
 
 describe("the mark", () => {
-  it("is a white case with a yellow handle and a red keyhole", () => {
+  it("is a light case with a slate handle and an emerald keyhole", () => {
     const { container } = render(<Emblem size={28} />);
     const fills = [...container.querySelectorAll("path")].map((p) => p.getAttribute("fill"));
-    expect(fills).toEqual(["var(--color-tape)", "var(--color-shirt)", "var(--color-primary)"]);
+    expect(fills).toEqual(["var(--color-on-canvas-muted)", "var(--color-on-canvas)", "var(--color-primary)"]);
     expect(container.querySelector("svg")?.getAttribute("width")).toBe("28");
   });
 });
 
 describe("provider marks in the app", () => {
-  it("take the text colour, so GitHub and Apple show on the white shirt", () => {
+  it("take the text colour, so GitHub and Apple show on the dark page", () => {
     for (const method of ["github", "apple"] as const) {
       const { container } = render(<MethodChip method={method} size={20} />);
       expect(container.querySelector("path")?.getAttribute("fill"), method).toBe("currentColor");

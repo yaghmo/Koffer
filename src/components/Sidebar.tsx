@@ -44,12 +44,12 @@ function formatMinSec(totalSecs: number): string {
 }
 
 function AutolockCountdown({ remainingSecs }: { remainingSecs: number }) {
-  // A strip of tape for the last half minute: the one moment the jacket warns.
+  // Amber for the last half minute: the one moment the rail warns.
   const closing = remainingSecs <= 30;
   return (
     <p
       className={`rounded-control px-3 py-1 text-body-sm tabular-nums ${
-        closing ? "bg-tape font-medium text-on-tape" : "text-on-surface-variant"
+        closing ? "bg-warning-container font-medium text-on-warning-container" : "text-on-surface-variant"
       }`}
       title="Time until auto-lock"
     >
@@ -81,7 +81,7 @@ function NavRow({
       onClick={onClick}
       className={`flex w-full items-center gap-2 rounded-control px-3 py-2 text-left text-body-md font-medium transition-colors duration-150 ease-out ${
         active
-          ? "bg-shirt text-ink"
+          ? "bg-surface-container-highest text-on-surface"
           : "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
       }`}
     >
@@ -119,7 +119,7 @@ export default function Sidebar({
   const inVault = currentView === "vault";
 
   return (
-    <aside className="jacket flex h-full w-[220px] shrink-0 flex-col">
+    <aside className="rail flex h-full w-[220px] shrink-0 flex-col">
       <div className="flex items-center gap-3 border-b border-outline-variant px-4 py-4">
         <Emblem size={28} />
         <div className="min-w-0">

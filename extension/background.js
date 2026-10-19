@@ -54,7 +54,8 @@ import { createTracker, isFresh, sameSite, lastLoginKey, fromItsOwnPage, CONFIRM
 const ext = globalThis.browser ?? globalThis.chrome;
 
 const BADGE = "●";
-const BADGE_COLOUR = "#c8102e"; // the tie: a login here can be filled
+const BADGE_COLOUR = "#3dbe8b"; // emerald: a login here can be filled
+const BADGE_TEXT_COLOUR = "#04140d";
 const ROOT_ID = "pm-root";
 const ASK_ID = "pm-ask";
 const KEY = "tabState";
@@ -548,6 +549,9 @@ ext.runtime.onMessage.addListener((msg, sender) => {
   if (msg.login || msg.codeBox) {
     ext.action.setBadgeText({ tabId, text: BADGE });
     ext.action.setBadgeBackgroundColor({ tabId, color: BADGE_COLOUR });
+    // Dark ink on emerald, as on the app's primary button. Firefox and older
+    // Chrome lack the call and pick their own.
+    ext.action.setBadgeTextColor?.({ tabId, color: BADGE_TEXT_COLOUR });
     onDetectedLogin(tabId, msg.origin, !msg.login);
     return false;
   }

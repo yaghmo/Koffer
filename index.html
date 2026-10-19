@@ -7,11 +7,12 @@
   </head>
   <body>
     <!--
-THESIS: Koffer means suitcase, so the app dresses like the person carrying one. A black jacket (the sidebar), a white shirt (everything you read and type), one red tie (the single primary action of a screen), yellow tape for warnings. Flat and quiet. The mark is a locked case: white body, yellow handle, red keyhole.
-PALETTE: jacket #121212, shirt #ffffff, ink #141414, tie #c8102e, tape #ffd60a. No green, no orange, no second accent. Red fills one element per screen; yellow is always a fill with ink text on it.
-MOTION: 150ms colour transitions on hover and focus, nothing else. No glow, blur, spinners or pulsing. prefers-reduced-motion disables all of it.
+THESIS: A password manager is opened for a few seconds to fetch one thing. Midnight keeps the room dark and quiet so that thing is the brightest object on screen. Depth comes from layered slate surfaces; one emerald accent marks the single action a screen is for.
+PALETTE: canvas #0b0d10, surface #0f1216, raised #14181d, hairline #232931, text #e8ebef, muted #9ba3ae, emerald #3dbe8b, danger #f06a6f, amber #f2b544 on #2b2413. No blue, no purple, no gradient, no second accent.
+TYPE: Inter (bundled) for the interface, IBM Plex Mono for secrets.
+MOTION: 150ms colour and border transitions on hover and focus, nothing else. prefers-reduced-motion disables all of it.
 STORY: unlock with a master password, find the one thing you came for, copy it, lock. No sync, no biometrics, no audit trail.
-FORM: Suit and shirt. Replaces Obsidian Cipher (2026-09-13 to 2026-10-13). The full rules are in DESIGN.md and are enforced by src/__tests__/designSystem.test.ts.
+FORM: Midnight. Replaces suit and shirt (2026-10-13 to 2026-10-19). The full rules are in DESIGN.md and are enforced by src/__tests__/designSystem.test.ts.
     -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

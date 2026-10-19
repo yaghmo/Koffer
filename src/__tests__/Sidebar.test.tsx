@@ -51,7 +51,7 @@ describe("Sidebar — vault tree", () => {
     expect(onFilterChange).toHaveBeenCalledWith("all");
   });
 
-  const jacketProps = {
+  const railProps = {
     accountName: "Yaghmo",
     isUnlocked: true,
     onLock: () => {},
@@ -61,27 +61,27 @@ describe("Sidebar — vault tree", () => {
     onFilterChange: () => {},
   };
 
-  it("warns on yellow tape for the last 30 seconds and not before", () => {
-    const { rerender } = render(<Sidebar {...jacketProps} autolock={{ remainingSecs: 872, timeoutSecs: 900 }} />);
-    expect(screen.getByText("Locks in 14:32").className).not.toContain("bg-tape");
-    rerender(<Sidebar {...jacketProps} autolock={{ remainingSecs: 31, timeoutSecs: 900 }} />);
-    expect(screen.getByText("Locks in 0:31").className).not.toContain("bg-tape");
-    rerender(<Sidebar {...jacketProps} autolock={{ remainingSecs: 30, timeoutSecs: 900 }} />);
+  it("warns in amber for the last 30 seconds and not before", () => {
+    const { rerender } = render(<Sidebar {...railProps} autolock={{ remainingSecs: 872, timeoutSecs: 900 }} />);
+    expect(screen.getByText("Locks in 14:32").className).not.toContain("bg-warning-container");
+    rerender(<Sidebar {...railProps} autolock={{ remainingSecs: 31, timeoutSecs: 900 }} />);
+    expect(screen.getByText("Locks in 0:31").className).not.toContain("bg-warning-container");
+    rerender(<Sidebar {...railProps} autolock={{ remainingSecs: 30, timeoutSecs: 900 }} />);
     const closing = screen.getByText("Locks in 0:30").className;
-    expect(closing).toContain("bg-tape");
-    expect(closing).toContain("text-on-tape");
+    expect(closing).toContain("bg-warning-container");
+    expect(closing).toContain("text-on-warning-container");
   });
 
-  it("is the jacket, and truncates a long vault name instead of growing", () => {
+  it("is the rail, and truncates a long vault name instead of growing", () => {
     const name = "A very long vault name that would never fit in two hundred pixels";
-    const { container } = render(<Sidebar {...jacketProps} accountName={name} autolock={null} />);
-    expect(container.querySelector("aside")?.className).toContain("jacket");
+    const { container } = render(<Sidebar {...railProps} accountName={name} autolock={null} />);
+    expect(container.querySelector("aside")?.className).toContain("rail");
     expect(container.querySelector("aside")?.className).toContain("w-[220px]");
     expect(screen.getByText(name).className).toContain("truncate");
   });
 
-  it("shows the selected entry as the shirt showing through", () => {
-    render(<Sidebar {...jacketProps} autolock={null} />);
-    expect(screen.getByRole("button", { name: /all items/i }).className).toContain("bg-shirt");
+  it("shows the selected entry one step lighter than the rail", () => {
+    render(<Sidebar {...railProps} autolock={null} />);
+    expect(screen.getByRole("button", { name: /all items/i }).className).toContain("bg-surface-container-highest");
   });
 });

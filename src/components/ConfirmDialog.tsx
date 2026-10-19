@@ -9,8 +9,8 @@ interface Props {
   /** When set, the confirm button stays disabled until the user types this word exactly. */
   typeToConfirm?: string;
   /** "danger" (the default) for answers that destroy something: the dialog is
-   *  taped and confirms in ink. "primary" when saying yes is the ordinary
-   *  thing to do, so the button is the red primary. */
+   *  marked with a danger rule and confirms in red. "primary" when saying yes is the ordinary
+   *  thing to do, so the button is the emerald primary. */
   tone?: "danger" | "primary";
   onConfirm: () => void;
   onCancel: () => void;
@@ -66,7 +66,7 @@ export default function ConfirmDialog({
           </button>
           <button
             type="button"
-            className={tone === "danger" ? "btn-ink" : "btn-primary"}
+            className={tone === "danger" ? "btn-destructive" : "btn-primary"}
             onClick={onConfirm}
             disabled={locked}
           >

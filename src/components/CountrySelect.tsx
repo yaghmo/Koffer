@@ -113,9 +113,8 @@ export default function CountrySelect({
       </button>
       {open && rect &&
         createPortal(
-          // Rendered at document.body, not inside the field's .card: a card
-          // uses backdrop-blur, which opens its own stacking context and
-          // would otherwise trap this dropdown behind the next sibling card.
+          // Rendered at document.body, not inside the field's .card, so no
+          // scrolling panel or stacking context around it can clip the list.
           <div
             ref={popoverRef}
             role="listbox"
@@ -123,7 +122,7 @@ export default function CountrySelect({
             onKeyDown={onKeyDown}
             aria-activedescendant={activeIso ? `country-${activeIso}` : undefined}
             style={{ position: "fixed", top: rect.top, left: rect.left, width: rect.width }}
-            className="z-50 max-h-64 overflow-y-auto rounded-control border border-outline-variant bg-surface shadow-lg"
+            className="z-50 max-h-64 overflow-y-auto rounded-control border border-outline-variant bg-surface-container-low shadow-lg"
           >
             {list.map((c) => (
               <button

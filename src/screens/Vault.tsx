@@ -76,7 +76,7 @@ function SortMenu({ sort, onChange }: { sort: Sort; onChange: (s: Sort) => void 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 flex w-48 flex-col overflow-hidden rounded-control border border-outline-variant bg-surface shadow-lg"
+          className="absolute right-0 top-full z-20 mt-1 flex w-48 flex-col overflow-hidden rounded-control border border-outline-variant bg-surface-container-low shadow-lg"
         >
           {SORTS.map((s) => (
             <button
@@ -247,7 +247,7 @@ export default function Vault({
           {!kind && addMenuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-full z-20 mt-1 flex w-36 flex-col overflow-hidden rounded-control border border-outline-variant bg-surface shadow-lg"
+              className="absolute right-0 top-full z-20 mt-1 flex w-36 flex-col overflow-hidden rounded-control border border-outline-variant bg-surface-container-low shadow-lg"
             >
               {addKinds.map(({ kind: k, label }) => (
                 <button

@@ -73,7 +73,7 @@ None binding. Design is free within a tone the user described as "calm, security
 - Working Tauri 2 desktop app, 41 lib + 2 integration Rust tests passing, 16 frontend tests passing, tsc clean, MSI build green.
 - All 25 plan tasks complete; full feature set present.
 - README in repo root (manual test checklist, build instructions).
-- The visual system is "suit and shirt", specified in `DESIGN.md`: black sidebar, white content, one red, yellow for warnings.
+- The visual system is "Midnight", specified in `DESIGN.md`: layered dark slate surfaces, one emerald accent, amber for warnings, Inter type.
 
 ## Product Principles
 

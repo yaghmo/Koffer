@@ -57,7 +57,7 @@ export function itemIcon(it: ItemMeta, big = false) {
         {it.favicon ? (
           <img className={`${box} rounded-control object-contain`} src={it.favicon} alt="" />
         ) : (
-          <span className={`${box} flex items-center justify-center rounded-control bg-on-surface text-body-md font-semibold text-surface`}>
+          <span className={`${box} flex items-center justify-center rounded-control bg-surface-container-highest text-body-md font-semibold text-on-surface`}>
             {(it.title || "?").charAt(0).toUpperCase()}
           </span>
         )}
@@ -95,7 +95,7 @@ export function itemIcon(it: ItemMeta, big = false) {
     );
   }
   return (
-    <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-on-surface text-body-md font-semibold text-surface`}>
+    <span className={`${box} flex flex-shrink-0 items-center justify-center rounded-control bg-surface-container-highest text-body-md font-semibold text-on-surface`}>
       {(it.title || "?").charAt(0).toUpperCase()}
     </span>
   );

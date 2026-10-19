@@ -1,56 +1,77 @@
 @import "tailwindcss";
 
-/* The shirt is light, so the parts the engine draws itself (date pickers,
-   dropdowns, scrollbars) are too. The jacket turns them dark again. */
+/* Midnight: the app is dark at rest, so the parts the engine draws itself
+   (date pickers, dropdowns, scrollbars) are too. */
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+}
+
+/* Inter, bundled with the app and never fetched. Latin and Latin Extended
+   cover every language the interface and the country list are written in. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
 @theme {
-  /* DESIGN.md "suit and shirt". The Material-style names stay because every
-     screen already uses them; the DESIGN.md name is in each comment. */
-  --color-surface: #ffffff; /* shirt */
-  --color-surface-dim: #f4f4f3; /* shirt-soft */
-  --color-surface-bright: #ffffff;
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #ffffff;
-  --color-surface-container: #ffffff;
-  --color-surface-container-high: #f4f4f3; /* shirt-soft: selected or hovered row */
-  --color-surface-container-highest: #e4e4e2;
-  --color-on-surface: #141414; /* ink */
-  --color-on-surface-variant: #6b6b6b; /* muted */
-  --color-outline: #6b6b6b; /* placeholder text */
-  --color-outline-variant: #e4e4e2; /* hairline */
-  --color-primary: #c8102e; /* tie */
-  --color-on-primary: #ffffff;
-  --color-primary-container: #a90d27; /* tie-pressed */
-  --color-error: #c8102e;
-  --color-on-error: #ffffff;
-  --color-error-container: #f4f4f3;
-  --color-on-error-container: #c8102e;
+  /* DESIGN.md "Midnight". The Material-style names stay because every screen
+     already uses them; the DESIGN.md name is in each comment. Surfaces step up
+     in lightness as they come forward: canvas, surface, raised, hover. */
+  --color-surface: #0f1216; /* surface: the page */
+  --color-surface-container-lowest: #0c0f13; /* well: inside a field */
+  --color-surface-container-low: #14181d; /* raised: cards and panels */
+  --color-surface-container: #14181d;
+  --color-surface-container-high: #1b2027; /* hover: a hovered or selected row */
+  --color-surface-container-highest: #252b33; /* selected: the current nav entry, avatars */
+  --color-on-surface: #e8ebef; /* text */
+  --color-on-surface-variant: #9ba3ae; /* muted */
+  --color-outline: #838b97; /* placeholder text */
+  --color-outline-variant: #232931; /* hairline */
+  --color-primary: #3dbe8b; /* emerald */
+  --color-on-primary: #04140d;
+  --color-primary-container: #5acf9f; /* emerald-hover */
+  --color-error: #f06a6f; /* danger */
+  --color-on-error: #1a0507;
+  --color-error-container: #2a1719;
+  --color-on-error-container: #f79599;
 
-  /* Fixed colours, the same on the shirt and inside the jacket. */
-  --color-shirt: #ffffff;
-  --color-ink: #141414;
-  --color-jacket: #121212;
-  --color-jacket-line: #2a2a2a;
-  --color-on-jacket: #f5f5f5;
-  --color-on-jacket-muted: #a3a3a3;
-  --color-tape: #ffd60a;
-  --color-on-tape: #141414;
+  /* Fixed colours, the same in the rail and on the page. */
+  --color-canvas: #0b0d10;
+  --color-canvas-line: #1d2228;
+  --color-on-canvas: #e8ebef;
+  --color-on-canvas-muted: #9ba3ae;
+  --color-warning-container: #2b2413;
+  --color-on-warning-container: #f2b544;
 
-  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
+  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
 
   --text-headline-lg: 1.375rem;
   --text-headline-lg--line-height: 1.75rem;
   --text-headline-lg--font-weight: 600;
+  --text-headline-lg--letter-spacing: -0.018em;
   --text-headline-md: 1.1875rem;
   --text-headline-md--line-height: 1.5rem;
   --text-headline-md--font-weight: 600;
+  --text-headline-md--letter-spacing: -0.014em;
   --text-headline-sm: 1.0625rem;
   --text-headline-sm--line-height: 1.5rem;
   --text-headline-sm--font-weight: 600;
+  --text-headline-sm--letter-spacing: -0.01em;
   --text-body-lg: 0.875rem;
   --text-body-lg--line-height: 1.375rem;
   --text-body-md: 0.8125rem;
@@ -63,12 +84,12 @@
   --text-label-md--letter-spacing: 0;
   --text-label-sm: 0.6875rem;
   --text-label-sm--line-height: 1rem;
-  --text-label-sm--font-weight: 400;
-  --text-label-sm--letter-spacing: 0;
+  --text-label-sm--font-weight: 500;
+  --text-label-sm--letter-spacing: 0.01em;
 
-  --radius-chip: 4px;
-  --radius-control: 6px;
-  --radius-panel: 10px;
+  --radius-chip: 6px;
+  --radius-control: 8px;
+  --radius-panel: 12px;
 }
 
 @layer base {
@@ -86,21 +107,23 @@
     background-color: var(--color-surface);
     color: var(--color-on-surface);
     font-family: var(--font-sans);
+    /* Inter's open digits and the single-storey l keep 1, l and I apart. */
+    font-feature-settings: "cv05", "cv08", "ss03";
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
     caret-color: var(--color-on-surface);
   }
   ::selection {
-    background: var(--color-on-surface);
-    color: var(--color-surface);
+    background: color-mix(in srgb, var(--color-primary) 35%, transparent);
+    color: var(--color-on-surface);
   }
   *:focus {
     outline: none;
   }
-  /* Ink, never red: a focused field must not look like the primary action.
-     Inside the jacket the same variable is the light text colour. */
+  /* Emerald, at full strength, set off by 2px of the page: a focus ring is
+     the one place the accent may draw a line. */
   *:focus-visible {
-    outline: 2px solid var(--color-on-surface);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
     border-radius: 2px;
   }
@@ -116,7 +139,7 @@
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: var(--color-outline-variant);
+    background: var(--color-surface-container-highest);
     border-radius: 4px;
   }
   input[type="password"]::-ms-reveal,
@@ -137,8 +160,9 @@
     text-transform: uppercase;
   }
   input[type="date"]::-webkit-calendar-picker-indicator {
-    opacity: 0.7;
+    opacity: 0.6;
     cursor: pointer;
+    filter: invert(1);
   }
   /* WebKit (macOS WKWebView, Linux WebKitGTK) draws the date as editable
      segments: keep them left-aligned like every other field, and give the
@@ -171,74 +195,90 @@
 }
 
 @layer components {
-  /* The jacket: the same utilities, darker values. Anything inside reads the
-     surface tokens as usual and comes out light on black. */
-  .jacket {
-    --color-surface: #121212;
-    --color-surface-dim: #121212;
-    --color-surface-bright: #121212;
-    --color-surface-container-lowest: #121212;
-    --color-surface-container-low: #121212;
-    --color-surface-container: #121212;
-    --color-surface-container-high: #1f1f1f;
-    --color-surface-container-highest: #2a2a2a;
-    --color-on-surface: #f5f5f5;
-    --color-on-surface-variant: #a3a3a3;
-    --color-outline: #a3a3a3;
-    --color-outline-variant: #2a2a2a;
-    color-scheme: dark;
-    background-color: var(--color-jacket);
-    color: var(--color-on-jacket);
+  /* The rail: the darkest layer, beside every screen. The same utilities,
+     darker values, so anything inside reads the surface tokens as usual. */
+  .rail {
+    --color-surface: #0b0d10;
+    --color-surface-container-lowest: #0b0d10;
+    --color-surface-container-low: #0b0d10;
+    --color-surface-container: #0b0d10;
+    --color-surface-container-high: #171b21;
+    --color-surface-container-highest: #1f242b;
+    --color-outline-variant: #1d2228;
+    background-color: var(--color-canvas);
+    color: var(--color-on-canvas);
+    box-shadow: inset -1px 0 0 var(--color-canvas-line);
   }
 
   .btn-primary {
-    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control bg-primary px-4 font-sans text-body-md font-medium whitespace-nowrap text-on-primary transition-colors duration-150 ease-out hover:bg-primary-container disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control bg-primary px-4 font-sans text-body-md font-semibold whitespace-nowrap text-on-primary transition-colors duration-150 ease-out hover:bg-primary-container disabled:pointer-events-none disabled:bg-surface-container-high disabled:text-outline;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22);
+  }
+  .btn-primary:disabled,
+  .btn-destructive:disabled {
+    box-shadow: inset 0 0 0 1px var(--color-outline-variant);
   }
   .btn-secondary {
-    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control border border-outline-variant bg-surface px-4 font-sans text-body-md font-medium whitespace-nowrap text-on-surface transition-colors duration-150 ease-out hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control border border-outline-variant bg-surface-container-low px-4 font-sans text-body-md font-medium whitespace-nowrap text-on-surface transition-colors duration-150 ease-out hover:border-surface-container-highest hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-40;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
   }
-  /* The way into something destructive. Never filled: a filled red button is
-     the primary action. */
+  /* The way into something destructive: danger words on a ghost button. It
+     always opens a confirm dialog, whose button is the filled one. */
   .btn-danger {
-    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control border border-outline-variant bg-surface px-4 font-sans text-body-md font-medium whitespace-nowrap text-error transition-colors duration-150 ease-out hover:bg-surface-container-high disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control border border-outline-variant bg-surface-container-low px-4 font-sans text-body-md font-medium whitespace-nowrap text-error transition-colors duration-150 ease-out hover:border-error/40 hover:bg-error-container disabled:pointer-events-none disabled:opacity-40;
   }
-  /* The confirm button of a taped dialog. */
-  .btn-ink {
-    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control bg-ink px-4 font-sans text-body-md font-medium whitespace-nowrap text-shirt transition-colors duration-150 ease-out hover:bg-ink/85 disabled:pointer-events-none disabled:opacity-50;
+  /* The confirm button of a destructive dialog, and only that. */
+  .btn-destructive {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-control bg-error px-4 font-sans text-body-md font-semibold whitespace-nowrap text-on-error transition-colors duration-150 ease-out hover:bg-on-error-container disabled:pointer-events-none disabled:bg-surface-container-high disabled:text-outline;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.2);
   }
   .field {
-    @apply h-9 w-full rounded-control border border-outline-variant bg-surface px-3 font-sans text-body-md text-on-surface transition-colors duration-150 ease-out placeholder:text-outline focus:border-on-surface;
+    @apply h-9 w-full rounded-control border border-outline-variant bg-surface-container-lowest px-3 font-sans text-body-md text-on-surface transition-[border-color,box-shadow] duration-150 ease-out placeholder:text-outline hover:border-surface-container-highest focus:border-primary;
   }
   .field:focus {
-    box-shadow: 0 0 0 1px var(--color-on-surface);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+  }
+  /* The border and halo already mark the focused field. */
+  .field:focus-visible {
+    outline: none;
   }
   .card {
-    @apply rounded-panel border border-outline-variant bg-surface;
+    @apply rounded-panel border border-outline-variant bg-surface-container-low;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
   }
-  /* The one raised thing in the app. */
+  /* Things that float: dialogs and the side sheet. A hairline, a highlight
+     along the top edge and one deep shadow. Nothing else is raised. */
   .dialog {
-    @apply rounded-panel border border-outline-variant bg-surface;
-    box-shadow: 0 16px 40px -8px rgb(18 18 18 / 0.3);
+    @apply rounded-panel border border-outline-variant bg-surface-container-low;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.05),
+      0 24px 64px -16px rgb(0 0 0 / 0.75);
   }
-  /* Tape across the top of a dialog that destroys something. It is the first
-     flex item, pulled out to the edges of the dialog's p-6 padding. */
+  /* A dialog or side sheet that holds cards sits on the page colour, so the
+     cards inside it stay one step forward rather than merging with it. */
+  .sheet {
+    background-color: var(--color-surface);
+  }
+  /* A dialog that destroys something carries a thin danger rule along its
+     top edge. It is the first flex item, pulled out to the dialog's edges. */
   .dialog-danger::before {
     content: "";
     display: block;
     flex: none;
-    height: 12px;
-    margin: -1.5rem -1.5rem 0;
-    border-radius: 9px 9px 0 0;
-    background: repeating-linear-gradient(-45deg, var(--color-tape) 0 14px, var(--color-ink) 14px 28px);
+    height: 3px;
+    margin: -1.5rem -1.5rem 0.25rem;
+    border-radius: 11px 11px 0 0;
+    background: var(--color-error);
   }
-  /* A word on yellow: Leaked, Reused, Weak, No undo. */
+  /* A word on amber: Leaked, Reused, Weak, No undo. */
   .flag {
-    @apply inline-flex h-5 shrink-0 items-center rounded-chip bg-tape px-2 font-sans text-label-md font-medium whitespace-nowrap text-on-tape;
+    @apply inline-flex h-5 shrink-0 items-center rounded-chip bg-warning-container px-2 font-sans text-label-md font-medium whitespace-nowrap text-on-warning-container;
+    box-shadow: inset 0 0 0 1px rgb(242 181 68 / 0.18);
   }
-  /* DESIGN.md "Text link": ink, underlined, 3px offset. The line darkens on
-     hover; the text never turns red, which is the primary action's colour. */
+  /* Text link: the text colour, underlined in the hairline; the line lights
+     up on hover. */
   .link {
-    @apply font-sans text-body-sm text-on-surface underline decoration-outline underline-offset-[3px] transition-colors duration-150 ease-out hover:decoration-on-surface disabled:pointer-events-none disabled:opacity-50;
+    @apply font-sans text-body-sm text-on-surface underline decoration-outline underline-offset-[3px] transition-colors duration-150 ease-out hover:decoration-primary disabled:pointer-events-none disabled:opacity-50;
   }
   .label-sm {
     @apply font-sans text-label-sm text-on-surface-variant;

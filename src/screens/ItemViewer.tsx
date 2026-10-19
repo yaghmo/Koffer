@@ -301,7 +301,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
 
   if (error) {
     return (
-      <div className="dialog flex h-full w-[480px] flex-col gap-4 p-6">
+      <div className="dialog sheet flex h-full w-[480px] flex-col gap-4 p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-headline-sm text-on-surface">Could not load</h2>
           <button type="button" onClick={onClose} className="btn-secondary" aria-label="Close">
@@ -317,7 +317,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
 
   if (!item) {
     return (
-      <div className="dialog flex h-full w-[480px] flex-col gap-4 p-6">
+      <div className="dialog sheet flex h-full w-[480px] flex-col gap-4 p-6">
         <h2 className="text-headline-sm text-on-surface">Loading…</h2>
       </div>
     );
@@ -325,7 +325,7 @@ export default function ItemViewer({ id, onEdit, onClose, onDelete }: Props) {
 
   return (
     <>
-    <div role="dialog" aria-modal="true" className="dialog flex h-full w-[480px] flex-col gap-6 overflow-y-auto p-6">
+    <div role="dialog" aria-modal="true" className="dialog sheet flex h-full w-[480px] flex-col gap-6 overflow-y-auto p-6">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {item.type === "card" && <CardBrandIcon bin={item.number} size={32} />}
