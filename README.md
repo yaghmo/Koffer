@@ -1,6 +1,6 @@
 # Koffer
 
-https://github.com/user-attachments/assets/b348d7b9-c427-487d-8ff7-6d78bc1c01a5
+https://github.com/user-attachments/assets/0163ac7f-79cf-41f3-ae34-32566a003547
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-3dbe8b)](LICENSE)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0b0d10)
