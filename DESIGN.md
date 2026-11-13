@@ -50,8 +50,7 @@ spacing:
 
 # Koffer: Midnight
 
-Status: chosen on 2026-10-19. It replaces "suit and shirt" (2026-10-13 to
-2026-10-19). The rules below are enforced by
+Status: chosen on 2026-10-19. The rules below are enforced by
 `src/__tests__/designSystem.test.ts`, and the same system lives as a Claude
 Design System artifact ("Koffer Midnight").
 
