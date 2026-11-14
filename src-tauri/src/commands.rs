@@ -1725,10 +1725,10 @@ pub fn open_login_url(
     }
     // Checked before the clipboard is primed, not just before the open: a
     // refused URL must not leave the password sitting on the clipboard.
-    if !is_browser_url(&url) {
+    let Some(url) = browser_url(&url) else {
         crate::log_warn!("open_login_url", "refused id={id}: not an http(s) URL");
         return Err("that item's URL is not a web address (http or https)".to_string());
-    }
+    };
 
     if let Item::Login { fields, .. } = &item {
         if let Some(pw) = login_password(vault, fields) {
@@ -1750,10 +1750,15 @@ pub fn open_login_url(
 /// Windows — would happily launch `file:///…`, `ms-msdt:` or a UNC path as a
 /// program. Nothing else in the app checks: `host_of` is display-only and
 /// `metadata::is_public_http` guards favicon fetching, not this.
-fn is_browser_url(url: &str) -> bool {
+///
+/// Returns the parsed, normalised address, and that is what must be opened:
+/// the parser drops tabs and newlines from inside the string, so opening the
+/// original text could hand the OS something other than what was checked.
+fn browser_url(url: &str) -> Option<String> {
     reqwest::Url::parse(url.trim())
-        .map(|u| matches!(u.scheme(), "http" | "https"))
-        .unwrap_or(false)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))
+        .map(String::from)
 }
 
 /// Password to prime the clipboard with when opening a login: the item's
@@ -1885,7 +1890,7 @@ mod tests {
             "  https://example.com  ",
             "HTTPS://example.com",
         ] {
-            assert!(is_browser_url(ok), "should be allowed: {ok}");
+            assert!(browser_url(ok).is_some(), "should be allowed: {ok}");
         }
         // These would hand ShellExecuteExW something to *run*. The password is
         // already on the clipboard by the time the user clicks Open.
@@ -1899,8 +1904,12 @@ mod tests {
             "C:\\Windows\\System32\\calc.exe",
             "",
         ] {
-            assert!(!is_browser_url(bad), "should be refused: {bad}");
+            assert!(browser_url(bad).is_none(), "should be refused: {bad}");
         }
+        // What is opened is the checked address, not the raw text: tabs and
+        // newlines inside it are dropped by the parser, so they are dropped here.
+        assert_eq!(browser_url("ht
+tps://exa	mple.com").as_deref(), Some("https://example.com/"));
     }
 
     fn login(method: &str, username: &str, password: &str) -> LoginFields {
