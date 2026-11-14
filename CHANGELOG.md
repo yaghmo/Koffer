@@ -6,6 +6,15 @@ Notable changes, newest first. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Each reply from the app is now bound to the request it answers. Before, a
+  sealed reply recorded off the local port was valid for any later request on
+  the same path, so a program holding the port while the app was closed could
+  replay one site's password as the answer for another. The app and the
+  browser extension (0.5.0) must be updated together for this release: either
+  one alone cannot open the other's replies, and nothing is filled.
+
 ### Added
 
 - In-app updates. The app checks at launch for a newer build and asks before

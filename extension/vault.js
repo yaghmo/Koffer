@@ -35,7 +35,8 @@
  * would have been posted every login page's address and every password
  * typed. So pairing also agrees an AES-GCM key over ECDH (`channelKey`),
  * every request after it is sealed under that key, and an answer counts only
- * if it opens under it. `channel.rs` is the other half.
+ * if it opens under it, for the request it answers: its tag covers that
+ * request's nonce. `channel.rs` is the other half.
  *
  * This file never decides what may be filled. It passes the origin it is
  * acting for and the app does the filtering, so a bug up here cannot turn
@@ -218,7 +219,10 @@ export async function channelKey(privateKey, appPublicHex) {
   );
 }
 
-/** Seal one request body: `{"n": nonce hex, "c": ciphertext base64}`. */
+/**
+ * Seal one request body: `body` is `{"n": nonce hex, "c": ciphertext base64}`.
+ * `nonce` is that same hex, which the answer must be opened against.
+ */
 export async function seal(key, path, text) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const sealed = await crypto.subtle.encrypt(
@@ -228,19 +232,20 @@ export async function seal(key, path, text) {
   );
   let binary = "";
   for (const b of new Uint8Array(sealed)) binary += String.fromCharCode(b);
-  return JSON.stringify({ n: hex(iv), c: btoa(binary) });
+  return { body: JSON.stringify({ n: hex(iv), c: btoa(binary) }), nonce: hex(iv) };
 }
 
 /**
  * Open the app's answer to one call. Throws for anything the app did not
- * seal as the answer on this path: sent in the clear, sealed for another
- * route, or this browser's own request handed back.
+ * seal as the answer to this request: sent in the clear, sealed for another
+ * route, this browser's own request handed back, or a real answer recorded
+ * earlier, whose tag covers the nonce of the request it was made for.
  */
-export async function open(key, path, body) {
+export async function open(key, path, body, nonce) {
   if (!body || typeof body.n !== "string" || typeof body.c !== "string") throw new Error("not sealed");
   const sealed = Uint8Array.from(atob(body.c), (ch) => ch.charCodeAt(0));
   const plain = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: unhex(body.n), additionalData: utf8.encode(`${path}\nreply`) },
+    { name: "AES-GCM", iv: unhex(body.n), additionalData: utf8.encode(`${path}\nreply\n${nonce}`) },
     key,
     sealed
   );
@@ -287,7 +292,7 @@ export async function ensureHostPermission() {
   }
 }
 
-async function send(port, path, headers, bodyText, channel) {
+async function send(port, path, headers, bodyText, channel, nonce) {
   let res;
   try {
     res = await fetch(`http://127.0.0.1:${port}${path}`, { method: "POST", headers, body: bodyText });
@@ -299,11 +304,12 @@ async function send(port, path, headers, bodyText, channel) {
   let data = await res.json().catch(() => ({}));
   if (channel) {
     try {
-      data = JSON.parse(await open(channel, path, data));
+      data = JSON.parse(await open(channel, path, data, nonce));
     } catch {
       // A locked app cannot read its own keys, so its 401 comes unsealed.
       // Anything else unsealed is not the app: whatever holds the port did
-      // not pair with this browser, and nothing it says is acted on.
+      // not pair with this browser, and nothing it says is acted on. An app
+      // on another version than this extension lands here too.
       throw new Error(res.status === 401 ? NOT_PAIRED : NO_APP);
     }
   }
@@ -327,14 +333,15 @@ async function send(port, path, headers, bodyText, channel) {
 async function post(path, body, key, port = (key && key.port) || PORT) {
   let bodyText = JSON.stringify(body || {});
   const headers = { "Content-Type": "application/json" };
+  let nonce;
   if (key) {
     // Sealed first: the signature then covers what actually goes out.
-    bodyText = await seal(key.channel, path, bodyText);
+    ({ body: bodyText, nonce } = await seal(key.channel, path, bodyText));
     const timestamp = Math.floor(Date.now() / 1000);
     headers["X-PM-Timestamp"] = String(timestamp);
     headers["X-PM-Signature"] = await signature(key.privateKey, path, bodyText, timestamp);
   }
-  const data = await send(port, path, headers, bodyText, key && key.channel);
+  const data = await send(port, path, headers, bodyText, key && key.channel, nonce);
   // The app keeps the clock on key age, so a browser whose storage was
   // cleared cannot quietly stop rotating. Never from inside a rekey: that
   // call already holds the lock the next one would wait on.

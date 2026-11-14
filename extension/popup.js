@@ -152,7 +152,7 @@ function browserLabel() {
 }
 
 function describe(e) {
-  if (e.message === NO_APP) return "The vault app is not running.";
+  if (e.message === NO_APP) return "The vault app is not running, or it is not the same version as this extension. If it is open, update both.";
   if (e.message === NOT_PAIRED) return "This browser is not paired yet.";
   if (e.message === NEEDS_APPROVAL) {
     return `${e.host || "This site"} is not approved for this browser yet. The app is asking. Say yes there, then try again.`;

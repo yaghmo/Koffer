@@ -106,7 +106,11 @@ requests. Four rules hold it up, and
   itself never crosses. Every request after pairing is sealed under it and
   so is every answer, and the extension acts on an answer only if it opens
   under that key. A program squatting the port reads ciphertext and cannot
-  make a reply that counts. A browser paired before this existed pairs again.
+  make a reply that counts. A reply is also bound to the request it answers:
+  its tag covers the nonce of that request, so a reply recorded earlier does
+  not open for a later one. A browser paired before this existed pairs again.
+  Update the app and the extension together: one that does not know the
+  binding cannot open the other's replies, and nothing is filled.
 - **Keys age out.** The app decides when one is stale and says so on the next
   reply; this browser answers with `/rekey`, sending a new public point
   signed by the old key — which is only possible because the key is

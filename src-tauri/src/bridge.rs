@@ -30,7 +30,8 @@
 //! and with the app closed any program can take this port. Pairing agrees a
 //! key (`channel.rs`), every request is sealed under it and so is every
 //! answer, so a squatter reads ciphertext and cannot make a reply the
-//! extension accepts.
+//! extension accepts. An answer's tag also covers the nonce of the request
+//! it answers, so a recorded answer opens for no other request.
 //!
 //! # What this does not defend against
 //!
@@ -883,15 +884,15 @@ fn client_index(vault: &Vault, inc: &Incoming, now: i64) -> Option<usize> {
     })
 }
 
-/// The request with its sealed body opened, and the key to seal the answer
-/// under. None unless a paired browser signed it *and* sealed it with the
+/// The request with its sealed body opened, and the key and request nonce to
+/// seal the answer under. None unless a paired browser signed it *and* sealed it with the
 /// key agreed at pairing.
 ///
 /// A signed body sent in the clear is refused like any stranger's. That is
 /// what the extension sent before there was a channel, readable by whatever
 /// program held the port, and answering it would be the app saying that is
 /// still fine.
-fn opened(vault: &Vault, inc: &Incoming, now: i64) -> Option<(Incoming, [u8; 32])> {
+fn opened(vault: &Vault, inc: &Incoming, now: i64) -> Option<(Incoming, [u8; 32], [u8; 12])> {
     let client = &vault.paired[client_index(vault, inc, now)?];
     let key = crate::channel::key_from_hex(&client.channel_key)?;
     let plain = Zeroizing::new(crate::channel::open(
@@ -901,7 +902,7 @@ fn opened(vault: &Vault, inc: &Incoming, now: i64) -> Option<(Incoming, [u8; 32]
         &inc.body,
     )?);
     let body = serde_json::from_str(&plain).ok()?;
-    Some((Incoming { body, ..inc.clone() }, key))
+    Some((Incoming { body, ..inc.clone() }, key, crate::channel::nonce(&inc.body)?))
 }
 
 /// Has the user allowed this browser to be handed a password for this host?
@@ -1084,26 +1085,29 @@ async fn read_request(app: &AppHandle, req: Request<hyper::body::Incoming>) -> R
     // off the runtime rather than on it.
     let app = app.clone();
     let path = inc.path.clone();
-    let (reply, key) = match tokio::task::spawn_blocking(move || route(&app, &inc)).await {
+    let (reply, sealer) = match tokio::task::spawn_blocking(move || route(&app, &inc)).await {
         Ok(out) => out,
         Err(_) => return fail(500, "the request could not be handled"),
     };
     // Sealed on the way out too, whatever the status: the extension takes a
     // 200 only if it opens under the key agreed at pairing, which a program
     // squatting this port cannot make.
-    let Some(key) = key else { return reply };
+    let Some((key, nonce)) = sealer else { return reply };
     let status = reply.status();
     let plain = match reply.into_body().collect().await {
         Ok(b) => Zeroizing::new(String::from_utf8_lossy(&b.to_bytes()).into_owned()),
         Err(_) => return fail(500, "the request could not be handled"),
     };
-    let sealed = crate::channel::seal(&key, &path, crate::channel::Dir::Reply, &plain);
+    let sealed = crate::channel::seal(&key, &path, crate::channel::Dir::Reply(nonce), &plain);
     json_raw(status.as_u16(), &sealed)
 }
 
-/// The answer, and the key to seal it under when the caller proved to be a
+/// The key and the request's nonce an answer is sealed under.
+type Sealer = ([u8; 32], [u8; 12]);
+
+/// The answer, and the key and request nonce to seal it under when the caller proved to be a
 /// paired browser.
-fn route(app: &AppHandle, inc: &Incoming) -> (Reply, Option<[u8; 32]>) {
+fn route(app: &AppHandle, inc: &Incoming) -> (Reply, Option<Sealer>) {
     // Pairing is what agrees the key, so it alone travels unsealed.
     if inc.path == "/pair" {
         return (pair(app, inc), None);
@@ -1115,7 +1119,7 @@ fn route(app: &AppHandle, inc: &Incoming) -> (Reply, Option<[u8; 32]>) {
         let guard = state.vault.lock().unwrap_or_else(|p| p.into_inner());
         guard.as_ref().and_then(|v| opened(v, inc, chrono::Utc::now().timestamp()))
     };
-    let Some((inc, key)) = found else {
+    let Some((inc, key, nonce)) = found else {
         return (fail(401, "not paired"), None);
     };
     let inc = &inc;
@@ -1137,7 +1141,7 @@ fn route(app: &AppHandle, inc: &Incoming) -> (Reply, Option<[u8; 32]>) {
         "/personal" => personal(app, inc),
         _ => fail(404, "no such endpoint"),
     };
-    (reply, Some(key))
+    (reply, Some((key, nonce)))
 }
 
 // ---------------------------------------------------------------------------
@@ -2653,11 +2657,33 @@ mod tests {
         let (sk, pk) = keypair(7);
         let v = vault_with(client(EXT, &pk, now));
         let inc = sealed(&sk, &CHANNEL, "/matches", r#"{"origin":"https://bank.test"}"#, now);
-        let (plain, key) = opened(&v, &inc, now).expect("its own sealed request");
+        let (plain, key, _) = opened(&v, &inc, now).expect("its own sealed request");
         assert_eq!(field(&plain.body, "origin"), "https://bank.test");
         assert_eq!(key, CHANNEL);
         // Still the signed request: the routes check the signature again.
         assert_eq!(client_index(&v, &plain, now), Some(0));
+    }
+
+    #[test]
+    fn a_recorded_reply_is_not_the_answer_to_the_next_request() {
+        // What a program holding the port would replay: the app's real answer
+        // to one request, offered for a later request on the same path.
+        let now = 1_700_000_000;
+        let (sk, pk) = keypair(7);
+        let v = vault_with(client(EXT, &pk, now));
+        let first = opened(&v, &sealed(&sk, &CHANNEL, "/credentials", "{}", now), now).unwrap();
+        let second = opened(&v, &sealed(&sk, &CHANNEL, "/credentials", "{}", now + 1), now + 1).unwrap();
+        assert_ne!(first.2, second.2);
+        let recorded = crate::channel::seal(
+            &first.1,
+            "/credentials",
+            crate::channel::Dir::Reply(first.2),
+            r#"{"password":"for site A"}"#,
+        );
+        let recorded: serde_json::Value = serde_json::from_str(&recorded).unwrap();
+        let open_for = |n| crate::channel::open(&second.1, "/credentials", crate::channel::Dir::Reply(n), &recorded);
+        assert!(open_for(first.2).is_some());
+        assert!(open_for(second.2).is_none());
     }
 
     #[test]
