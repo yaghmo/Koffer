@@ -28,3 +28,6 @@ strix.ps1
 strix_runs/
 .agents/
 skills-lock.json
+
+# /flex plan, drafts and renders: notes about audience, not for publication
+flex/
