@@ -72,12 +72,12 @@ cd src-tauri && cargo test  # backend
 
 ## Security notes
 
-- Master password is never stored; lose it = lose your vault
+- Master password is never stored. Lose it and the recovery code, and the vault is gone
 - Vault file is encrypted at rest; safe to back up
 - Closing the window hides it to the tray; the vault stays unlocked until you lock it (tray or button) or auto-lock fires. Exiting from the tray locks and wipes first
 - Master key lives in Rust memory only; never crosses the IPC boundary
 - One network call at launch: a check for a newer version (one public file on GitHub; nothing from the vault is sent, and nothing installs until you click Update). The rest are started by you: a site's title and favicon when you enter a login URL (public hosts only, size-capped), the opt-in leaked-password check (5 characters of a hash), and the opt-in backup to your own Cloudflare account. Vault contents are never sent in the clear. See `PRIVACY.md`.
-- The browser extension talks to the app over `127.0.0.1:38471` (or the next free port, which the pairing code then names) — loopback only, and only after you pair it by hand. There is no shared token: the browser signs each request with a key its own JavaScript cannot export, and a password for a site it has not been approved for raises a dialog here first. `extension/README.md` has the whole model, including what it does not defend against.
+- The browser extension talks to the app over `127.0.0.1:38471` (or the next free port, which the pairing code then names). It is loopback only, and works only after you pair it by hand. There is no shared token: the browser signs each request with a key its own JavaScript cannot export, and a password for a site it has not been approved for raises a dialog here first. `extension/README.md` has the whole model, including what it does not defend against.
 
 ## Security review
 
@@ -120,7 +120,7 @@ stays in your browser. `npm run testsite` serves the same pages locally.
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to build, test and send a change.
 - [SECURITY.md](SECURITY.md): report vulnerabilities privately, never in an issue.
-- [PRIVACY.md](PRIVACY.md): nothing is collected; the few network calls, all started by you.
+- [PRIVACY.md](PRIVACY.md): nothing is collected; the four network calls and what each one sends.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Support
