@@ -97,20 +97,18 @@ jobs:
 
   bundle:
     name: bundle (${{ matrix.os }})
-    # Installers are the slow part, so they are built for a tag or on
-    # request. A push to main builds one too once the updater key exists:
-    # that build is what installed apps are offered as an update.
+    # Installers are the slow part, so they are built for a version tag or on
+    # request. A tag builds once the updater key exists: that build is what
+    # installed apps are offered as an update. A push to main builds nothing.
     if: >-
-      startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.updater.outputs.key == 'true')
+      (github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && needs.updater.outputs.key == 'true') ||
+      github.event_name == 'workflow_dispatch'
     needs: [test, updater]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Windows alone for a push to main: it is the system the app is
-        # released for, and the other two would triple every push's bill.
-        os: ${{ fromJSON(github.event_name == 'push' && github.ref == 'refs/heads/main' && '["windows-latest"]' || '["windows-latest", "macos-latest", "ubuntu-latest"]') }}
+        os: [windows-latest, macos-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -190,18 +188,19 @@ jobs:
           node -e 'console.log("SIGN_CONFIG=" + JSON.stringify({ bundle: { windows: { signCommand: process.env.WINDOWS_SIGN_COMMAND } } }))' >> "$GITHUB_ENV"
 
       # The updater switches on the same way, once its key is a secret. A
-      # push to main is also given a version of its own, major.minor from
-      # tauri.conf.json with this run's number as the patch: an installed
-      # app only offers a build whose version is higher than its own.
+      # tag is also the build's version: vX.Y.Z becomes X.Y.Z, since an
+      # installed app only offers a build whose version is higher than its
+      # own. Any tag but a plain vX.Y.Z fails here, before the long build.
       - name: Updater artifacts
         if: needs.updater.outputs.key == 'true'
         shell: bash
         run: |
           node -e '
             const config = { bundle: { createUpdaterArtifacts: true } };
-            if (process.env.GITHUB_EVENT_NAME === "push" && process.env.GITHUB_REF === "refs/heads/main") {
-              const [major, minor] = require("./src-tauri/tauri.conf.json").version.split(".");
-              config.version = [major, minor, process.env.GITHUB_RUN_NUMBER].join(".");
+            if (process.env.GITHUB_REF_TYPE === "tag") {
+              const tag = process.env.GITHUB_REF_NAME;
+              if (!/^v\d+\.\d+\.\d+$/.test(tag)) throw new Error("Tag " + tag + " is not vX.Y.Z.");
+              config.version = tag.slice(1);
               console.log("UPDATE_VERSION=" + config.version);
             }
             console.log("UPDATER_CONFIG=" + JSON.stringify(config));
@@ -274,16 +273,16 @@ jobs:
 
   publish:
     name: publish update
-    # A push to main that the bundle job built becomes a release, which is
+    # A version tag that the bundle job built becomes a release, which is
     # where installed apps look for a newer version. The one job that writes
     # to the repository, and it runs nothing from it: it only moves the files
     # the bundle job built and signed.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     needs: bundle
     runs-on: ubuntu-latest
     permissions:
       actions: read # this run's installers
-      contents: write # the release and its tag
+      contents: write # the release
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -292,14 +291,15 @@ jobs:
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name installers-windows-latest --dir out
           cd out
           version="$(jq -r .version latest.json)"
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "latest.json says $version, tag is $GITHUB_REF_NAME."; exit 1; }
           {
-            echo "Automatic build of ${GITHUB_SHA::7}. Installed copies of Koffer offer it the next time they start."
+            echo "Release $GITHUB_REF_NAME. Installed copies of Koffer offer it the next time they start."
             echo
             echo "SHA-256:"
             echo '```'
             sha256sum msi/*_"$version"_*.msi nsis/*_"$version"_*-setup.exe
             echo '```'
           } > notes.md
-          gh release create "v$version" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "Koffer $version" --notes-file notes.md \
             latest.json msi/*_"$version"_*.msi nsis/*_"$version"_*-setup.exe
