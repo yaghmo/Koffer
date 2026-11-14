@@ -672,7 +672,7 @@ mod tests {
             open_every_way(&acct, &bad);
         }
         open_every_way(&acct, &vec![0xFF; 4096]);
-        open_every_way(&acct, &[b'P', b'M', b'0', b'1']);
+        open_every_way(&acct, b"PM01");
     }
 
     /// Names of the rotating copies that exist for an account right now.
