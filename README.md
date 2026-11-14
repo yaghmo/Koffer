@@ -25,7 +25,7 @@ Local-only encrypted password manager for Windows. Tauri + React.
 
 Download the `.msi` from the [releases page](https://github.com/yaghmo/Koffer/releases) and double-click it.
 
-The installer is not code-signed yet, so Windows SmartScreen warns on first run: click **More info**, then **Run anyway**. Each release lists SHA-256 hashes to check the download against.
+The installer is not code-signed yet, so Windows SmartScreen warns on first run: click **More info**, then **Run anyway**. Each release lists SHA-256 hashes to check the download against. To check one, run `Get-FileHash` on the downloaded file in PowerShell and compare the result with the SHA-256 line in that release's notes.
 
 ## Requirements
 
@@ -78,6 +78,28 @@ cd src-tauri && cargo test  # backend
 - Master key lives in Rust memory only; never crosses the IPC boundary
 - One network call at launch: a check for a newer version (one public file on GitHub; nothing from the vault is sent, and nothing installs until you click Update). The rest are started by you: a site's title and favicon when you enter a login URL (public hosts only, size-capped), the opt-in leaked-password check (5 characters of a hash), and the opt-in backup to your own Cloudflare account. Vault contents are never sent in the clear. See `PRIVACY.md`.
 - The browser extension talks to the app over `127.0.0.1:38471` (or the next free port, which the pairing code then names) — loopback only, and only after you pair it by hand. There is no shared token: the browser signs each request with a key its own JavaScript cannot export, and a password for a site it has not been approved for raises a dialog here first. `extension/README.md` has the whole model, including what it does not defend against.
+
+## Security review
+
+On 2026-11-14 an AI model (Claude Sonnet), directed by the author, read most of the code and wrote tests against it. The same day it ran `cargo audit`, `npm audit` and a gitleaks scan of the full git history. This is not a third-party audit, and Koffer is built and maintained by one person.
+
+**Reviewed:** the loopback bridge and the sealed channel between the app and the extension, vault storage and recovery, the cloud backup client and worker, the favicon and title fetch, the app's command surface, and the extension's manifest, background and content scripts. The attackers considered were a web page, another program on the same machine (including one that takes the bridge's port while the app is closed), someone holding a copy of the vault file, and the backup server.
+
+**Found and fixed:** nothing critical or high. Two low issues: a latent crash on a bad nonce length, and a login URL that was checked in one form but opened in another. One more: a recorded reply from the app could be replayed to the extension as the answer to a later request. Each reply is now tied to the request it answers, so update the app and the extension (0.5.0) together. Dependency updates cleared 13 of 18 `cargo audit` advisories and 2 high `npm audit` advisories.
+
+**Known and still open:**
+
+- The extension's signing key lives in the browser profile. "Confirm every fill" in Settings is the answer to a copied key.
+- `export_vault` and `import_vault` take any path from the app window, so a compromised window could overwrite or read files you can reach. The content security policy makes that unlikely.
+- The favicon fetch treats some special IPv6 and IPv4 ranges as public.
+- A local process can use up the three pairing tries and force you to pair again.
+- Whoever holds the backup upload token can overwrite the latest backup, and the app cannot tell an old copy from a new one.
+- Unlocking has no attempt counter beyond the cost of Argon2id, and the password minimum is 8 bytes with no strength check.
+- Two dependency advisories remain. `crypto-bigint` (RUSTSEC-2026-0387, timing variability, via `p256`) needs a major `p256` upgrade. `zip` (four advisories, via `tauri-plugin-updater`) only unpacks an update after its signature is verified, so an attacker would need a signed malicious archive. Some unmaintained crates in the build chain also remain.
+
+**Not reviewed:** nothing was run. The app, the extension and a browser were never launched, so the bridge was read and not tested end to end. Several files were skimmed or skipped, including most of the extension popup and save bar, the React code, and parts of the item logic. The built installer, GitHub settings, WebView2, and malware already running as you were not looked at.
+
+Found a problem? Report it privately as described in [SECURITY.md](SECURITY.md).
 
 ## Out of scope (v1)
 
