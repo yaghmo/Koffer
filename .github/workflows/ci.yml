@@ -237,8 +237,10 @@ jobs:
       # version, and for each installer its address in the release the
       # publish job is about to create, with the signature the app checks
       # the download against before running it.
+      # Windows only: the installed app is the Windows one, and the manifest
+      # reads the msi and nsis folders the other two systems never make.
       - name: Update manifest
-        if: env.UPDATE_VERSION != ''
+        if: env.UPDATE_VERSION != '' && matrix.os == 'windows-latest'
         shell: bash
         working-directory: src-tauri/target/release/bundle
         run: |
