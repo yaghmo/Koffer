@@ -622,6 +622,59 @@ mod tests {
         assert_eq!(v2.items.len(), 1);
     }
 
+    /// Every opener, on whatever bytes are in the vault file: an error or a
+    /// vault, never a panic. A panic here would be a crash on start-up for
+    /// anyone with a damaged file.
+    fn open_every_way(acct: &Account, bytes: &[u8]) {
+        fs::write(vault_path(acct), bytes).unwrap();
+        let _ = load_vault_unverified(acct);
+        let _ = has_recovery_slot(acct);
+        let _ = load_vault_with_recovery(acct, b"0123456789abcdef");
+        let _ = load_vault(acct, "master");
+    }
+
+    #[test]
+    fn a_damaged_vault_file_is_an_error_never_a_panic() {
+        let _g = lock_env();
+        fresh_tmp();
+        let acct = fixture_account();
+        let mut keys = KeySet::new("master");
+        keys.set_recovery_secret(b"recovery-secret");
+        save_vault(&acct, &new_vault(keys.master_salt.clone()), &keys).unwrap();
+        let good = fs::read(vault_path(&acct)).unwrap();
+        assert!(load_vault(&acct, "master").is_ok());
+
+        // Empty, and every truncation shorter than a v3 header (these are
+        // refused before the slow key derivation runs).
+        for n in 0..V3_VAULT_CT {
+            open_every_way(&acct, &good[..n]);
+        }
+        // Cut inside the vault ciphertext, one byte short of whole.
+        open_every_way(&acct, &good[..V3_VAULT_CT]);
+        open_every_way(&acct, &good[..good.len() - 1]);
+
+        // One flipped byte in each field of the header, the nonce, the
+        // ciphertext and its tag: each must fail to open, not crash.
+        for at in [0, 4, 8, 24, V3_FLAG, V3_MASTER_NONCE, V3_MASTER_WRAP, V3_RECOVERY_NONCE,
+                   V3_RECOVERY_WRAP, V3_VAULT_NONCE, V3_VAULT_CT, good.len() - 1] {
+            let mut bad = good.clone();
+            bad[at] ^= 0x80;
+            fs::write(vault_path(&acct), &bad).unwrap();
+            assert!(load_vault(&acct, "master").is_err(), "flip at {at} opened");
+            open_every_way(&acct, &bad);
+        }
+
+        // Huge or nonsense length-like fields: the version word and the
+        // recovery flag set to every extreme, and a long run of 0xFF.
+        for word in [0u32, 1, 2, 4, 0x7FFF_FFFF, u32::MAX] {
+            let mut bad = good.clone();
+            bad[4..8].copy_from_slice(&word.to_le_bytes());
+            open_every_way(&acct, &bad);
+        }
+        open_every_way(&acct, &vec![0xFF; 4096]);
+        open_every_way(&acct, &[b'P', b'M', b'0', b'1']);
+    }
+
     /// Names of the rotating copies that exist for an account right now.
     fn backup_names(acct: &Account) -> Vec<String> {
         backup_copies(acct)

@@ -65,6 +65,11 @@ pub fn decrypt_with_aad(
     ciphertext: &[u8],
     aad: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
+    // Nonce::from_slice panics on any other length; a damaged file or a
+    // hostile peer must get an error, not a crash.
+    if nonce.len() != 12 {
+        return Err(CryptoError::Aead);
+    }
     let cipher = Aes256Gcm::new(key.into());
     let nonce = Nonce::from_slice(nonce);
     cipher
@@ -159,6 +164,16 @@ mod tests {
         // And a no-AAD read of AAD-protected bytes fails too, which is what
         // keeps the two file versions apart.
         assert!(decrypt(&key, &nonce, &ct).is_err());
+    }
+
+    #[test]
+    fn a_nonce_of_the_wrong_length_is_an_error_not_a_panic() {
+        let key = derive_key("password", &random_bytes(16));
+        let (nonce, ct) = encrypt(&key, b"x");
+        for bad in [0usize, 1, 11, 13, 64] {
+            let n = vec![nonce[0]; bad];
+            assert!(decrypt(&key, &n, &ct).is_err(), "len {bad}");
+        }
     }
 
     #[test]
