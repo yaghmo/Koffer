@@ -1,6 +1,8 @@
 # Koffer
 
-https://github.com/user-attachments/assets/0163ac7f-79cf-41f3-ae34-32566a003547
+[![Koffer demo. Click to watch the 25-second video.](testsite/demo/koffer-demo.jpg)](https://yaghmo.github.io/Koffer/demo/koffer-demo.mp4)
+
+[Watch the 25-second demo](https://yaghmo.github.io/Koffer/demo/koffer-demo.mp4)
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-3dbe8b)](LICENSE)
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-0b0d10)
@@ -112,7 +114,7 @@ Fills, saves and offers 2FA codes in Chrome and Firefox, talking only to the
 app on `127.0.0.1`. See [`extension/README.md`](extension/README.md).
 
 **Try it without touching real accounts:** the
-[test site](https://yaghmo.github.io/koffer/) has sign-in, sign-up,
+[test site](https://yaghmo.github.io/Koffer/) has sign-in, sign-up,
 two-step, phone, 2FA and "Sign in with…" pages. Everything on it is fake and
 stays in your browser. `npm run testsite` serves the same pages locally.
 
