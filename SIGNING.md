@@ -80,11 +80,16 @@ signed by the updater key, whose public half is `plugins.updater.pubkey` in
 | `TAURI_SIGNING_PRIVATE_KEY` | the contents of the private key file |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password; leave unset for a key made without one |
 
-Once the key is a secret, every push to `main` that passes the tests is built
-for Windows, given the version `major.minor.<run number>` (major.minor from
-`tauri.conf.json`), and published as a release with the `latest.json` that
-installed apps read. Without the secret nothing is built or published on a
-push. The repository must be public for installed apps to reach the release.
+Once the key is a secret, pushing a tag like `v0.2.0` builds the installers
+and publishes them as a release with the `latest.json` that installed apps
+read. The tag is the version: `vX.Y.Z` becomes `X.Y.Z` in the installer and in
+`latest.json`, whatever `tauri.conf.json` says. Any other tag name fails the
+build. A push to `main` only runs the tests and publishes nothing. Without the
+secret a tag publishes nothing. The repository must be public for installed
+apps to reach the release.
+
+To release: `git tag v0.2.0` and `git push origin v0.2.0`. The version must be
+higher than the last release, or installed apps will not offer it.
 
 To make a new key: `npx tauri signer generate -w ~/.tauri/koffer.key`, then
 put the contents of `koffer.key.pub` in `pubkey`. Keep the private key and a

@@ -10,8 +10,8 @@ Notable changes, newest first. The format follows
 
 - In-app updates. The app checks at launch for a newer build and asks before
   installing it; the download must be signed by Koffer's updater key. Once
-  that key is a CI secret, every push to `main` is published as an update
-  (see `SIGNING.md`).
+  that key is a CI secret, pushing a `vX.Y.Z` tag publishes an update (see
+  `SIGNING.md`).
 
 ### Changed
 
